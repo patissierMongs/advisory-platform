@@ -1,0 +1,27 @@
+{
+  "source": "KISA KrCERT",
+  "cves": [
+    {
+      "cve_id": "CVE-2026-44120",
+      "product_name": "한컴오피스",
+      "product_key": "hancom_office",
+      "affected_versions": ["2020", "2022"],
+      "severity": "중간",
+      "cvss_score": 6.5,
+      "description": "정보 유출",
+      "published_at": "2026-06-13",
+      "source": "KISA KrCERT"
+    },
+    {
+      "cve_id": "CVE-2026-45088",
+      "product_name": "Adobe Acrobat Reader",
+      "product_key": "adobe_acrobat",
+      "affected_versions": ["DC 2021", "DC 2022"],
+      "severity": "높음",
+      "cvss_score": 7.8,
+      "description": "코드 실행",
+      "published_at": "2026-06-14",
+      "source": "KISA KrCERT"
+    }
+  ]
+}

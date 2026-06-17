@@ -1,0 +1,16 @@
+/* Advisory Platform DS — stylesheet entrypoint.
+   Rendered designs receive only this file's @import closure, so everything the
+   look needs (tokens, fonts, component CSS) is reachable from here. */
+@import "./fonts/pretendard.css";
+@import "./tokens/tokens.css";
+@import "./_ds_bundle.css";
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--ds-color-bg);
+  color: var(--ds-color-text);
+  font-family: var(--ds-font-family);
+  -webkit-font-smoothing: antialiased;
+}
+* { box-sizing: border-box; }

@@ -1,0 +1,42 @@
+/* Advisory Platform DS — component CSS (_ds_bundle.css).
+   Components style themselves with inline styles + token vars (matching the
+   source app's idiom); this file carries only what inline styles can't express:
+   pseudo-elements, focus, hover, scrollbars, keyframes. */
+
+.ads-root, .ads-root * { box-sizing: border-box; }
+.ads-root {
+  font-family: var(--ds-font-family);
+  color: var(--ds-color-text);
+}
+
+/* scrollbars (from the source app's helmet block) */
+.ads-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.ads-scroll::-webkit-scrollbar-thumb {
+  background: #c4cdda; border-radius: var(--ds-radius-sm);
+  border: 2px solid var(--ds-color-bg);
+}
+.ads-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* interactive affordances */
+.ads-btn { transition: filter .12s ease, background .12s ease, box-shadow .12s ease; }
+.ads-btn:not(:disabled):hover { filter: brightness(1.05); }
+.ads-btn:not(:disabled):active { filter: brightness(.96); }
+.ads-btn:disabled { opacity: .55; cursor: not-allowed; }
+.ads-btn:focus-visible { outline: 2px solid var(--ds-color-primary); outline-offset: 2px; }
+
+.ads-navitem { transition: background .12s ease, color .12s ease; }
+.ads-navitem:hover { background: rgba(255,255,255,.06); }
+
+.ads-row { transition: background .1s ease; }
+.ads-row:hover { background: var(--ds-color-surface-subtle); }
+
+.ads-field:focus { outline: none; border-color: var(--ds-color-primary); }
+
+@keyframes ads-toast-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ads-toast { animation: ads-toast-in .18s ease-out; }
+
+@keyframes ads-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.ads-modal-overlay { animation: ads-fade-in .15s ease-out; }

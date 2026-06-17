@@ -1,0 +1,2120 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 오프라인 번들: React 를 로컬에서 먼저 로드 → support.js 가 CDN fetch 를 건너뜀(폐쇄망). -->
+<script src="./vendor/react.production.min.js"></script>
+<script src="./vendor/react-dom.production.min.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="./vendor/pretendard.css">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body { font-family: 'Pretendard', -apple-system, sans-serif; background: #eef1f5; color: #1a2433; -webkit-font-smoothing: antialiased; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-thumb { background: #c4cdda; border-radius: 6px; border: 2px solid #eef1f5; }
+    ::-webkit-scrollbar-track { background: transparent; }
+  </style>
+</helmet>
+
+<div style="display:flex; height:100vh; width:100vw; overflow:hidden;">
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside style="width:248px; flex-shrink:0; background:#0f2742; color:#cdd8e6; display:flex; flex-direction:column;">
+    <div style="padding:20px 20px 18px; border-bottom:1px solid rgba(255,255,255,.08); display:flex; align-items:center; gap:11px;">
+      <div style="width:34px; height:34px; border-radius:8px; background:#0f766e; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2 4 5v6c0 4.5 3.2 8.5 8 10 4.8-1.5 8-5.5 8-10V5l-8-3Z" stroke="#fff" stroke-width="1.7" stroke-linejoin="round"/><path d="m8.5 12 2.4 2.4 4.6-4.8" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <div style="font-size:14px; font-weight:700; color:#fff; letter-spacing:-.2px;">보안권고문 처리</div>
+        <div style="font-size:11px; color:#7d93ad; margin-top:1px;">취약점 대응 워크플로우</div>
+      </div>
+    </div>
+
+    <nav style="padding:12px 12px; display:flex; flex-direction:column; gap:3px; flex:1;">
+      <sc-for list="{{ navItems }}" as="item" hint-placeholder-count="5">
+        <button onClick="{{ item.onClick }}" style="{{ item.style }}">
+          <span style="display:flex; width:20px; justify-content:center;">{{ item.icon }}</span>
+          <span style="flex:1; text-align:left;">{{ item.label }}</span>
+          <sc-if value="{{ item.badge }}" hint-placeholder-val="">
+            <span style="{{ item.badgeStyle }}">{{ item.badge }}</span>
+          </sc-if>
+        </button>
+      </sc-for>
+    </nav>
+
+    <div style="padding:16px; border-top:1px solid rgba(255,255,255,.08);">
+      <div style="font-size:11px; color:#7d93ad; margin-bottom:7px;">평가 대응 마감</div>
+      <div style="display:flex; align-items:baseline; gap:7px;">
+        <span style="font-size:22px; font-weight:800; color:#5fd0c4;">D-12</span>
+        <span style="font-size:12px; color:#9fb1c6;">2026. 6. 26.</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN ===== -->
+  <main style="flex:1; display:flex; flex-direction:column; min-width:0; background:#eef1f5;">
+
+    <header style="height:60px; flex-shrink:0; background:#fff; border-bottom:1px solid #e1e7ef; display:flex; align-items:center; justify-content:space-between; padding:0 26px;">
+      <div style="display:flex; align-items:center; gap:11px;">
+        <h1 style="margin:0; font-size:17px; font-weight:700; color:#15294a; letter-spacing:-.3px;">{{ pageTitle }}</h1>
+        <span style="font-size:12px; color:#8a98ab; font-weight:500;">{{ pageSub }}</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:14px;">
+        <div style="display:flex; align-items:center; gap:7px; background:#f4f6f9; border:1px solid #e3e8ef; border-radius:8px; padding:6px 11px;">
+          <span style="width:7px; height:7px; border-radius:50%; background:#0f766e;"></span>
+          <span style="font-size:12px; color:#43536b; font-weight:600;">로컬 처리 · 오프라인</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:9px;">
+          <div style="width:32px; height:32px; border-radius:50%; background:#0f766e; color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700;">관제</div>
+          <div style="line-height:1.25;">
+            <div style="font-size:12.5px; font-weight:600; color:#2a3a52;">정보보호팀 · 관제</div>
+            <div style="font-size:11px; color:#94a1b4;">보안관제 담당</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div style="flex:1; overflow-y:auto; padding:24px 26px 60px;">
+
+      <!-- ============ 권고문 처리 ============ -->
+      <sc-if value="{{ navProcess }}" hint-placeholder-val="{{ true }}">
+        <div>
+
+          <!-- ===== 게시판: 등록된 권고문 통합 관리 (각 권고문 독립 처리) ===== -->
+          <sc-if value="{{ procBoard }}" hint-placeholder-val="{{ true }}">
+            <div>
+              <!-- 업로드 -->
+              <div onDragOver="{{ onPdfDragOver }}" onDrop="{{ onPdfDrop }}" style="background:#fff; border:1.5px dashed #c4d0de; border-radius:12px; padding:18px 20px; margin-bottom:16px; display:flex; align-items:center; gap:16px;">
+                <div style="width:44px; height:44px; border-radius:11px; background:#e6f4f2; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5 5 5" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round"/></svg>
+                </div>
+                <div style="flex:1; min-width:0;">
+                  <div style="font-size:14px; font-weight:700; color:#15294a;">보안권고문 PDF 업로드</div>
+                  <div style="font-size:12px; color:#94a1b4; margin-top:2px;">드래그&드롭 또는 파일 선택 · 다중 업로드 · 업로드 즉시 백그라운드 CVE 추출(아래에서 진행상황 확인)</div>
+                </div>
+                <button onClick="{{ onPickFile }}" style="background:#0f766e; color:#fff; border:none; border-radius:8px; padding:10px 20px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; flex-shrink:0;">파일 선택</button>
+              </div>
+              <!-- 목록 헤더 -->
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+                <h2 style="margin:0; font-size:15px; font-weight:700; color:#15294a;">등록된 권고문 <span style="font-size:12.5px; font-weight:500; color:#94a1b4;">— 각 권고문은 독립적으로 처리됩니다</span></h2>
+                <span style="font-size:12px; color:#8a98ab;">{{ boardCount }}건</span>
+              </div>
+              <!-- 카드 목록 -->
+              <div style="display:flex; flex-direction:column; gap:11px;">
+                <sc-for list="{{ advisoryBoard }}" as="a" hint-placeholder-count="4">
+                  <div style="{{ a.cardStyle }}">
+                    <div style="display:flex; align-items:flex-start; gap:14px;">
+                      <div style="flex:1; min-width:0;">
+                        <div style="display:flex; align-items:center; gap:9px; margin-bottom:5px; flex-wrap:wrap;">
+                          <span style="font-size:11px; font-weight:700; color:#b42318; background:#fdecec; border:1px solid #f5c6c2; padding:2px 8px; border-radius:5px;">{{ a.source }}</span>
+                          <span style="font-size:11px; color:#8a98ab; font-family:monospace;">{{ a.docNo }}</span>
+                          <span style="{{ a.statusStyle }}">
+                            <sc-if value="{{ a.processing }}" hint-placeholder-val="">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#e1d6f0" stroke-width="3"/><path d="M21 12a9 9 0 0 0-9-9" stroke="#7a5a9a" stroke-width="3" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/></path></svg>
+                            </sc-if>
+                            {{ a.statusLabel }}
+                          </span>
+                        </div>
+                        <div style="font-size:14.5px; font-weight:700; color:#15294a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ a.title }}</div>
+                        <div style="font-size:11.5px; color:#94a1b4; margin-top:3px;">접수 {{ a.received }} · 기한 {{ a.due }} · {{ a.cveSummary }}</div>
+                        <sc-if value="{{ a.hasError }}" hint-placeholder-val="">
+                          <div style="margin-top:8px; font-size:11.5px; color:#b42318; background:#fdecec; border:1px solid #f3c9c4; border-radius:7px; padding:7px 10px;">⚠ {{ a.errorMsg }}</div>
+                        </sc-if>
+                        <sc-if value="{{ a.hasWarn }}" hint-placeholder-val="">
+                          <div style="margin-top:8px; font-size:11.5px; color:#a16207; background:#fff6e9; border:1px solid #f3dcb0; border-radius:7px; padding:7px 10px;">⚠ {{ a.errorMsg }}</div>
+                        </sc-if>
+                      </div>
+                      <div style="display:flex; flex-direction:column; gap:7px; flex-shrink:0;">
+                        <button onClick="{{ a.onOpenPdf }}" style="display:flex; align-items:center; gap:5px; background:#fff; color:#b42318; border:1px solid #f3c9c4; border-radius:8px; padding:7px 13px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; white-space:nowrap;">
+                          <svg width="12" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 2h8l4 4v16H6z" stroke="#b42318" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 2v4h4" stroke="#b42318" stroke-width="1.7"/></svg>
+                          PDF 열람
+                        </button>
+                        <button onClick="{{ a.onProcess }}" style="background:#0f766e; color:#fff; border:none; border-radius:8px; padding:7px 13px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap;">처리 →</button>
+                      </div>
+                    </div>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ boardEmpty }}" hint-placeholder-val="">
+                  <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:44px 20px; text-align:center; color:#94a1b4; font-size:13px;">등록된 권고문이 없습니다. 위에서 PDF를 업로드하세요.</div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ===== 권고문별 상세 처리 ===== -->
+          <sc-if value="{{ procDetail }}" hint-placeholder-val="">
+          <div>
+          <button onClick="{{ onBackToBoard }}" style="display:inline-flex; align-items:center; gap:6px; background:#fff; color:#5a6b86; border:1px solid #d3dbe8; border-radius:8px; padding:8px 14px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit; margin-bottom:14px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="#5a6b86" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            권고문 목록
+          </button>
+
+          <!-- advisory context -->
+          <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:16px 20px; margin-bottom:18px; display:flex; align-items:center; gap:22px;">
+            <div style="flex:1; min-width:0;">
+              <div style="display:flex; align-items:center; gap:9px; margin-bottom:6px;">
+                <span style="font-size:11px; font-weight:700; color:#b42318; background:#fdecec; border:1px solid #f5c6c2; padding:2px 8px; border-radius:5px;">국가정보원</span>
+                <span style="font-size:11.5px; color:#8a98ab; font-family:monospace;">{{ advisory.docNo }}</span>
+              </div>
+              <div style="font-size:15.5px; font-weight:700; color:#15294a; letter-spacing:-.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ advisory.title }}</div>
+            </div>
+            <div style="display:flex; gap:26px; flex-shrink:0;">
+              <div><div style="font-size:11px; color:#94a1b4; margin-bottom:3px;">접수 경로</div><div style="font-size:13px; font-weight:600; color:#3a4a63;">{{ advisory.route }}</div></div>
+              <div><div style="font-size:11px; color:#94a1b4; margin-bottom:3px;">접수일</div><div style="font-size:13px; font-weight:600; color:#3a4a63;">{{ advisory.receivedAt }}</div></div>
+              <div><div style="font-size:11px; color:#94a1b4; margin-bottom:3px;">조치 기한</div><div style="font-size:13px; font-weight:700; color:#b42318;">{{ advisory.dueAt }}</div></div>
+            </div>
+            <button onClick="{{ onPostBoard }}" style="{{ boardBtnStyle }}" title="그룹웨어 게시판에 권고문 게시(부서 댓글 회신 연동)">{{ boardLabel }}</button>
+          </div>
+
+          <!-- stepper -->
+          <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:16px 22px; margin-bottom:18px; display:flex; align-items:center;">
+            <sc-for list="{{ detailSteps }}" as="st" hint-placeholder-count="3">
+              <div style="display:flex; align-items:center; flex:1;">
+                <button onClick="{{ st.onClick }}" style="{{ st.btnStyle }}">
+                  <span style="{{ st.numStyle }}">{{ st.num }}</span>
+                  <span style="display:flex; flex-direction:column; align-items:flex-start; line-height:1.2;">
+                    <span style="font-size:10.5px; color:#94a1b4; font-weight:600;">STEP {{ st.num }}</span>
+                    <span style="{{ st.labelStyle }}">{{ st.label }}</span>
+                  </span>
+                </button>
+                <sc-if value="{{ st.hasConnector }}" hint-placeholder-val="">
+                  <span style="{{ st.connStyle }}"></span>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+
+          <!-- ===== STEP 1 ===== -->
+          <sc-if value="{{ step1 }}" hint-placeholder-val="">
+            <div style="display:grid; grid-template-columns:1.4fr 1fr; gap:18px;">
+              <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:24px;">
+                <h2 style="margin:0 0 4px; font-size:15px; font-weight:700; color:#15294a;">보안권고문 PDF 업로드</h2>
+                <p style="margin:0 0 20px; font-size:13px; color:#8a98ab;">PDF에서 <b style="color:#0f766e;">CVE 코드만 자동 추출</b>합니다. 제품·버전·심각도 정보는 로컬 CVE 데이터베이스에서 조회합니다.</p>
+                <div onDragOver="{{ onPdfDragOver }}" onDrop="{{ onPdfDrop }}" style="border:2px dashed #c4d0de; border-radius:12px; background:#f7f9fc; padding:46px 20px; text-align:center;">
+                  <div style="width:54px; height:54px; margin:0 auto 14px; border-radius:14px; background:#e6f4f2; display:flex; align-items:center; justify-content:center;">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5 5 5" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  </div>
+                  <div style="font-size:14px; font-weight:600; color:#3a4a63;">PDF 파일을 여기로 끌어다 놓으세요</div>
+                  <div style="font-size:12px; color:#94a1b4; margin-top:5px;">또는 클릭하여 파일 선택 · 최대 30MB · 다중 업로드 지원</div>
+                  <button onClick="{{ onPickFile }}" style="margin-top:18px; background:#0f766e; color:#fff; border:none; border-radius:8px; padding:10px 22px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;">파일 선택</button>
+                </div>
+                <div style="margin-top:16px; display:flex; gap:10px; font-size:12px; color:#8a98ab; align-items:flex-start;">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex-shrink:0; margin-top:1px;"><circle cx="12" cy="12" r="9" stroke="#0f766e" stroke-width="1.6"/><path d="M12 8v5m0 3h.01" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  추출·조회 전 과정이 인트라넷 내에서 처리되며 외부로 데이터가 전송되지 않습니다.
+                </div>
+              </div>
+              <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:22px;">
+                <h3 style="margin:0 0 14px; font-size:13.5px; font-weight:700; color:#15294a;">최근 접수 권고문</h3>
+                <sc-for list="{{ recentDocs }}" as="d" hint-placeholder-count="3">
+                  <div style="display:flex; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid #eef1f5;">
+                    <div style="width:34px; height:40px; border-radius:5px; background:#fdecec; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                      <span style="font-size:9px; font-weight:800; color:#b42318;">PDF</span>
+                    </div>
+                    <div style="flex:1; min-width:0;">
+                      <div style="font-size:12.5px; font-weight:600; color:#2a3a52; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ d.title }}</div>
+                      <div style="font-size:11px; color:#94a1b4; margin-top:2px;">{{ d.meta }}</div>
+                    </div>
+                    <span style="{{ d.statusStyle }}">{{ d.status }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ===== STEP 2 : CVE 추출 · 조회 ===== -->
+          <sc-if value="{{ step2 }}" hint-placeholder-val="{{ true }}">
+            <div>
+              <sc-if value="{{ hasUnresolved }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex; align-items:center; gap:12px; background:#fffaf2; border:1px solid #f5d9a8; border-left:3px solid #e8a33d; border-radius:10px; padding:13px 18px; margin-bottom:16px;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 3 2 20h20L12 3Z" stroke="#b45309" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 10v4m0 3h.01" stroke="#b45309" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  <div style="flex:1;">
+                    <span style="font-size:13.5px; font-weight:700; color:#92400e;">DB 미등록 CVE {{ unresolvedCount }}건 — CVE 데이터베이스 갱신이 필요합니다.</span>
+                    <span style="font-size:12.5px; color:#a16207; margin-left:6px;">로컬 CVE DB에 해당 코드가 없습니다. 최신 피드 파일을 반입하면 자동으로 조회됩니다.</span>
+                  </div>
+                  <button onClick="{{ goCvedb }}" style="background:#b45309; color:#fff; border:none; border-radius:7px; padding:8px 15px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap;">CVE 데이터베이스 →</button>
+                </div>
+              </sc-if>
+
+              <div style="display:grid; grid-template-columns:1.35fr 1fr; gap:18px; align-items:start;">
+
+                <!-- LEFT : original PDF -->
+                <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 18px; border-bottom:1px solid #eef1f5; background:#fafbfd;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span style="width:7px; height:7px; border-radius:50%; background:#8a98ab;"></span>
+                      <span style="font-size:13px; font-weight:700; color:#3a4a63;">원문 — 보안권고문 PDF</span>
+                    </div>
+                    <span style="font-size:11px; color:#0f766e; background:#e6f4f2; border-radius:5px; padding:3px 9px; font-weight:600;">CVE 코드 추출</span>
+                  </div>
+                  <!-- 실제 PDF 페이지 이미지 + 추출 CVE 강조 오버레이 -->
+                  <sc-if value="{{ pdfAvailable }}" hint-placeholder-val="{{ true }}">
+                    <div style="padding:14px 16px;">
+                      <div style="position:relative; width:100%; border:1px solid #eef1f5; border-radius:6px; overflow:hidden; background:#f4f6f9;">
+                        <img src="{{ pdfPageUrl }}" style="display:block; width:100%; height:auto;" alt="권고문 원문" />
+                        <sc-for list="{{ pdfBoxes }}" as="b" hint-placeholder-count="6">
+                          <div style="{{ b.style }}" title="{{ b.term }}"></div>
+                        </sc-for>
+                      </div>
+                      <sc-if value="{{ pdfMultiPage }}" hint-placeholder-val="">
+                        <div style="display:flex; align-items:center; justify-content:center; gap:12px; margin-top:9px;">
+                          <button onClick="{{ pdfPrev }}" style="background:#fff; border:1px solid #d3dbe8; border-radius:7px; padding:5px 12px; font-size:12px; cursor:pointer; font-family:inherit; color:#5a6b86;">‹ 이전</button>
+                          <span style="font-size:11.5px; color:#5a6b86; font-family:monospace;">{{ pdfPageLabel }}</span>
+                          <button onClick="{{ pdfNext }}" style="background:#fff; border:1px solid #d3dbe8; border-radius:7px; padding:5px 12px; font-size:12px; cursor:pointer; font-family:inherit; color:#5a6b86;">다음 ›</button>
+                        </div>
+                      </sc-if>
+                      <div style="margin-top:9px; display:flex; align-items:center; gap:7px; font-size:10.5px; color:#94a1b4;">
+                        <span style="width:12px; height:12px; border-radius:2px; background:rgba(232,163,61,.32); border:1.5px solid rgba(208,135,25,.95);"></span>
+                        본문에서 추출된 CVE 위치를 강조 표시했습니다
+                      </div>
+                    </div>
+                  </sc-if>
+                  <!-- 폴백: 렌더 불가(스캔본/렌더러 부재) 시 추출 텍스트 표시 -->
+                  <sc-if value="{{ pdfTextFallback }}" hint-placeholder-val="">
+                    <div style="padding:22px 24px; font-size:12.5px; line-height:1.95; color:#33415a;">
+                      <sc-for list="{{ docLines }}" as="ln" hint-placeholder-count="13">
+                        <div style="{{ ln.style }}">{{ ln.t }}</div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+
+                <!-- RIGHT : CVE DB lookup -->
+                <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 18px; border-bottom:1px solid #eef1f5; background:#f4faf9;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span style="width:7px; height:7px; border-radius:50%; background:#0f766e;"></span>
+                      <span style="font-size:13px; font-weight:700; color:#0f5d56;">CVE 데이터베이스 조회 결과</span>
+                    </div>
+                    <span style="font-size:11px; color:#0f766e; background:#e6f4f2; border-radius:5px; padding:3px 9px; font-weight:600;">{{ rowCount }}개 추출 · {{ foundCount }}개 조회</span>
+                  </div>
+
+                  <!-- extracted chips + 수동 보정(§A2) -->
+                  <div style="padding:11px 16px; border-bottom:1px solid #eef1f5;">
+                    <div style="display:flex; flex-wrap:wrap; gap:7px; align-items:center;">
+                      <span style="font-size:11px; color:#94a1b4; font-weight:600; margin-right:2px;">추출된 CVE</span>
+                      <sc-for list="{{ cveEdit }}" as="c" hint-placeholder-count="6">
+                        <span style="{{ c.chipStyle }}">{{ c.code }}<button onClick="{{ c.onDelete }}" style="background:none; border:none; cursor:pointer; padding:0; display:flex; color:inherit; opacity:.55;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button></span>
+                      </sc-for>
+                    </div>
+                    <div style="display:flex; gap:6px; align-items:center; margin-top:9px;">
+                      <input value="{{ cveAddText }}" onInput="{{ onCveAddInput }}" placeholder="CVE-YYYY-NNNN 수동 추가 (LLM/정규식 누락 보정)" style="flex:0 0 330px; max-width:62%; font-family:monospace; font-size:11.5px; padding:6px 9px; border:1px solid #d3dbe8; border-radius:6px; outline:none; color:#33415a;">
+                      <button onClick="{{ onAddCve }}" style="background:#fff; color:#0f5d56; border:1px solid #b8e0da; border-radius:6px; padding:6px 13px; font-size:11.5px; font-weight:700; cursor:pointer; font-family:inherit;">+ 추가</button>
+                    </div>
+                  </div>
+
+                  <div style="display:grid; grid-template-columns:124px 1fr 92px 64px 84px; gap:0; padding:9px 16px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:10.5px; font-weight:700; color:#94a1b4; letter-spacing:.2px;">
+                    <span>CVE</span><span>제품 / OS</span><span>영향 버전</span><span style="text-align:center;">심각도</span><span style="text-align:right;">상태</span>
+                  </div>
+
+                  <sc-for list="{{ rows }}" as="r" hint-placeholder-count="6">
+                    <div style="{{ r.rowStyle }}">
+                      <div style="display:grid; grid-template-columns:124px 1fr 92px 64px 84px; gap:0; align-items:center; padding:12px 16px;">
+                        <span style="font-size:11px; font-family:monospace; color:{{ r.cveColor }}; font-weight:600;">{{ r.id }}</span>
+                        <div>
+                          <div style="font-size:12.5px; font-weight:600; color:{{ r.productColor }};">{{ r.product }}</div>
+                          <div style="font-size:11px; color:#94a1b4; margin-top:1px;">{{ r.desc }}</div>
+                        </div>
+                        <span style="font-size:11.5px; color:#5a6b86;">{{ r.versionText }}</span>
+                        <span style="display:flex; justify-content:center;"><span style="{{ r.sevStyle }}">{{ r.severity }}</span></span>
+                        <span style="display:flex; justify-content:flex-end;"><span style="{{ r.statusStyle }}">{{ r.statusLabel }}</span></span>
+                      </div>
+                      <sc-if value="{{ r.showWarn }}" hint-placeholder-val="">
+                        <div style="padding:0 16px 13px; display:flex; align-items:center; gap:12px;">
+                          <div style="flex:1; font-size:11.5px; color:#a16207; background:#fff6e9; border:1px solid #f3dcb0; border-radius:7px; padding:8px 11px; line-height:1.5;">
+                            <span style="font-weight:700;">DB 미등록 · </span>이 CVE는 로컬 데이터베이스에 없습니다. 외부 피드를 갱신하면 제품·버전·심각도가 자동으로 채워집니다.
+                          </div>
+                          <button onClick="{{ goCvedb }}" style="background:#fff; color:#b45309; border:1px solid #e6c98a; border-radius:7px; padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; white-space:nowrap;">피드 갱신 →</button>
+                        </div>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+
+              <div style="margin-top:18px; background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:16px 22px; display:flex; align-items:center; justify-content:space-between;">
+                <div style="display:flex; gap:30px;">
+                  <div><div style="font-size:11px; color:#94a1b4;">추출 CVE</div><div style="font-size:17px; font-weight:800; color:#15294a;">{{ rowCount }}건</div></div>
+                  <div><div style="font-size:11px; color:#94a1b4;">DB 조회완료</div><div style="font-size:17px; font-weight:800; color:#0f766e;">{{ foundCount }}건</div></div>
+                  <div><div style="font-size:11px; color:#94a1b4;">DB 미등록</div><div style="font-size:17px; font-weight:800; color:{{ unresolvedColor }};">{{ unresolvedCount }}건</div></div>
+                </div>
+                <div style="display:flex; align-items:center; gap:14px;">
+                  <span style="font-size:12px; color:{{ proceedHintColor }};">{{ proceedHint }}</span>
+                  <button onClick="{{ goStep3 }}" disabled="{{ proceedDisabled }}" style="{{ proceedBtnStyle }}">자산 매칭 단계로 →</button>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ===== STEP 3 ===== -->
+          <sc-if value="{{ step3 }}" hint-placeholder-val="">
+            <div>
+              <div style="display:flex; align-items:center; gap:12px; background:#eef6f5; border:1px solid #c8e3df; border-radius:10px; padding:13px 18px; margin-bottom:16px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M20 6 9 17l-5-5" stroke="#0f766e" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div style="font-size:13px; color:#0f5d56;"><span style="font-weight:700;">자산대장 자동 매칭 완료 —</span> CVE DB에서 조회된 제품·버전과 일치하는 자산을 찾았습니다. 오탐으로 판단되는 항목은 제외하세요.</div>
+              </div>
+
+              <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden;">
+                <div style="display:grid; grid-template-columns:120px 1.1fr 1fr 130px 90px 86px; gap:0; padding:11px 18px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:11px; font-weight:700; color:#94a1b4;">
+                  <span>CVE</span><span>대상 자산</span><span>부서 / 담당자</span><span>제품 · 버전</span><span style="text-align:center;">심각도</span><span style="text-align:center;">처리</span>
+                </div>
+                <sc-for list="{{ matches }}" as="m" hint-placeholder-count="9">
+                  <div style="{{ m.rowStyle }}">
+                    <span style="font-size:11px; font-family:monospace; color:#5a6b86; font-weight:600;">{{ m.cve }}</span>
+                    <div>
+                      <div style="font-size:12.5px; font-weight:600; color:#2a3a52; display:flex; align-items:center;">{{ m.assetName }}<sc-if value="{{ m.suggested }}" hint-placeholder-val=""><span style="{{ m.suggestStyle }}">이전 오탐 · 제외 제안</span></sc-if></div>
+                      <div style="font-size:11px; color:#94a1b4; font-family:monospace;">{{ m.ip }}</div>
+                    </div>
+                    <div>
+                      <div style="font-size:12.5px; color:#3a4a63;">{{ m.dept }}</div>
+                      <div style="font-size:11px; color:#94a1b4;">{{ m.owner }}</div>
+                    </div>
+                    <span style="font-size:11.5px; color:#5a6b86;">{{ m.productVer }}</span>
+                    <span style="display:flex; justify-content:center;"><span style="{{ m.sevStyle }}">{{ m.severity }}</span></span>
+                    <span style="display:flex; justify-content:center;">
+                      <button onClick="{{ m.onToggle }}" style="{{ m.toggleStyle }}">{{ m.toggleLabel }}</button>
+                    </span>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="margin-top:18px; display:flex; align-items:center; justify-content:space-between;">
+                <div style="display:flex; gap:30px;">
+                  <div><div style="font-size:11px; color:#94a1b4;">매칭 자산</div><div style="font-size:17px; font-weight:800; color:#15294a;">{{ matchTotal }}대</div></div>
+                  <div><div style="font-size:11px; color:#94a1b4;">오탐 제외</div><div style="font-size:17px; font-weight:800; color:#8a98ab;">{{ excludedCount }}대</div></div>
+                  <div><div style="font-size:11px; color:#94a1b4;">대상 부서</div><div style="font-size:17px; font-weight:800; color:#0f766e;">{{ deptCount }}개</div></div>
+                </div>
+                <div style="display:flex; gap:10px;">
+                  <button onClick="{{ goStep2 }}" style="background:#fff; color:#5a6b86; border:1px solid #d3dbe8; border-radius:8px; padding:11px 18px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;">← 이전</button>
+                  <button onClick="{{ goStep4 }}" style="background:#0f766e; color:#fff; border:none; border-radius:8px; padding:11px 22px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;">발송 최종검토로 →</button>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ===== STEP 4 ===== -->
+          <sc-if value="{{ step4 }}" hint-placeholder-val="">
+            <div>
+              <div style="display:flex; align-items:center; gap:12px; background:#fdf3f2; border:1px solid #f3c9c4; border-left:3px solid #d9544a; border-radius:10px; padding:14px 18px; margin-bottom:18px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#b42318" stroke-width="1.6"/><path d="M12 8v5m0 3h.01" stroke="#b42318" stroke-width="1.8" stroke-linecap="round"/></svg>
+                <div style="font-size:13px; color:#8a2820;"><span style="font-weight:700;">발송 직전 최종 검토 —</span> 부서별 메시지 내용과 채널을 확인한 뒤 발송하세요. 발송 후에는 발송이력에 기록되며 회수할 수 없습니다.</div>
+              </div>
+
+              <div style="display:flex; flex-direction:column; gap:14px;">
+                <sc-for list="{{ deptGroups }}" as="g" hint-placeholder-count="4">
+                  <div style="{{ g.cardStyle }}">
+                    <div style="display:flex; align-items:flex-start; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #eef1f5;">
+                      <div>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                          <span style="font-size:14.5px; font-weight:700; color:#15294a;">{{ g.dept }}</span>
+                          <span style="font-size:11px; font-weight:600; color:#0f766e; background:#e6f4f2; padding:2px 9px; border-radius:5px;">대상 {{ g.assetCount }}대</span>
+                          <span style="font-size:11.5px; color:#94a1b4;">담당 {{ g.owners }}</span>
+                        </div>
+                        <div style="font-size:11.5px; color:#94a1b4; margin-top:5px;">취약점 {{ g.issueCount }}건 · {{ g.cveList }}</div>
+                      </div>
+                      <div style="display:flex; align-items:center; gap:9px;">
+                        <sc-for list="{{ g.channels }}" as="ch" hint-placeholder-count="3">
+                          <span style="{{ ch.style }}">{{ ch.label }}</span>
+                        </sc-for>
+                        <button onClick="{{ g.onSend }}" disabled="{{ g.sent }}" style="{{ g.sendStyle }}">{{ g.sendLabel }}</button>
+                      </div>
+                    </div>
+                    <div style="padding:16px 20px; background:#fafbfd;">
+                      <div style="font-size:11px; color:#94a1b4; margin-bottom:7px; font-weight:600;">메시지 미리보기 (사내 메신저 · 메일 공통)</div>
+                      <div style="background:#fff; border:1px solid #e3e8ef; border-radius:8px; padding:14px 16px; font-size:12.5px; line-height:1.7; color:#33415a; white-space:pre-wrap;">{{ g.message }}</div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="margin-top:20px; display:flex; align-items:center; justify-content:space-between; background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:16px 22px;">
+                <div style="font-size:13px; color:#5a6b86;">{{ sendSummary }}</div>
+                <div style="display:flex; gap:10px;">
+                  <button onClick="{{ goStep3 }}" style="background:#fff; color:#5a6b86; border:1px solid #d3dbe8; border-radius:8px; padding:11px 18px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;">← 이전</button>
+                  <button onClick="{{ sendAll }}" style="background:#0f2742; color:#fff; border:none; border-radius:8px; padding:11px 24px; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit;">전체 부서 일괄 발송</button>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+          </div>
+          </sc-if>
+
+        </div>
+      </sc-if>
+
+      <!-- ============ CVE 데이터베이스 ============ -->
+      <sc-if value="{{ navCvedb }}" hint-placeholder-val="">
+        <div>
+          <div style="display:flex; align-items:flex-start; gap:11px; background:#eef6f5; border:1px solid #c8e3df; border-radius:10px; padding:14px 18px; margin-bottom:18px;">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" style="flex-shrink:0; margin-top:1px;"><circle cx="12" cy="12" r="9" stroke="#0f766e" stroke-width="1.6"/><path d="M12 8v5m0 3h.01" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <div style="font-size:12.5px; color:#0f5d56; line-height:1.6;">공개 취약점 피드(<b>NVD · KISA KrCERT</b>)를 주기적으로 내려받아 로컬 DB에 반영합니다. 인터넷이 차단된 망에서는 외부에서 받은 <b>피드 파일(JSON·CSV)을 업로드</b>해 갱신하세요. CVE 코드 조회는 전적으로 이 로컬 DB를 사용합니다.</div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1.5fr 1fr; gap:18px; margin-bottom:18px; align-items:start;">
+            <!-- upload -->
+            <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:22px;">
+              <h3 style="margin:0 0 4px; font-size:14px; font-weight:700; color:#15294a;">CVE 피드 갱신</h3>
+              <p style="margin:0 0 16px; font-size:12.5px; color:#8a98ab;">최신 취약점 피드 파일을 반입하면 미등록 CVE가 자동으로 채워집니다.</p>
+              <div style="border:2px dashed #c4d0de; border-radius:12px; background:#f7f9fc; padding:30px 20px; text-align:center;">
+                <div style="width:48px; height:48px; margin:0 auto 12px; border-radius:13px; background:#e6f4f2; display:flex; align-items:center; justify-content:center;">
+                  <svg width="23" height="23" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5 5 5" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round"/></svg>
+                </div>
+                <div style="font-size:13px; font-weight:600; color:#3a4a63;">피드 파일을 끌어다 놓으세요</div>
+                <div style="font-size:11.5px; color:#94a1b4; margin-top:4px;">JSON · CSV · NVD / KISA KrCERT 형식</div>
+                <button onClick="{{ onStageFeed }}" style="margin-top:14px; background:#fff; color:#0f766e; border:1px solid #b8e0da; border-radius:8px; padding:8px 18px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">파일 선택</button>
+              </div>
+              <sc-if value="{{ feedStaged }}" hint-placeholder-val="">
+                <div style="margin-top:14px; display:flex; align-items:center; gap:11px; padding:11px 14px; border:1px solid #d4e3f2; background:#f4f8fd; border-radius:9px;">
+                  <div style="width:30px; height:36px; border-radius:5px; background:#eaf2fb; display:flex; align-items:center; justify-content:center; flex-shrink:0;"><span style="font-size:8px; font-weight:800; color:#2f5d8f;">JSON</span></div>
+                  <div style="flex:1; min-width:0;">
+                    <div style="font-size:12px; font-weight:600; color:#2a3a52;">{{ feedFileName }}</div>
+                    <div style="font-size:11px; color:#94a1b4;">{{ feedSummary }}</div>
+                  </div>
+                  <button onClick="{{ onApplyFeed }}" style="background:#0f766e; color:#fff; border:none; border-radius:7px; padding:8px 16px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap;">피드 적용 · DB 갱신</button>
+                </div>
+              </sc-if>
+            </div>
+
+            <!-- status -->
+            <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:22px;">
+              <h3 style="margin:0 0 16px; font-size:14px; font-weight:700; color:#15294a;">데이터베이스 상태</h3>
+              <div style="display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:baseline;">
+                  <span style="font-size:12.5px; color:#8a98ab;">등록 CVE</span>
+                  <span style="font-size:20px; font-weight:800; color:#15294a;">{{ cveCount }}<span style="font-size:12px; font-weight:600; color:#94a1b4;">건</span></span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:baseline;">
+                  <span style="font-size:12.5px; color:#8a98ab;">마지막 갱신</span>
+                  <span style="font-size:12.5px; font-weight:600; color:{{ updatedColor }};">{{ updatedAt }}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:baseline;">
+                  <span style="font-size:12.5px; color:#8a98ab;">다음 자동 동기화</span>
+                  <span style="font-size:12.5px; font-weight:600; color:#3a4a63;">매일 06:00 (NVD)</span>
+                </div>
+                <div style="border-top:1px solid #eef1f5; padding-top:13px;">
+                  <div style="font-size:11px; color:#94a1b4; margin-bottom:8px;">연동 피드 출처</div>
+                  <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                    <span style="font-size:11px; font-weight:600; color:#2f5d8f; background:#eef4fb; border:1px solid #d4e3f2; padding:3px 9px; border-radius:5px;">NVD</span>
+                    <span style="font-size:11px; font-weight:600; color:#0f766e; background:#e6f4f2; border:1px solid #b8e0da; padding:3px 9px; border-radius:5px;">KISA KrCERT</span>
+                    <span style="font-size:11px; font-weight:600; color:#7a5a9a; background:#f3eefa; border:1px solid #e0d2f0; padding:3px 9px; border-radius:5px;">KISA 보안공지</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- update log -->
+          <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden; margin-bottom:18px;">
+            <div style="padding:14px 20px; border-bottom:1px solid #eef1f5; font-size:13.5px; font-weight:700; color:#15294a;">갱신 이력</div>
+            <sc-for list="{{ updateLog }}" as="u" hint-placeholder-count="4">
+              <div style="display:flex; align-items:center; gap:14px; padding:12px 20px; border-bottom:1px solid #f2f5f9;">
+                <span style="{{ u.dotStyle }}"></span>
+                <span style="font-size:11.5px; color:#8a98ab; font-family:monospace; width:140px;">{{ u.time }}</span>
+                <span style="font-size:12.5px; color:#3a4a63; flex:1;">{{ u.source }}</span>
+                <span style="font-size:12px; font-weight:700; color:#0f766e;">{{ u.added }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <!-- cve table -->
+          <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden;">
+            <div style="padding:14px 20px; border-bottom:1px solid #eef1f5; display:flex; align-items:center; justify-content:space-between;">
+              <span style="font-size:13.5px; font-weight:700; color:#15294a;">등록된 CVE (현 권고문 관련)</span>
+              <span style="font-size:11.5px; color:#94a1b4;">최근 반영된 항목</span>
+            </div>
+            <div style="display:grid; grid-template-columns:140px 1fr 90px 130px 110px 70px; gap:0; padding:10px 20px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:11px; font-weight:700; color:#94a1b4;">
+              <span>CVE</span><span>제품 / OS</span><span style="text-align:center;">심각도</span><span>영향 버전</span><span>게시일</span><span style="text-align:right;">출처</span>
+            </div>
+            <sc-for list="{{ cveTableRows }}" as="c" hint-placeholder-count="4">
+              <div style="display:grid; grid-template-columns:140px 1fr 90px 130px 110px 70px; gap:0; align-items:center; padding:11px 20px; border-bottom:1px solid #f2f5f9; font-size:12.5px;">
+                <span style="font-family:monospace; color:#0f5d56; font-weight:600; display:flex; align-items:center; gap:6px;">{{ c.id }}<sc-if value="{{ c.isNew }}" hint-placeholder-val=""><span style="font-size:9px; font-weight:800; color:#fff; background:#0f766e; padding:1px 5px; border-radius:4px;">NEW</span></sc-if></span>
+                <span style="color:#2a3a52; font-weight:600;">{{ c.product }}</span>
+                <span style="display:flex; justify-content:center;"><span style="{{ c.sevStyle }}">{{ c.severity }}</span></span>
+                <span style="color:#5a6b86;">{{ c.versions }}</span>
+                <span style="color:#8a98ab; font-family:monospace; font-size:11.5px;">{{ c.published }}</span>
+                <span style="text-align:right; font-size:11px; color:#5a6b86;">{{ c.source }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ============ 자산대장 ============ -->
+      <sc-if value="{{ navAssets }}" hint-placeholder-val="">
+        <div>
+
+          <!-- ----- 목록 모드 ----- -->
+          <sc-if value="{{ assetListView }}" hint-placeholder-val="{{ true }}">
+            <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden;">
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #eef1f5;">
+                <div>
+                  <h2 style="margin:0; font-size:15px; font-weight:700; color:#15294a;">자산관리대장</h2>
+                  <p style="margin:4px 0 0; font-size:12.5px; color:#8a98ab;">전 부서 자산 {{ assetTotal }}건 · OS / 제품 · 버전 기준으로 CVE 매칭에 사용됩니다.{{ importedNote }}</p>
+                </div>
+                <div style="display:flex; gap:9px;">
+                  <button onClick="{{ openImport }}" style="background:#0f766e; color:#fff; border:none; border-radius:8px; padding:9px 16px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:6px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    엑셀 가져오기 (.xlsx · .xlsm)
+                  </button>
+                </div>
+              </div>
+              <div style="display:grid; grid-template-columns:96px 1fr 150px 130px 100px 120px 96px; gap:0; padding:10px 20px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:11px; font-weight:700; color:#94a1b4;">
+                <span>자산번호</span><span>부서</span><span>제품 / OS</span><span>버전</span><span>IP</span><span>담당자</span><span style="text-align:center;">상태</span>
+              </div>
+              <sc-for list="{{ assetRows }}" as="a" hint-placeholder-count="12">
+                <div style="display:grid; grid-template-columns:96px 1fr 150px 130px 100px 120px 96px; gap:0; align-items:center; padding:11px 20px; border-bottom:1px solid #f2f5f9; font-size:12.5px;">
+                  <span style="font-family:monospace; color:#5a6b86; font-weight:600;">{{ a.id }}</span>
+                  <span style="color:#2a3a52; font-weight:600;">{{ a.dept }}</span>
+                  <span style="color:#3a4a63;">{{ a.product }}</span>
+                  <span style="color:#5a6b86;">{{ a.ver }}</span>
+                  <span style="font-family:monospace; color:#8a98ab; font-size:11.5px;">{{ a.ip }}</span>
+                  <span style="color:#3a4a63; min-width:0;">
+                    <span style="display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ a.owner }}</span>
+                    <span style="display:block; font-size:10px; color:#94a1b4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ a.ownerSub }}</span>
+                  </span>
+                  <span style="display:flex; justify-content:center;"><span style="{{ a.statusStyle }}">{{ a.statusLabel }}</span></span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <!-- ----- 가져오기 / 컬럼 매핑 모드 ----- -->
+          <sc-if value="{{ assetImportView }}" hint-placeholder-val="">
+            <div>
+              <!-- header -->
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                  <button onClick="{{ closeImport }}" style="width:34px; height:34px; border-radius:8px; background:#fff; border:1px solid #d3dbe8; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="#5a6b86" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                  <div>
+                    <h2 style="margin:0; font-size:16px; font-weight:700; color:#15294a;">자산대장 가져오기 · 컬럼 매핑</h2>
+                    <p style="margin:3px 0 0; font-size:12.5px; color:#8a98ab;">미리보기에서 <b style="color:#0f766e;">컬럼을 끌어다</b> 아래 시스템 필드에 연결하세요. 엑셀 컬럼명이 달라도 직접 지정할 수 있습니다.</p>
+                  </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:12px;">
+                  <div style="display:flex; align-items:center; gap:10px; background:#fff; border:1px solid #e1e7ef; border-radius:8px; padding:7px 12px;">
+                    <div style="width:26px; height:30px; border-radius:4px; background:#e8f5ec; display:flex; align-items:center; justify-content:center;"><span style="font-size:8px; font-weight:800; color:#1d7a44;">XLS</span></div>
+                    <div style="line-height:1.3;">
+                      <div style="font-size:12px; font-weight:600; color:#2a3a52; max-width:190px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ importFileName }}</div>
+                      <div style="font-size:10.5px; color:#94a1b4;">{{ importSheet }} · 전체 {{ importTotalRows }}행</div>
+                    </div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:7px;">
+                    <span style="font-size:11px; color:#94a1b4; font-weight:600;">헤더행</span>
+                    <select value="{{ headerRowValue }}" onChange="{{ onHeaderRowPick }}" style="font-size:11.5px; padding:5px 8px; border:1px solid #d3dbe8; border-radius:6px; background:#fff; max-width:210px; font-family:inherit; cursor:pointer;">
+                      <sc-for list="{{ headerRowOptions }}" as="o" hint-placeholder-count="3">
+                        <option value="{{ o.value }}">{{ o.label }}</option>
+                      </sc-for>
+                    </select>
+                    <select value="{{ headerRowsValue }}" onChange="{{ onHeaderRowsPick }}" style="font-size:11.5px; padding:5px 8px; border:1px solid #d3dbe8; border-radius:6px; background:#fff; font-family:inherit; cursor:pointer;">
+                      <option value="1">1줄</option>
+                      <option value="2">2줄(다단)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- spreadsheet preview -->
+              <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:16px 18px; margin-bottom:16px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:11px;">
+                  <span style="font-size:12.5px; font-weight:700; color:#3a4a63;">① 스프레드시트 미리보기 <span style="font-weight:500; color:#94a1b4;">— 컬럼 헤더를 잡고 아래로 드래그</span></span>
+                  <button onClick="{{ autoMap }}" style="background:#eef4fb; color:#2f5d8f; border:1px solid #d4e3f2; border-radius:7px; padding:6px 13px; font-size:11.5px; font-weight:600; cursor:pointer; font-family:inherit;">컬럼명 기반 추천 매핑 적용</button>
+                </div>
+                <div style="display:flex; overflow-x:auto; padding-bottom:4px;">
+                  <!-- row-number strip -->
+                  <div style="flex-shrink:0;">
+                    <div style="height:30px; width:34px; background:#f0f3f7; border:1px solid #e1e7ef; border-right:none; border-radius:6px 0 0 0;"></div>
+                    <sc-for list="{{ previewRowNums }}" as="n" hint-placeholder-count="4">
+                      <div style="height:34px; width:34px; background:#f7f9fc; border:1px solid #e1e7ef; border-top:none; border-right:none; display:flex; align-items:center; justify-content:center; font-size:10.5px; color:#94a1b4; font-family:monospace;">{{ n }}</div>
+                    </sc-for>
+                  </div>
+                  <!-- column strips -->
+                  <sc-for list="{{ sheetCols }}" as="col" hint-placeholder-count="8">
+                    <div draggable="{{ true }}" onDragStart="{{ col.onDragStart }}" onDragEnd="{{ col.onDragEnd }}" style="{{ col.stripStyle }}">
+                      <div style="{{ col.headStyle }}">
+                        <div style="display:flex; align-items:center; gap:5px;">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><circle cx="8" cy="6" r="1.4" fill="#9aa7ba"/><circle cx="8" cy="12" r="1.4" fill="#9aa7ba"/><circle cx="8" cy="18" r="1.4" fill="#9aa7ba"/><circle cx="15" cy="6" r="1.4" fill="#9aa7ba"/><circle cx="15" cy="12" r="1.4" fill="#9aa7ba"/><circle cx="15" cy="18" r="1.4" fill="#9aa7ba"/></svg>
+                          <span style="font-size:10px; color:#94a1b4; font-family:monospace; font-weight:700;">{{ col.letter }}</span>
+                        </div>
+                        <span style="font-size:12px; font-weight:700; color:#2a3a52; white-space:nowrap;">{{ col.header }}</span>
+                        <sc-if value="{{ col.mappedLabel }}" hint-placeholder-val="">
+                          <span style="font-size:9.5px; font-weight:700; color:#0f766e; background:#e6f4f2; border:1px solid #b8e0da; border-radius:4px; padding:1px 5px; white-space:nowrap;">→ {{ col.mappedLabel }}</span>
+                        </sc-if>
+                      </div>
+                      <sc-for list="{{ col.samples }}" as="v" hint-placeholder-count="4">
+                        <div style="{{ col.cellStyle }}">{{ v }}</div>
+                      </sc-for>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+
+              <!-- mapping targets -->
+              <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:18px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:13px;">
+                  <span style="font-size:12.5px; font-weight:700; color:#3a4a63;">② 시스템 매칭 필드 <span style="font-weight:500; color:#94a1b4;">— 여기에 컬럼을 놓으세요</span></span>
+                  <span style="font-size:11.5px; font-weight:600; color:{{ reqColor }};">필수 항목 {{ reqMapped }} / {{ reqTotal }} 매핑</span>
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:12px;">
+                  <sc-for list="{{ mapFields }}" as="f" hint-placeholder-count="6">
+                    <div onDragOver="{{ f.onDragOver }}" onDrop="{{ f.onDrop }}" style="{{ f.zoneStyle }}">
+                      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                        <span style="font-size:12.5px; font-weight:700; color:#2a3a52;">{{ f.label }}</span>
+                        <span style="{{ f.reqBadgeStyle }}">{{ f.reqBadge }}</span>
+                      </div>
+                      <sc-if value="{{ f.mapped }}" hint-placeholder-val="">
+                        <div style="display:flex; align-items:center; justify-content:space-between; background:#e6f4f2; border:1px solid #b8e0da; border-radius:7px; padding:7px 10px;">
+                          <span style="display:flex; align-items:center; gap:6px; min-width:0;">
+                            <span style="font-size:9.5px; font-family:monospace; font-weight:700; color:#0f766e; background:#fff; border-radius:3px; padding:1px 5px;">{{ f.mappedLetter }}</span>
+                            <span style="font-size:12px; font-weight:600; color:#0f5d56; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ f.mappedHeader }}</span>
+                          </span>
+                          <button onClick="{{ f.onClear }}" style="background:none; border:none; cursor:pointer; padding:2px; display:flex; flex-shrink:0;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round"/></svg>
+                          </button>
+                        </div>
+                        <div style="font-size:10.5px; color:#94a1b4; margin-top:6px;">예: {{ f.previewVal }}</div>
+                        <!-- 한 셀에 여러 값 → 분리 방식 -->
+                        <div style="margin-top:8px; padding-top:8px; border-top:1px dashed #e1e7ef;">
+                          <div style="display:flex; gap:5px; flex-wrap:wrap; align-items:center;">
+                            <span style="font-size:10px; color:#94a1b4; margin-right:2px;">분리</span>
+                            <button onClick="{{ f.modeWhole.onClick }}" style="{{ f.modeWhole.style }}">{{ f.modeWhole.label }}</button>
+                            <button onClick="{{ f.modeDelim.onClick }}" style="{{ f.modeDelim.style }}">{{ f.modeDelim.label }}</button>
+                            <sc-if value="{{ f.canPv }}" hint-placeholder-val="">
+                              <button onClick="{{ f.modePv.onClick }}" style="{{ f.modePv.style }}">{{ f.modePv.label }}</button>
+                            </sc-if>
+                          </div>
+                          <sc-if value="{{ f.isDelim }}" hint-placeholder-val="">
+                            <div style="margin-top:7px;">
+                              <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+                                <span style="font-size:10.5px; color:#8a98ab; font-weight:600;">구분자</span>
+                                <input value="{{ f.sepValue }}" onInput="{{ f.onSepInput }}" style="width:46px; text-align:center; font-family:monospace; font-size:12px; padding:3px 6px; border:1px solid #d3dbe8; border-radius:5px; outline:none; color:#33415a;" />
+                                <span style="font-size:10.5px; color:#94a1b4;">로 나눈 조각 선택</span>
+                              </div>
+                              <div style="display:flex; flex-wrap:wrap; gap:5px;">
+                                <sc-for list="{{ f.splitParts }}" as="p" hint-placeholder-count="3">
+                                  <button onClick="{{ p.onClick }}" style="{{ p.style }}">{{ p.label }}</button>
+                                </sc-for>
+                              </div>
+                            </div>
+                          </sc-if>
+                          <sc-if value="{{ f.isPv }}" hint-placeholder-val="">
+                            <div style="margin-top:7px; font-size:10.5px; color:#0f5d56; background:#e6f4f2; border:1px solid #b8e0da; border-radius:6px; padding:6px 9px; line-height:1.5;">
+                              "Windows 11 22H2" 같은 셀에서 <b>{{ f.pvWhich }}</b>만 자동 추출합니다. 같은 OS 컬럼을 제품·버전 두 필드에 각각 매핑하세요.
+                            </div>
+                          </sc-if>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ f.empty }}" hint-placeholder-val="{{ true }}">
+                        <div style="{{ f.emptyStyle }}">{{ f.emptyText }}</div>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-top:18px; padding-top:16px; border-top:1px solid #eef1f5;">
+                  <span style="font-size:12px; color:{{ importHintColor }};">{{ importHint }}</span>
+                  <div style="display:flex; gap:10px;">
+                    <button onClick="{{ closeImport }}" style="background:#fff; color:#5a6b86; border:1px solid #d3dbe8; border-radius:8px; padding:11px 18px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;">취소</button>
+                    <button onClick="{{ doImport }}" disabled="{{ importDisabled }}" style="{{ importBtnStyle }}">{{ importTotalRows }}행 가져오기</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+        </div>
+      </sc-if>
+
+      <!-- ============ 발송 이력 ============ -->
+      <sc-if value="{{ navHistory }}" hint-placeholder-val="">
+        <div>
+          <!-- 조치 현황 헤더: 조치율 · SLA · 보고서 · 리마인드 (§★★★★★) -->
+          <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:16px 20px; margin-bottom:16px; display:flex; align-items:center; gap:22px;">
+            <div style="display:flex; align-items:baseline; gap:8px; flex-shrink:0;">
+              <span style="font-size:26px; font-weight:800; color:#0f766e;">{{ remRate }}</span>
+              <span style="font-size:12px; color:#94a1b4;">조치 완료율</span>
+            </div>
+            <div style="flex:1; min-width:0;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <select value="{{ advPickValue }}" onChange="{{ onPickAdvisory }}" style="font-size:13px; font-weight:700; color:#15294a; border:1px solid #d3dbe8; border-radius:7px; padding:5px 9px; background:#fff; max-width:380px; font-family:inherit; cursor:pointer;">
+                  <sc-for list="{{ advOptions }}" as="o" hint-placeholder-count="2">
+                    <option value="{{ o.value }}">{{ o.label }}</option>
+                  </sc-for>
+                </select>
+                <span style="{{ slaStyle }}">{{ slaText }}</span>
+              </div>
+              <div style="font-size:11.5px; color:#8a98ab; margin-top:3px;">{{ remText }}</div>
+            </div>
+            <div style="display:flex; gap:8px; flex-shrink:0;">
+              <button onClick="{{ onRemind }}" style="background:#fff; color:#b45309; border:1px solid #e6c98a; border-radius:8px; padding:9px 13px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">미회신 리마인드</button>
+              <button onClick="{{ onReportXlsx }}" style="background:#fff; color:#0f5d56; border:1px solid #b8e0da; border-radius:8px; padding:9px 13px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">Excel 보고서</button>
+              <button onClick="{{ onReportHtml }}" style="background:#0f766e; color:#fff; border:none; border-radius:8px; padding:9px 15px; font-size:12.5px; font-weight:700; cursor:pointer; font-family:inherit;">조치결과 보고서(PDF)</button>
+            </div>
+          </div>
+
+          <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden;">
+            <div style="padding:16px 20px; border-bottom:1px solid #eef1f5;">
+              <h2 style="margin:0; font-size:15px; font-weight:700; color:#15294a;">발송 이력 · 조치 회신</h2>
+              <p style="margin:4px 0 0; font-size:12.5px; color:#8a98ab;">버튼으로 부서 회신 상태(완료/진행/불가)를 갱신하세요</p>
+            </div>
+            <div style="display:grid; grid-template-columns:96px 1fr 76px 44px 72px 144px 90px 64px; gap:0; padding:10px 20px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:11px; font-weight:700; color:#94a1b4;">
+              <span>발송일시</span><span>대상 부서</span><span>채널</span><span style="text-align:center;">자산</span><span style="text-align:center;">상태</span><span style="text-align:center;">조치 회신</span><span style="text-align:center;">증빙</span><span style="text-align:right;">원문</span>
+            </div>
+            <sc-for list="{{ historyRows }}" as="h" hint-placeholder-count="6">
+              <div style="display:grid; grid-template-columns:96px 1fr 76px 44px 72px 144px 90px 64px; gap:0; align-items:center; padding:11px 20px; border-bottom:1px solid #f2f5f9; font-size:12.5px;">
+                <span style="color:#8a98ab; font-family:monospace; font-size:11px;">{{ h.sentAt }}</span>
+                <span style="color:#2a3a52; font-weight:600;">{{ h.dept }}</span>
+                <span style="color:#5a6b86; font-size:11px;">{{ h.channel }}</span>
+                <span style="text-align:center; color:#3a4a63;">{{ h.assets }}</span>
+                <span style="display:flex; justify-content:center;"><span style="{{ h.statusStyle }}">{{ h.status }}</span></span>
+                <span style="display:flex; justify-content:center; gap:4px;">
+                  <button onClick="{{ h.ackDone.onClick }}" style="{{ h.ackDone.style }}">{{ h.ackDone.label }}</button>
+                  <button onClick="{{ h.ackProg.onClick }}" style="{{ h.ackProg.style }}">{{ h.ackProg.label }}</button>
+                  <button onClick="{{ h.ackUnable.onClick }}" style="{{ h.ackUnable.style }}">{{ h.ackUnable.label }}</button>
+                </span>
+                <span style="display:flex; justify-content:center;">
+                  <button onClick="{{ h.onEvidence }}" style="{{ h.evidenceStyle }}" title="조치 증빙 파일 업로드">{{ h.evidenceLabel }}</button>
+                </span>
+                <span style="display:flex; justify-content:flex-end;">
+                  <button onClick="{{ h.onOpenPdf }}" style="display:flex; align-items:center; gap:4px; background:#fff; color:#b42318; border:1px solid #f3c9c4; border-radius:7px; padding:5px 8px; font-size:11px; font-weight:600; cursor:pointer; font-family:inherit;">
+                    <svg width="11" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 2h8l4 4v16H6z" stroke="#b42318" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 2v4h4" stroke="#b42318" stroke-width="1.7"/></svg>
+                    PDF
+                  </button>
+                </span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ============ 대시보드 ============ -->
+      <sc-if value="{{ navDashboard }}" hint-placeholder-val="">
+        <div>
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:18px;">
+            <sc-for list="{{ stats }}" as="s" hint-placeholder-count="4">
+              <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:18px 20px;">
+                <div style="font-size:12px; color:#8a98ab; font-weight:600;">{{ s.label }}</div>
+                <div style="display:flex; align-items:baseline; gap:6px; margin-top:8px;">
+                  <span style="font-size:28px; font-weight:800; color:{{ s.color }}; letter-spacing:-.5px;">{{ s.value }}</span>
+                  <span style="font-size:13px; color:#94a1b4;">{{ s.unit }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:grid; grid-template-columns:1.3fr 1fr; gap:18px;">
+            <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:20px;">
+              <h3 style="margin:0 0 14px; font-size:14px; font-weight:700; color:#15294a;">진행 중인 권고문</h3>
+              <sc-for list="{{ recentDocs }}" as="d" hint-placeholder-count="3">
+                <div style="display:flex; align-items:center; gap:14px; padding:13px 0; border-bottom:1px solid #f2f5f9;">
+                  <div style="flex:1;">
+                    <div style="font-size:13px; font-weight:600; color:#2a3a52;">{{ d.title }}</div>
+                    <div style="font-size:11.5px; color:#94a1b4; margin-top:2px;">{{ d.meta }}</div>
+                  </div>
+                  <span style="{{ d.statusStyle }}">{{ d.status }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:20px;">
+              <h3 style="margin:0 0 14px; font-size:14px; font-weight:700; color:#15294a;">부서별 조치 진척</h3>
+              <sc-for list="{{ deptProgress }}" as="p" hint-placeholder-count="5">
+                <div style="margin-bottom:14px;">
+                  <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                    <span style="font-size:12.5px; color:#3a4a63; font-weight:600;">{{ p.dept }}</span>
+                    <span style="font-size:12px; color:#94a1b4;">{{ p.pct }}%</span>
+                  </div>
+                  <div style="height:7px; background:#eef1f5; border-radius:4px; overflow:hidden;">
+                    <div style="width:{{ p.pct }}%; height:100%; background:{{ p.color }}; border-radius:4px;"></div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ============ 활동 기록 ============ -->
+      <sc-if value="{{ navAudit }}" hint-placeholder-val="">
+        <div>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+            <sc-for list="{{ auditFilters }}" as="ft" hint-placeholder-count="6">
+              <button onClick="{{ ft.onClick }}" style="{{ ft.style }}">{{ ft.label }}</button>
+            </sc-for>
+          </div>
+          <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden;">
+            <div style="padding:16px 20px; border-bottom:1px solid #eef1f5;">
+              <h2 style="margin:0; font-size:15px; font-weight:700; color:#15294a;">활동 기록</h2>
+              <p style="margin:4px 0 0; font-size:12.5px; color:#8a98ab;">업로드·CVE추출·피드적용·자산매칭·발송·회신·가져오기 전체 이력. 권고문 항목은 원문 PDF를 바로 열 수 있습니다.</p>
+            </div>
+            <div style="display:grid; grid-template-columns:140px 116px 1fr 90px 74px; gap:0; padding:10px 20px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:11px; font-weight:700; color:#94a1b4;">
+              <span>일시</span><span>작업</span><span>대상 / 상세</span><span>수행자</span><span style="text-align:right;">원문</span>
+            </div>
+            <sc-for list="{{ auditRows }}" as="r" hint-placeholder-count="10">
+              <div style="display:grid; grid-template-columns:140px 116px 1fr 90px 74px; gap:0; align-items:center; padding:11px 20px; border-bottom:1px solid #f2f5f9; font-size:12.5px;">
+                <span style="color:#8a98ab; font-family:monospace; font-size:11px;">{{ r.time }}</span>
+                <span><span style="{{ r.badgeStyle }}">{{ r.actionKo }}</span></span>
+                <div style="min-width:0;">
+                  <div style="color:#2a3a52; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ r.target }}</div>
+                  <div style="font-size:10.5px; color:#94a1b4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ r.detail }}</div>
+                </div>
+                <span style="color:#5a6b86; font-size:11.5px;">{{ r.actor }}</span>
+                <span style="display:flex; justify-content:flex-end;">
+                  <sc-if value="{{ r.hasPdf }}" hint-placeholder-val="">
+                    <button onClick="{{ r.onOpenPdf }}" style="display:flex; align-items:center; gap:4px; background:#fff; color:#b42318; border:1px solid #f3c9c4; border-radius:7px; padding:5px 8px; font-size:11px; font-weight:600; cursor:pointer; font-family:inherit;">
+                      <svg width="11" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 2h8l4 4v16H6z" stroke="#b42318" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 2v4h4" stroke="#b42318" stroke-width="1.7"/></svg>
+                      PDF
+                    </button>
+                  </sc-if>
+                </span>
+              </div>
+            </sc-for>
+            <sc-if value="{{ auditEmpty }}" hint-placeholder-val="">
+              <div style="padding:40px 20px; text-align:center; font-size:13px; color:#94a1b4;">기록이 없습니다.</div>
+            </sc-if>
+          </div>
+        </div>
+      </sc-if>
+
+    </div>
+  </main>
+
+  <!-- ===== PDF VIEWER MODAL ===== -->
+  <sc-if value="{{ pdfModalOpen }}" hint-placeholder-val="">
+    <div onClick="{{ closePdf }}" style="position:fixed; inset:0; background:rgba(15,29,46,.55); display:flex; align-items:center; justify-content:center; z-index:80; padding:40px;">
+      <div onClick="{{ stopProp }}" style="width:1080px; max-width:100%; max-height:94vh; background:#fff; border-radius:14px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 24px 70px rgba(0,0,0,.35);">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:15px 20px; border-bottom:1px solid #eef1f5; background:#fafbfd;">
+          <div style="display:flex; align-items:center; gap:11px; min-width:0;">
+            <div style="width:30px; height:36px; border-radius:5px; background:#fdecec; display:flex; align-items:center; justify-content:center; flex-shrink:0;"><span style="font-size:8px; font-weight:800; color:#b42318;">PDF</span></div>
+            <div style="min-width:0;">
+              <div style="font-size:13.5px; font-weight:700; color:#15294a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ pdfTitle }}</div>
+              <div style="font-size:11px; color:#94a1b4; font-family:monospace;">{{ pdfDocNo }}</div>
+            </div>
+          </div>
+          <button onClick="{{ closePdf }}" style="width:30px; height:30px; border-radius:7px; background:#fff; border:1px solid #e1e7ef; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="#5a6b86" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div style="flex:1; min-height:0; background:#525659;">
+          <iframe src="{{ pdfModalSrc }}" style="width:100%; height:80vh; border:none; display:block;" title="원문 PDF"></iframe>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:13px 20px; border-top:1px solid #eef1f5;">
+          <div style="display:flex; gap:8px;">
+            <button onClick="{{ pdfDownload }}" style="display:flex; align-items:center; gap:6px; background:#fff; color:#0f5d56; border:1px solid #b8e0da; border-radius:8px; padding:9px 15px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" stroke="#0f5d56" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              다운로드
+            </button>
+            <button onClick="{{ pdfOpenNew }}" style="background:#fff; color:#5a6b86; border:1px solid #d3dbe8; border-radius:8px; padding:9px 15px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">새 탭에서 열기</button>
+          </div>
+          <button onClick="{{ closePdf }}" style="background:#0f766e; color:#fff; border:none; border-radius:8px; padding:9px 20px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">닫기</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ===== TOAST ===== -->
+  <sc-if value="{{ toastOpen }}" hint-placeholder-val="">
+    <div style="position:fixed; right:24px; bottom:24px; z-index:90; width:360px; background:#fff; border:1px solid #e1e7ef; border-left:4px solid {{ toastAccent }}; border-radius:11px; box-shadow:0 14px 40px rgba(15,29,46,.22); padding:15px 17px;">
+      <div style="display:flex; align-items:flex-start; gap:11px;">
+        <span style="flex-shrink:0; margin-top:1px;">{{ toastIcon }}</span>
+        <div style="flex:1;">
+          <div style="font-size:13px; font-weight:700; color:#15294a;">{{ toastTitle }}</div>
+          <div style="font-size:12px; color:#5a6b86; margin-top:3px; line-height:1.5;">{{ toastText }}</div>
+          <sc-if value="{{ toastIsConfirm }}" hint-placeholder-val="">
+            <div style="display:flex; gap:8px; margin-top:12px;">
+              <button onClick="{{ toastYes }}" style="background:#b45309; color:#fff; border:none; border-radius:7px; padding:7px 16px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit;">예, 다시 읽기</button>
+              <button onClick="{{ toastNo }}" style="background:#fff; color:#5a6b86; border:1px solid #d3dbe8; border-radius:7px; padding:7px 16px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit;">아니오</button>
+            </div>
+          </sc-if>
+        </div>
+        <sc-if value="{{ toastClosable }}" hint-placeholder-val="">
+          <button onClick="{{ toastNo }}" style="background:none; border:none; cursor:pointer; padding:2px; flex-shrink:0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="#aab4c2" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    nav: 'process',
+    procView: 'board',     // 권고문 처리: 'board'(통합 목록) | 'detail'(권고문별 처리)
+    detailId: null,        // 상세 처리 중인 권고문 id
+    step: 2,
+    dbUpdated: false,
+    feedStaged: false,
+    updatedAt: '2026-06-12 06:00 (정기)',
+    excluded: {},
+    sent: {},
+    assetView: 'list',
+    colMap: {},
+    colSplit: {},          // 분할 매핑 {fieldId: {sep, part}} — 한 셀 여러 값 분리
+    dragCol: null,
+    assetImported: false,
+    toast: null,
+    pdfModal: null,
+    pdfView: null,         // STEP2 원문 뷰어 {available, scale, pages, boxes}
+    pdfPage: 0,
+    apiAudit: [],          // 활동 기록
+    auditFilter: '',       // 활동 기록 액션 필터
+    // ── 백엔드 연동 슬롯(로드 전 빈 값) ──
+    loaded: false,
+    apiAdvisory: null,   // 활성 권고문 brief
+    apiCveItems: [],     // advisory_cve 목록
+    apiCveList: [],      // 등록 CVE 전체(cveDb 구성)
+    apiAssets: [],
+    apiRecent: [],
+    apiHistory: [],
+    apiDash: null,
+    apiFeedLog: [],
+    cveStats: null,
+    cveAddText: '',
+    advPick: null,        // 조치율/보고서 대상 권고문 선택(§B)
+  };
+
+  // ════════ 백엔드 API 연동 ════════
+  api(method, path, body, isForm) {
+    const opt = { method, headers: {} };
+    if (body && isForm) opt.body = body;
+    else if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+    return fetch('/api/v1' + path, opt).then(r => r.ok ? r.json().catch(() => ({})) : Promise.reject(r));
+  }
+
+  componentDidMount() {
+    this._prev = { dbUpdated: false, sent: {}, excluded: {}, step: this.state.step };
+    this._busy = {};
+    this.load();
+    this._startPolling();
+  }
+
+  componentWillUnmount() {
+    if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null; }
+  }
+
+  // ── 권고문 처리 게시판: 비동기 추출 진행상황을 폴링 ──
+  _startPolling() {
+    if (this._pollTimer) return;
+    this._pollTimer = setInterval(() => {
+      const S = this.state;
+      if (S.nav !== 'process') return;
+      const recent = S.apiRecent || [];
+      const anyProcessing = recent.some(a => a.status === 'EXTRACTING' || ['queued', 'regex', 'llm'].indexOf(a.extract_phase) >= 0);
+      // 보드 화면이거나 처리 중인 건이 있을 때만 갱신(상세 편집 방해 최소화)
+      if (S.procView !== 'detail' || anyProcessing) this._refreshBoard();
+      // 상세에서 해당 권고문이 처리 중이면 CVE 도 갱신(편집 중이면 건너뜀 → 사용자 입력 보존)
+      if (S.procView === 'detail' && S.detailId && !this._busy.cveEdit) {
+        const did = S.detailId;
+        const d = recent.find(a => a.id === did);
+        if (d && (d.status === 'EXTRACTING' || ['queued', 'regex', 'llm'].indexOf(d.extract_phase) >= 0)) {
+          this.api('GET', '/advisories/' + did + '/cves')
+            .then(c => { if (this.state.procView === 'detail' && this.state.detailId === did && !this._busy.cveEdit) this.setState({ apiCveItems: c.items || [] }); })
+            .catch(() => {});
+        }
+      }
+    }, 2500);
+  }
+
+  _refreshBoard() {
+    this.api('GET', '/advisories?size=100')
+      .then(d => this.setState({ apiRecent: d.items || [] })).catch(() => {});
+  }
+
+  // 게시판 카드 → 권고문별 상세 처리 진입(다른 권고문과 독립).
+  _openDetail(id) {
+    if (!id) return;
+    this._advisoryId = id;
+    // 권고문 전환 시 오탐제외/발송/게시 상태 초기화(이전 권고문 상태 누수 방지).
+    this._prev = { dbUpdated: this.state.dbUpdated, sent: {}, excluded: {}, step: 2 };
+    this.setState({ procView: 'detail', detailId: id, step: 2, excluded: {}, sent: {}, boardPosted: false });
+    Promise.all([
+      this.api('GET', '/advisories/' + id + '/cves'),
+      this.api('GET', '/advisories/' + id),
+      this.api('GET', '/advisories/' + id + '/pdf-view').catch(() => null),
+    ]).then(([cves, adv, pvw]) => {
+      this.setState({ apiCveItems: cves.items || [], apiAdvisory: adv, pdfView: pvw, pdfPage: 0 });
+      return this._loadMatches();
+    }).catch(e => console.error('[openDetail]', e));
+  }
+
+  _backToBoard() { this.setState({ procView: 'board', excluded: {}, sent: {} }); this._refreshBoard(); }
+
+  async load() {
+    try {
+      const advs = await this.api('GET', '/advisories');
+      const active = (advs.items || []).find(a => a.status !== 'COMPLETED' && a.status !== 'ARCHIVED')
+                   || (advs.items || [])[0];
+      this._advisoryId = active ? active.id : null;
+      const [cves, cveList, assets, history, dash, feeds, stats, rem, audit, pdfView] = await Promise.all([
+        this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/cves') : Promise.resolve({ items: [] }),
+        this.api('GET', '/cves?size=500'),
+        this.api('GET', '/assets?size=500'),
+        this.api('GET', '/notifications'),
+        this.api('GET', '/dashboard'),
+        this.api('GET', '/cve-feeds'),
+        this.api('GET', '/cves/stats'),
+        this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/remediation') : Promise.resolve(null),
+        this.api('GET', '/audit?size=100').catch(() => ({ items: [] })),
+        this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/pdf-view').catch(() => null) : Promise.resolve(null),
+      ]);
+      await this._loadMatches();
+      this.setState({
+        loaded: true,
+        apiAdvisory: active || null,
+        apiCveItems: cves.items || [],
+        apiCveList: cveList.items || [],
+        apiAssets: assets.items || [],
+        apiRecent: advs.items || [],
+        apiHistory: history.items || [],
+        apiDash: dash || null,
+        apiFeedLog: feeds.items || [],
+        cveStats: stats || null,
+        apiRem: rem,
+        apiAudit: audit.items || [],
+        pdfView: pdfView, pdfPage: 0,
+      });
+    } catch (e) { console.error('[load]', e); this.setState({ loaded: true }); }
+  }
+
+  // 조치 회신 갱신(§★★★★★) — 완료/진행중/불가. 불가는 사유 입력.
+  _ack(notifId, status) {
+    let note = null;
+    if (status === 'UNABLE') { note = window.prompt('조치불가 사유를 입력하세요'); if (note === null) return; }
+    this.api('PATCH', '/notifications/' + notifId + '/ack', { ack_status: status, note: note, by: '관제' })
+      .then(() => Promise.all([
+        this.api('GET', '/notifications'),
+        this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/remediation') : Promise.resolve(null),
+      ]))
+      .then(([h, rem]) => this.setState({ apiHistory: h.items || [], apiRem: rem }))
+      .catch(e => console.error('[ack]', e));
+  }
+
+  _remind() {
+    if (!this._advisoryId) return;
+    this.api('POST', '/advisories/' + this._advisoryId + '/remind', {})
+      .then(r => { if (this.flashToast) this.flashToast('리마인드 발송', r.reminded + '개 부서'); return this.api('GET', '/notifications'); })
+      .then(h => this.setState({ apiHistory: h.items || [] }))
+      .catch(e => console.error('[remind]', e));
+  }
+
+  _report(kind) {
+    const id = this.state.advPick || this._advisoryId;
+    if (id) window.open('/api/v1/advisories/' + id + '/report.' + kind, '_blank');
+  }
+
+  // CVE 수동 추가/삭제(§A2) — LLM/정규식 누락 보정. 게이트 재평가 후 리로드.
+  _addCve() {
+    const code = (this.state.cveAddText || '').trim();
+    if (!code || !this._advisoryId) return;
+    this.api('POST', '/advisories/' + this._advisoryId + '/cves', { cve_id: code })
+      .then(() => { this.setState({ cveAddText: '' }); return this._reloadCves(); })
+      .catch(() => { if (this.flashToast) this.flashToast('추가 실패', '형식(CVE-YYYY-NNNN) 또는 중복 확인'); });
+  }
+  _delCve(acId) {
+    this.api('DELETE', '/advisory-cves/' + acId).then(() => this._reloadCves()).catch(e => console.error('[delCve]', e));
+  }
+  async _reloadCves() {
+    if (!this._advisoryId) return;
+    this._busy.cveEdit = true;   // 편집 반영 중 — 폴링 덮어쓰기 방지
+    try {
+      const [cves, cveList, adv, pdfView] = await Promise.all([
+        this.api('GET', '/advisories/' + this._advisoryId + '/cves'),
+        this.api('GET', '/cves?size=500'),
+        this.api('GET', '/advisories/' + this._advisoryId),
+        this.api('GET', '/advisories/' + this._advisoryId + '/pdf-view').catch(() => null),
+      ]);
+      this.setState({ apiCveItems: cves.items || [], apiCveList: cveList.items || [], apiAdvisory: adv, pdfView: pdfView });
+    } catch (e) { console.error('[reloadCves]', e); }
+    finally { this._busy.cveEdit = false; }
+  }
+
+  // 그룹웨어 게시판 게시(§A3)
+  _postBoard() {
+    if (!this._advisoryId) return;
+    this.api('POST', '/advisories/' + this._advisoryId + '/board')
+      .then(r => { this.setState({ boardPosted: true }); if (this.flashToast) this.flashToast('게시판 게시', r.board_post_id); })
+      .catch(e => console.error('[board]', e));
+  }
+
+  // 활동 기록 — 액션 필터 변경 시 재조회(전체 이력·업로드 PDF 기록 포함).
+  _loadAudit(action) {
+    this.setState({ auditFilter: action || '' });
+    const q = action ? ('&action=' + encodeURIComponent(action)) : '';
+    this.api('GET', '/audit?size=100' + q)
+      .then(d => this.setState({ apiAudit: d.items || [] }))
+      .catch(e => console.error('[audit]', e));
+  }
+
+  // 권고문 원문 PDF 모달 열기(활동 기록·발송 이력 공용) — 실제 PDF 임베드.
+  _openPdf(advisoryId, title, docNo) {
+    if (!advisoryId) { if (this.flashToast) this.flashToast('원문 없음', 'PDF 가 연결되지 않은 항목입니다'); return; }
+    this.setState({ pdfModal: { advisoryId: advisoryId, title: title || '보안권고문', docNo: docNo || '' } });
+  }
+
+  // CVE 피드 실 업로드(§4.3) — 사용자가 반입한 피드 파일(NVD/CSV/내부 JSON)을 업로드·적용.
+  _pickFeedFile() {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.json,.csv';
+    inp.onchange = () => {
+      const f = inp.files && inp.files[0]; if (!f) return;
+      const fd = new FormData(); fd.append('file', f);
+      this.api('POST', '/cve-feeds', fd, true)
+        .then(imp => this.setState({ feedStaged: true, feedImportId: imp.import_id, feedFileName: f.name,
+          feedSummary: '신규 ' + (imp.added_count || 0) + '건 · 갱신 ' + (imp.updated_count || 0) + '건 · ' + (imp.status === 'VALIDATED' ? '형식 검증 완료' : (imp.status || '')) }))
+        .catch(() => { if (this.flashToast) this.flashToast('피드 형식 오류', 'NVD JSON · CSV · 내부 JSON 만 지원합니다'); });
+    };
+    inp.click();
+  }
+  _applyFeed() {
+    const id = this.state.feedImportId; if (!id) return;
+    this.api('POST', '/cve-feeds/' + id + '/apply')
+      .then(r => { if (this.flashToast) this.flashToast('피드 적용 완료', (r.added_count || 0) + '건 반영' + (r.advisories_unlocked ? (' · 권고문 ' + r.advisories_unlocked + '건 게이트 해제') : '')); return this.load(); })
+      .then(() => this.setState({ feedStaged: false, feedImportId: null, feedFileName: null, feedSummary: null }))
+      .catch(() => { if (this.flashToast) this.flashToast('피드 적용 실패', '다시 시도하세요'); });
+  }
+
+  // 조치율/보고서 대상 권고문 선택(§B)
+  _pickAdvisory(id) {
+    const nid = id ? Number(id) : null;
+    this.setState({ advPick: nid });
+    if (nid) this.api('GET', '/advisories/' + nid + '/remediation').then(rem => this.setState({ apiRem: rem })).catch(e => console.error(e));
+  }
+
+  // 조치 증빙 파일 업로드(§A4) — 임시 file input 으로 OS 파일선택 → multipart 업로드.
+  _uploadEvidence(notifId) {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.onchange = () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      const fd = new FormData();
+      fd.append('file', f);
+      this.api('POST', '/notifications/' + notifId + '/evidence', fd, true)
+        .then(() => this.api('GET', '/notifications'))
+        .then(h => { this.setState({ apiHistory: h.items || [] }); if (this.flashToast) this.flashToast('증빙 업로드', f.name); })
+        .catch(e => console.error('[evidence]', e));
+    };
+    inp.click();
+  }
+
+  // ── 권고문 PDF 업로드(STEP1) — OS 파일선택/드래그드롭 → /advisories → CVE 추출 ──
+  _pickAdvisoryFile() {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.pdf'; inp.multiple = true;
+    inp.onchange = () => { const fs = inp.files; if (fs && fs.length) this._uploadAdvisories(Array.from(fs)); };
+    inp.click();
+  }
+
+  _uploadAdvisories(files) {
+    const self = this; let okCount = 0, dup = 0;
+    const step = (i) => {
+      if (i >= files.length) {
+        return self.load().then(() => {
+          if (okCount && self.flashToast) self.flashToast('업로드 완료', okCount + '건 접수 · CVE 추출 완료' + (dup ? (' · 중복 ' + dup + '건') : ''));
+          else if (dup && self.flashToast) self.flashToast('이미 업로드된 PDF', dup + '건이 접수 목록에 있습니다');
+        });
+      }
+      const fd = new FormData();
+      fd.append('file', files[i]);
+      fd.append('source_org', '국가정보원');
+      fd.append('receive_channel', 'NCST');
+      return self.api('POST', '/advisories', fd, true)
+        .then(adv => { okCount++; return self.api('POST', '/advisories/' + adv.id + '/extract').catch(() => {}); })
+        .catch(r => { if (r && r.status === 409) dup++; else console.error('[advisory upload]', r); })
+        .then(() => step(i + 1));
+    };
+    step(0);
+  }
+
+  // ── 자산 가져오기 실 API 연동(§D) ──
+  _fieldMap() { return { asset_no: 'f_id', department: 'f_dept', product_key: 'f_product', version_norm: 'f_ver', ip: 'f_ip', owner_name: 'f_owner', owner_team: 'f_team', owner_contact: 'f_contact' }; }
+
+  _uploadAssetExcel() {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = '.xlsx,.xlsm,.xls';
+    inp.onchange = () => { const f = inp.files && inp.files[0]; if (!f) return; this._importFile = f; this._previewAsset(f, null, 1); };
+    inp.click();
+  }
+
+  _previewAsset(file, headerRow, headerRows) {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (headerRow) fd.append('header_row', String(headerRow));
+    fd.append('header_rows', String(headerRows || 1));
+    this.api('POST', '/assets/import/preview', fd, true)
+      .then(pv => {
+        const fm = this._fieldMap(); const nm = {};
+        Object.keys(pv.suggested_mapping || {}).forEach(af => { const fid = fm[af]; if (fid) nm[fid] = pv.suggested_mapping[af]; });
+        this.setState({ importPreview: pv, importId: pv.import_id, importHeaderRow: pv.header_row,
+          importHeaderRows: pv.header_rows || 1, colMap: nm, assetView: 'import' });
+      })
+      .catch(e => { console.error('[preview]', e); if (this.flashToast) this.flashToast('미리보기 실패', '엑셀 형식을 확인하세요'); });
+  }
+
+  _setHeaderRow(hr) { if (this._importFile) this._previewAsset(this._importFile, Number(hr), this.state.importHeaderRows || 1); }
+  _setHeaderRows(n) { if (this._importFile) this._previewAsset(this._importFile, this.state.importHeaderRow, Number(n)); }
+
+  _doRealImport() {
+    const id = this.state.importId; if (!id) return;
+    const fm = this._fieldMap(); const inv = {}; Object.keys(fm).forEach(af => inv[fm[af]] = af);
+    const colMap = this.state.colMap || {}; const colSplit = this.state.colSplit || {}; const mapping = {};
+    Object.keys(colMap).forEach(fid => {
+      const af = inv[fid]; if (!af || !colMap[fid]) return;
+      const sp = colSplit[fid];
+      // 한 셀에 여러 값: 제품·버전 자동분리(pv) 또는 구분자(sep,part). 없으면 전체.
+      if (sp && sp.mode === 'pv') mapping[af] = { col: colMap[fid], mode: (fid === 'f_ver' ? 'version' : 'product') };
+      else if (sp && sp.sep) mapping[af] = { col: colMap[fid], sep: sp.sep, part: sp.part || 0 };
+      else mapping[af] = colMap[fid];
+    });
+    this.api('POST', '/assets/import/' + id + '/commit', {
+      mapping, header_row: this.state.importHeaderRow, header_rows: this.state.importHeaderRows || 1,
+      mode: 'append', on_warning: 'skip',
+    })
+      .then(r => { if (this.flashToast) this.flashToast('가져오기 완료', r.committed + '행 적재' + (r.created_departments && r.created_departments.length ? (' · 부서 ' + r.created_departments.length + '개 생성') : '') + (r.warnings && r.warnings.length ? (' · 경고 ' + r.warnings.length + '건') : '')); return this.api('GET', '/assets?size=500'); })
+      .then(a => this.setState({ apiAssets: a.items || [], assetView: 'list', assetImported: true, importPreview: null }))
+      .catch(e => { console.error('[import]', e); if (this.flashToast) this.flashToast('가져오기 실패', '필수 매핑(부서·제품·담당자) 확인'); });
+  }
+
+  async _loadMatches() {
+    this._matchIndex = {};
+    this._matchInfo = {};   // key → {id, suggested, candidate, status} (서버 매칭 메타)
+    if (!this._advisoryId) return;
+    try {
+      const m = await this.api('GET', '/advisories/' + this._advisoryId + '/matches');
+      const excl = {};
+      (m.items || []).forEach(x => {
+        const key = x.asset_no + '__' + x.cve;
+        this._matchIndex[key] = x.id;
+        this._matchInfo[key] = { id: x.id, suggested: x.suggested_exclude, candidate: x.candidate, status: x.status };
+        if (x.status === 'EXCLUDED') excl[key] = true;   // 서버 제외 상태를 클라이언트에 동기화(§A1)
+      });
+      if (Object.keys(excl).length) this.setState(s => ({ excluded: Object.assign({}, excl, s.excluded) }));
+    } catch (e) { /* 매칭 아직 없음 */ }
+  }
+
+  // 사용자 액션(클라이언트 상태 변화)을 서버에 반영 — 기존 UI 핸들러를 건드리지 않고 후킹.
+  async componentDidUpdate() {
+    const S = this.state, P = this._prev || {};
+    // ① CVE 피드 적용: dbUpdated false→true
+    if (S.dbUpdated && !P.dbUpdated && !this._busy.feed) {
+      this._busy.feed = true;
+      this._prev = Object.assign({}, P, { dbUpdated: true });
+      try {
+        const f = await fetch('/ui/sample-feed.json').then(r => r.blob());
+        const fd = new FormData(); fd.append('file', f, 'krcert_cve_feed_2026-06-15.json');
+        const imp = await this.api('POST', '/cve-feeds', fd, true);
+        await this.api('POST', '/cve-feeds/' + imp.import_id + '/apply');
+        await this.load();
+      } catch (e) { console.error('[feed apply]', e); }
+      this._busy.feed = false;
+      return;
+    }
+    // ② 자산 매칭 단계 진입(step→3): 서버 매칭 실행
+    if (S.step === 3 && P.step !== 3 && !this._busy.match && this._advisoryId) {
+      this._busy.match = true;
+      this._prev = Object.assign({}, P, { step: 3 });
+      try { await this.api('POST', '/advisories/' + this._advisoryId + '/match'); await this._loadMatches(); this.forceUpdate(); }
+      catch (e) { /* 게이트 미충족 등 */ }
+      this._busy.match = false;
+      return;
+    }
+    // ③ 오탐 제외 토글: 서버 match PATCH
+    const exKeys = new Set(Object.keys(S.excluded || {}).concat(Object.keys(P.excluded || {})));
+    for (const k of exKeys) {
+      const now = !!(S.excluded || {})[k], was = !!(P.excluded || {})[k];
+      const mid = (this._matchIndex || {})[k];
+      if (now !== was && mid) {
+        this.api('PATCH', '/matches/' + mid, { status: now ? 'EXCLUDED' : 'MATCHED', reason: '관제 검토' }).catch(() => {});
+      }
+    }
+    // ④ 부서 발송: sent[dept] false→true
+    const sentKeys = Object.keys(S.sent || {}).filter(d => S.sent[d] && !(P.sent || {})[d]);
+    if (sentKeys.length && this._advisoryId) {
+      const idx = this._deptIndex || {};
+      const deptIds = sentKeys.map(n => idx[n]).filter(Boolean);
+      if (deptIds.length) {
+        this.api('POST', '/advisories/' + this._advisoryId + '/notifications',
+          { departments: deptIds.map(id => ({ department_id: id, channels: ['MESSENGER', 'MAIL', 'WEB_UI'] })) })
+          .then(() => this.api('GET', '/notifications')).then(h => this.setState({ apiHistory: h.items || [] })).catch(() => {});
+      }
+    }
+    this._prev = { dbUpdated: S.dbUpdated, sent: Object.assign({}, S.sent), excluded: Object.assign({}, S.excluded), step: S.step };
+  }
+
+  _koSev(sev) {
+    return ({ CRITICAL: '긴급', HIGH: '높음', MEDIUM: '중간', LOW: '낮음' })[sev] || sev || '미상';
+  }
+  _fmtDate(iso) {
+    if (!iso) return '';
+    const p = String(iso).slice(0, 10).split('-');
+    return p.length === 3 ? (p[0] + '. ' + Number(p[1]) + '. ' + Number(p[2]) + '.') : iso;
+  }
+
+  flashToast(title, text) {
+    const stamp = Date.now();
+    this.setState({ toast: { kind: 'info', title, text, stamp } });
+    setTimeout(() => {
+      this.setState(s => (s.toast && s.toast.stamp === stamp ? { toast: null } : {}));
+    }, 2600);
+  }
+
+  // spreadsheet columns from the user's real .xlsm (headers differ from system fields)
+  sheetColsRaw() {
+    const pv = this.state.importPreview;
+    if (!pv || !pv.columns) return [];
+    const fm = this._fieldMap();
+    const letterToField = {};   // suggested_mapping {api필드: letter} → {letter: f_id}
+    Object.keys(pv.suggested_mapping || {}).forEach(af => { const fid = fm[af]; if (fid) letterToField[pv.suggested_mapping[af]] = fid; });
+    return pv.columns.map(c => ({
+      id: c.letter, letter: c.letter, header: c.header || '(빈 헤더)',
+      samples: c.samples || [], suggest: letterToField[c.letter] || null,
+    }));
+  }
+
+  mapFieldsRaw() {
+    return [
+      { id: 'f_id', label: '자산번호', req: 'opt' },
+      { id: 'f_dept', label: '부서', req: 'send' },
+      { id: 'f_product', label: '제품 / OS', req: 'match' },
+      { id: 'f_ver', label: '버전', req: 'opt' },   // 선택 — 제품 셀에서 자동분리(pv) 가능, 미지정 시 백엔드 자동분리
+      { id: 'f_ip', label: 'IP', req: 'opt' },
+      { id: 'f_owner', label: '담당자', req: 'send' },
+      { id: 'f_team', label: '담당팀', req: 'opt' },
+      { id: 'f_contact', label: '연락처', req: 'opt' },
+    ];
+  }
+
+  advisory() {
+    const a = this.state.apiAdvisory;
+    if (!a) return { docNo: '', title: '로딩 중…', route: '', receivedAt: '', dueAt: '' };
+    return {
+      docNo: a.doc_no || '',
+      title: a.title || '',
+      route: a.receive_channel === 'NCST' ? (a.source_org || '') + ' NCST 전용망' : (a.source_org || ''),
+      receivedAt: this._fmtDate(a.received_at),
+      dueAt: this._fmtDate(a.due_at),
+    };
+  }
+
+  // PDF에서 추출된 CVE 코드(서버 advisory_cve). 제품/버전 파싱은 하지 않음.
+  extractedCves() {
+    return (this.state.apiCveItems || []).map(i => ({ id: i.cve_id_text }));
+  }
+
+  // 로컬 CVE DB — 서버 /cves 에서 로드(등록된 항목만 존재 → 미등록은 enrichRows 에서 NOT_FOUND).
+  cveDb() {
+    const map = {};
+    (this.state.apiCveList || []).forEach(c => {
+      const av = c.affected_versions;
+      const isList = Array.isArray(av);
+      map[c.cve_id] = {
+        product: c.product_name,
+        matchKey: c.product_key,                     // asset.key 와 동일한 정규화 키
+        versions: isList ? av : [],
+        anyVer: !isList,                             // {"lt":...} / "*" → 제품키만 일치 시 매칭
+        versionNote: (av && av.lt) ? (av.lt + ' 미만 전체') : '전체',
+        severity: this._koSev(c.severity),
+        desc: c.description,
+        published: (c.published_at || '').slice(0, 10),
+        source: c.source,
+        isNew: /KISA/i.test(c.source || ''),
+      };
+    });
+    return map;
+  }
+
+  assets() {
+    const idx = {};
+    const out = (this.state.apiAssets || []).map(a => {
+      if (a.department && a.department_id) idx[a.department] = a.department_id;
+      return {
+        id: a.asset_no, dept: a.department, product: a.product_raw || a.product_key,
+        key: a.product_key,                          // cveDb().matchKey 와 동일 정규화 키
+        ver: a.version_raw || a.version_norm || '', ip: a.ip || '—', owner: a.owner_name || '',
+        team: a.owner_team || '', contact: a.owner_contact || '',
+      };
+    });
+    this._deptIndex = idx;                            // 발송 시 부서명→id 매핑
+    return out;
+  }
+
+  sevStyle(sev) {
+    const m = {
+      '긴급': 'background:#fdecec; color:#b42318; border:1px solid #f5c6c2;',
+      '높음': 'background:#fff1e6; color:#c2660c; border:1px solid #f8d9b8;',
+      '중간': 'background:#fff8e1; color:#9a7400; border:1px solid #f0e0a0;',
+      '낮음': 'background:#eef1f5; color:#51607a; border:1px solid #dbe1ea;',
+      '미상': 'background:#eef1f5; color:#94a1b4; border:1px solid #dbe1ea;',
+    };
+    return 'font-size:11px; font-weight:700; padding:2px 9px; border-radius:5px; ' + (m[sev] || m['낮음']);
+  }
+
+  rowMatches(entry, a) {
+    if (a.key !== entry.matchKey) return false;
+    if (entry.anyVer) return true;
+    if (!entry.versions || entry.versions.length === 0) return true;
+    return entry.versions.indexOf(a.ver) !== -1;
+  }
+
+  enrichRows() {
+    const db = this.cveDb();
+    return this.extractedCves().map(c => {
+      const e = db[c.id];
+      const found = !!e;
+      let statusLabel, statusStyle, cveColor, productColor;
+      if (found) {
+        statusLabel = '조회됨';
+        statusStyle = 'font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:5px; background:#e6f4f2; color:#0f766e; border:1px solid #b8e0da;';
+        cveColor = '#0f5d56'; productColor = '#2a3a52';
+      } else {
+        statusLabel = 'DB 미등록';
+        statusStyle = 'font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:5px; background:#fef3e2; color:#b45309; border:1px solid #f5d9a8;';
+        cveColor = '#b45309'; productColor = '#b45309';
+      }
+      const matchCount = found ? this.assets().filter(a => this.rowMatches(e, a)).length : 0;
+      return {
+        id: c.id, found, entry: e || null,
+        product: found ? e.product : '— 데이터베이스 미등록',
+        productColor,
+        desc: found ? e.desc : 'CVE 피드 갱신 후 자동 조회',
+        versionText: found ? (e.anyVer ? (e.versionNote || '전체') : e.versions.join(', ')) : '—',
+        severity: found ? e.severity : '미상',
+        sevStyle: this.sevStyle(found ? e.severity : '미상'),
+        statusLabel, statusStyle, cveColor,
+        matchCount,
+        showWarn: !found,
+        rowStyle: !found
+          ? 'border-bottom:1px solid #f2f5f9; background:#fffaf2; border-left:3px solid #e8a33d;'
+          : 'border-bottom:1px solid #f2f5f9; background:#fff; border-left:3px solid transparent;',
+      };
+    });
+  }
+
+  buildMatches() {
+    const out = [];
+    const db = this.cveDb();
+    this.extractedCves().forEach(c => {
+      const e = db[c.id];
+      if (!e) return;
+      this.assets().forEach(a => {
+        if (this.rowMatches(e, a)) out.push({ key: a.id + '__' + c.id, asset: a, entry: e, cve: c.id });
+      });
+    });
+    return out;
+  }
+
+  icon(kind) {
+    const c = 'currentColor';
+    const wrap = (inner) => React.createElement('svg', { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none' }, inner);
+    const p = (d, extra) => React.createElement('path', Object.assign({ d, stroke: c, strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' }, extra || {}));
+    if (kind === 'grid') return wrap([p('M4 4h7v7H4z', { key: 1 }), p('M13 4h7v7h-7z', { key: 2 }), p('M4 13h7v7H4z', { key: 3 }), p('M13 13h7v7h-7z', { key: 4 })]);
+    if (kind === 'clock') return wrap([React.createElement('circle', { key: 1, cx: 12, cy: 12, r: 9, stroke: c, strokeWidth: 1.7 }), p('M12 7v5l3 2', { key: 2 })]);
+    if (kind === 'doc') return wrap([p('M6 2h8l4 4v16H6z', { key: 1 }), p('M14 2v4h4', { key: 2 }), p('M9 13h6M9 17h6', { key: 3 })]);
+    if (kind === 'db') return wrap([React.createElement('ellipse', { key: 1, cx: 12, cy: 5.5, rx: 8, ry: 3, stroke: c, strokeWidth: 1.7 }), p('M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13', { key: 2 }), p('M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3', { key: 3 })]);
+    if (kind === 'server') return wrap([p('M3 4h18v6H3zM3 14h18v6H3z', { key: 1 }), React.createElement('circle', { key: 2, cx: 7, cy: 7, r: 1, fill: c }), React.createElement('circle', { key: 3, cx: 7, cy: 17, r: 1, fill: c })]);
+    if (kind === 'send') return wrap([p('M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z', { key: 1 })]);
+    if (kind === 'warnToast') return React.createElement('svg', { width: 19, height: 19, viewBox: '0 0 24 24', fill: 'none' }, [
+      React.createElement('path', { key: 1, d: 'M12 3 2 20h20L12 3Z', stroke: '#b45309', strokeWidth: 1.7, strokeLinejoin: 'round' }),
+      React.createElement('path', { key: 2, d: 'M12 10v4m0 3h.01', stroke: '#b45309', strokeWidth: 1.9, strokeLinecap: 'round' }),
+    ]);
+    if (kind === 'okToast') return React.createElement('svg', { width: 19, height: 19, viewBox: '0 0 24 24', fill: 'none' }, [
+      React.createElement('circle', { key: 1, cx: 12, cy: 12, r: 9, stroke: '#0f766e', strokeWidth: 1.7 }),
+      React.createElement('path', { key: 2, d: 'M8 12l3 3 5-5', stroke: '#0f766e', strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+    ]);
+    return wrap([]);
+  }
+
+  navItemsData() {
+    const S = this.state;
+    const unresolved = this.enrichRows().filter(r => !r.found).length;
+    const items = [
+      { id: 'dashboard', label: '대시보드', icon: this.icon('grid') },
+      { id: 'process', label: '권고문 처리', icon: this.icon('doc') },
+      { id: 'cvedb', label: 'CVE 데이터베이스', icon: this.icon('db'), badge: unresolved ? String(unresolved) : null },
+      { id: 'assets', label: '자산관리대장', icon: this.icon('server') },
+      { id: 'history', label: '발송 이력', icon: this.icon('send') },
+      { id: 'audit', label: '활동 기록', icon: this.icon('clock') },
+    ];
+    return items.map(it => {
+      const active = S.nav === it.id;
+      return Object.assign({}, it, {
+        onClick: () => this.setState({ nav: it.id }),
+        style: 'display:flex; align-items:center; gap:11px; width:100%; border:none; cursor:pointer; font-family:inherit; font-size:13.5px; font-weight:' + (active ? '700' : '500') + '; padding:10px 12px; border-radius:9px; text-align:left; '
+          + (active ? 'background:#15385c; color:#fff;' : 'background:transparent; color:#9fb1c6;'),
+        badgeStyle: 'background:#e8a33d; color:#3a2a08; font-size:10.5px; font-weight:800; padding:1px 7px; border-radius:9px;',
+      });
+    });
+  }
+
+  stepsData() {
+    const S = this.state;
+    const defs = [
+      { num: 1, label: 'PDF 업로드' },
+      { num: 2, label: 'CVE 추출·조회' },
+      { num: 3, label: '자산 매칭' },
+      { num: 4, label: '발송 검토' },
+    ];
+    return defs.map((d, i) => {
+      const isCur = S.step === d.num;
+      const isDone = S.step > d.num;
+      let numBg, numColor, numBorder, labelColor;
+      if (isCur) { numBg = '#0f766e'; numColor = '#fff'; numBorder = '#0f766e'; labelColor = '#15294a'; }
+      else if (isDone) { numBg = '#e6f4f2'; numColor = '#0f766e'; numBorder = '#b8e0da'; labelColor = '#0f766e'; }
+      else { numBg = '#f4f6f9'; numColor = '#a3aebf'; numBorder = '#e3e8ef'; labelColor = '#a3aebf'; }
+      return {
+        num: d.num, label: d.label,
+        onClick: () => this.setState({ step: d.num }),
+        btnStyle: 'display:flex; align-items:center; gap:11px; background:none; border:none; cursor:pointer; font-family:inherit; padding:0;',
+        numStyle: 'width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; background:' + numBg + '; color:' + numColor + '; border:1px solid ' + numBorder + ';',
+        labelStyle: 'font-size:13px; font-weight:' + (isCur ? '700' : '600') + '; color:' + labelColor + ';',
+        hasConnector: i < defs.length - 1,
+        connStyle: 'flex:1; height:2px; margin:0 16px; background:' + (isDone ? '#b8e0da' : '#e8ecf2') + '; border-radius:2px;',
+      };
+    });
+  }
+
+  docLines() {
+    const base = 'padding:1px 0;';
+    const small = 'font-size:11px; color:#94a1b4; padding:1px 0;';
+    const a = this.state.apiAdvisory;
+    if (!a) return [{ t: '권고문을 선택하거나 업로드하세요', style: small }];
+    const sev = { CRITICAL: '긴급', HIGH: '높음', MEDIUM: '중간', LOW: '낮음' };
+    const lines = [
+      { t: a.source_org || '발신기관', style: small },
+      { t: a.title || '보안권고문', style: 'font-size:15px; font-weight:800; color:#15294a; padding:2px 0 8px; border-bottom:1px solid #eef1f5; margin-bottom:8px;' },
+      { t: '문서번호 : ' + (a.doc_no || '-'), style: 'font-family:monospace; font-size:11.5px; color:#8a98ab; padding:1px 0 8px;' },
+      { t: '□ 영향 CVE 및 조치사항', style: 'font-weight:700; color:#15294a; padding:8px 0 4px;' },
+    ];
+    const cves = this.state.apiCveItems || [];
+    cves.forEach((c, i) => lines.push({
+      t: (i + 1) + '. ' + c.cve_id_text + (c.cve && c.cve.severity ? (', ' + (sev[c.cve.severity] || c.cve.severity)) : '') + (c.lookup_status === 'FOUND' ? '' : ' (DB 미등록)'),
+      style: base,
+    }));
+    if (!cves.length) lines.push({ t: '추출된 CVE 없음', style: small });
+    lines.push({ t: '□ 조치 기한 : ' + (a.due_at ? this._fmtDate(a.due_at) : '-'), style: 'font-weight:700; color:#b42318; padding:8px 0 1px;' });
+    lines.push({ t: '※ 영향 제품·버전은 로컬 CVE DB 조회 결과 참조', style: 'font-size:11px; color:#94a1b4; padding:6px 0 0;' });
+    return lines;
+  }
+
+  recentDocs() {
+    const SK = { COMPLETED: ['완료', 'green'], ARCHIVED: ['보관', 'green'], NEEDS_CVE_UPDATE: ['처리중', 'amber'],
+      EXTRACTED: ['처리중', 'amber'], MATCHED: ['처리중', 'amber'], NOTIFYING: ['발송중', 'amber'],
+      UPLOADED: ['접수', 'amber'], EXTRACTING: ['처리중', 'amber'] };
+    return (this.state.apiRecent || []).slice(0, 3).map(a => {
+      const sk = SK[a.status] || ['처리중', 'amber'];
+      return {
+        title: a.title, status: sk[0],
+        meta: (a.source_org || '') + ' · ' + this._fmtDate(a.received_at) + ' 접수 · ' + sk[0],
+        statusStyle: 'font-size:11px; font-weight:700; padding:3px 10px; border-radius:6px; '
+          + (sk[1] === 'amber' ? 'background:#fef3e2; color:#b45309;' : 'background:#e6f4f2; color:#0f766e;'),
+      };
+    });
+  }
+
+  historyRows() {
+    const m = { green: 'background:#e6f4f2; color:#0f766e;', amber: 'background:#fef3e2; color:#b45309;', red: 'background:#fdecec; color:#b42318;' };
+    const chLabel = { MESSENGER: '메신저', MAIL: '메일', WEB_UI: '웹UI' };
+    return (this.state.apiHistory || []).map(n => {
+      const ack = n.ack_status;
+      const st = ack === 'DONE' ? ['조치완료', 'green'] : ack === 'IN_PROGRESS' ? ['조치중', 'amber']
+        : ack === 'UNABLE' ? ['조치불가', 'red'] : (n.status === 'SENT' || n.status === 'ACKED') ? ['미회신', 'red'] : ['대기', 'amber'];
+      const ackBtn = (s, label) => ({
+        label,
+        onClick: () => this._ack(n.id, s),
+        style: 'font-family:inherit; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:5px; cursor:pointer; border:1px solid; '
+          + (ack === s
+            ? ({ DONE: 'background:#0f766e;color:#fff;border-color:#0f766e;', IN_PROGRESS: 'background:#e8a33d;color:#fff;border-color:#e8a33d;', UNABLE: 'background:#8a98ab;color:#fff;border-color:#8a98ab;' }[s])
+            : 'background:#fff;color:#5a6b86;border-color:#d3dbe8;'),
+      });
+      return {
+        id: n.id,
+        sentAt: (n.sent_at || '').replace('T', ' ').slice(5, 16),
+        dept: n.department, channel: (n.channels || []).map(c => chLabel[c] || c).join(' · '),
+        assets: (n.asset_count || 0) + '대', status: st[0],
+        docNo: n.doc_no || '', title: '', advisoryId: n.advisory_id,
+        statusStyle: 'font-size:11px; font-weight:700; padding:3px 10px; border-radius:6px; ' + m[st[1]],
+        ackDone: ackBtn('DONE', '완료'), ackProg: ackBtn('IN_PROGRESS', '진행'), ackUnable: ackBtn('UNABLE', '불가'),
+        evidence: n.evidence || '', note: n.ack_note || '',
+        onEvidence: () => this._uploadEvidence(n.id),
+        evidenceStyle: 'font-family:inherit; font-size:11px; font-weight:600; padding:5px 8px; border-radius:7px; cursor:pointer; '
+          + (n.evidence ? 'background:#e6f4f2;color:#0f766e;border:1px solid #b8e0da;' : 'background:#fff;color:#5a6b86;border:1px solid #d3dbe8;'),
+        evidenceLabel: n.evidence ? '📎 ✓' : '📎 증빙',
+      };
+    });
+  }
+
+  renderVals() {
+    const S = this.state;
+    const adv = this.advisory();
+    const rows = this.enrichRows();
+    const foundCount = rows.filter(r => r.found).length;
+    const unresolvedCount = rows.length - foundCount;
+    const canProceed = unresolvedCount === 0;
+
+    const extractedChips = rows.map(r => ({
+      label: r.id,
+      style: 'font-size:10.5px; font-family:monospace; font-weight:600; padding:3px 8px; border-radius:5px; ' + (r.found ? 'background:#e6f4f2; color:#0f766e; border:1px solid #b8e0da;' : 'background:#fef3e2; color:#b45309; border:1px solid #f5d9a8;'),
+    }));
+
+    const allMatches = this.buildMatches();
+    const matches = allMatches.map(m => {
+      const excluded = !!S.excluded[m.key];
+      return {
+        cve: m.cve, assetName: m.asset.id, ip: m.asset.ip, dept: m.asset.dept, owner: m.asset.owner,
+        productVer: m.asset.product + ' · ' + m.asset.ver,
+        severity: m.entry.severity, sevStyle: this.sevStyle(m.entry.severity),
+        rowStyle: 'display:grid; grid-template-columns:120px 1.1fr 1fr 130px 90px 86px; gap:0; align-items:center; padding:11px 18px; border-bottom:1px solid #f2f5f9; font-size:12.5px; ' + (excluded ? 'opacity:.45;' : ''),
+        toggleLabel: excluded ? '제외됨' : '오탐 제외',
+        toggleStyle: 'font-family:inherit; font-size:11px; font-weight:600; padding:5px 10px; border-radius:6px; cursor:pointer; ' + (excluded ? 'background:#eef1f5; color:#8a98ab; border:1px solid #dbe1ea;' : 'background:#fff; color:#b42318; border:1px solid #f3c9c4;'),
+        onToggle: () => this.setState(s => ({ excluded: Object.assign({}, s.excluded, { [m.key]: !s.excluded[m.key] }) })),
+        // 오탐 제외 기억 — 이전 제외 조합 자동 제안(§A1)
+        suggested: !!(((this._matchInfo || {})[m.key]) || {}).suggested,
+        suggestStyle: 'font-size:9.5px; font-weight:800; color:#b45309; background:#fff6e9; border:1px solid #f3dcb0; border-radius:4px; padding:1px 6px; margin-left:7px; white-space:nowrap;',
+      };
+    });
+    const activeMatches = allMatches.filter(m => !S.excluded[m.key]);
+    const excludedCount = allMatches.length - activeMatches.length;
+
+    const byDept = {};
+    activeMatches.forEach(m => { (byDept[m.asset.dept] = byDept[m.asset.dept] || []).push(m); });
+    const deptNames = Object.keys(byDept);
+    const deptGroups = deptNames.map(dept => {
+      const ms = byDept[dept];
+      const owners = Array.from(new Set(ms.map(m => m.asset.owner).filter(o => o !== '자동배포'))).join(', ') || '시스템';
+      const cves = Array.from(new Set(ms.map(m => m.cve)));
+      const sent = !!S.sent[dept];
+      const lines = ms.map(m => '· ' + m.asset.id + ' (' + m.asset.product + ' ' + m.asset.ver + ') — ' + m.cve + ' ' + m.entry.severity).join('\n');
+      const message = '[보안조치 요청] ' + adv.title + '\n\n수신: ' + dept + ' (담당 ' + owners + ')\n근거: ' + adv.docNo + ' (국가정보원)\n조치기한: ' + adv.dueAt + '\n\n귀 부서 보유 자산 ' + ms.length + '대에서 아래 취약점이 확인되었습니다. 기한 내 보안 업데이트 적용 후 본 메시지에 회신 바랍니다.\n\n' + lines + '\n\n조치 완료 시 [보안권고문 처리 시스템] 웹UI에서 조치 결과를 등록해 주세요.';
+      return {
+        dept, assetCount: ms.length, owners, issueCount: cves.length, cveList: cves.join(', '),
+        message,
+        cardStyle: 'background:#fff; border:1px solid ' + (sent ? '#c8e3df' : '#e1e7ef') + '; border-radius:12px; overflow:hidden;',
+        channels: [
+          { label: '사내 메신저', style: 'font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:5px; background:#eef4fb; color:#2f5d8f; border:1px solid #d4e3f2;' },
+          { label: '사내 메일', style: 'font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:5px; background:#eef4fb; color:#2f5d8f; border:1px solid #d4e3f2;' },
+          { label: '웹UI 등록', style: 'font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:5px; background:#e6f4f2; color:#0f766e; border:1px solid #b8e0da;' },
+        ],
+        sent,
+        sendLabel: sent ? '발송완료 ✓' : '발송',
+        sendStyle: 'font-family:inherit; font-size:12.5px; font-weight:700; padding:8px 18px; border-radius:8px; cursor:' + (sent ? 'default' : 'pointer') + '; border:none; ' + (sent ? 'background:#e6f4f2; color:#0f766e;' : 'background:#0f766e; color:#fff;'),
+        onSend: () => { if (!sent) this.setState(s => ({ sent: Object.assign({}, s.sent, { [dept]: true }) })); },
+      };
+    });
+    const sentCount = deptNames.filter(d => S.sent[d]).length;
+
+    // ----- CVE DB view -----
+    const db = this.cveDb();
+    const order = ['CVE-2026-21345', 'CVE-2026-21360', 'CVE-2026-21401', 'CVE-2026-30012', 'CVE-2026-44120', 'CVE-2026-45088'];
+    const cveTableRows = order.filter(id => db[id]).map(id => {
+      const e = db[id];
+      return {
+        id, product: e.product, severity: e.severity, sevStyle: this.sevStyle(e.severity),
+        versions: e.anyVer ? (e.versionNote || '전체') : e.versions.join(', '),
+        published: e.published, source: e.source,
+        isNew: !!(e.isNew && S.dbUpdated),
+      };
+    });
+    const updateLog = [];
+    if (S.dbUpdated) updateLog.push({ time: S.updatedAt, source: 'KISA KrCERT 수동 반입 (피드 업로드)', added: '+2건', kind: 'manual' });
+    updateLog.push({ time: '2026-06-12 06:00', source: 'NVD 정기 동기화', added: '+18건', kind: 'auto' });
+    updateLog.push({ time: '2026-06-11 06:00', source: 'NVD 정기 동기화', added: '+9건', kind: 'auto' });
+    updateLog.push({ time: '2026-06-10 06:00', source: 'KISA KrCERT 반입', added: '+5건', kind: 'manual' });
+    const updateLogV = updateLog.map(u => Object.assign({}, u, {
+      dotStyle: 'width:8px; height:8px; border-radius:50%; flex-shrink:0; background:' + (u.kind === 'manual' ? '#0f766e' : '#2f5d8f') + ';',
+    }));
+
+    const navMap = {
+      dashboard: ['대시보드', '취약점 대응 현황 요약'],
+      process: ['권고문 처리', 'CVE 추출 → DB 조회 → 자산 매칭 → 발송'],
+      cvedb: ['CVE 데이터베이스', '공개 피드 기반 로컬 취약점 DB'],
+      assets: ['자산관리대장', '전 부서 자산 인벤토리'],
+      history: ['발송 이력', '부서별 통보 및 조치 현황'],
+      audit: ['활동 기록', '업로드·추출·매칭·발송 전체 이력 · 원문 PDF 열람'],
+    };
+    const pg = navMap[S.nav] || navMap.process;
+
+    const assetRows = this.assets().map(a => Object.assign({}, a, {
+      ownerSub: [a.team, a.contact].filter(Boolean).join(' · '),
+      statusLabel: '정상', statusStyle: 'font-size:11px; font-weight:700; padding:3px 10px; border-radius:6px; background:#e6f4f2; color:#0f766e;',
+    }));
+
+    // ----- 자산대장 가져오기 / 컬럼 매핑 -----
+    const colMap = S.colMap;
+    const dragging = S.dragCol;
+    // reverse: colId -> [fieldId...] (한 컬럼이 여러 필드로 분리 매핑될 수 있음 — OS+버전 등)
+    const colToFields = {};
+    Object.keys(colMap).forEach(fid => { const c = colMap[fid]; if (c) (colToFields[c] = colToFields[c] || []).push(fid); });
+    const fieldsRaw = this.mapFieldsRaw();
+    const fieldLabelById = {};
+    fieldsRaw.forEach(f => { fieldLabelById[f.id] = f.label; });
+
+    const sheetCols = this.sheetColsRaw().map(c => {
+      const isDragging = dragging === c.id;
+      const mappedFids = colToFields[c.id] || [];
+      const isMapped = mappedFids.length > 0;
+      return {
+        letter: c.letter, header: c.header, samples: c.samples,
+        mappedLabel: mappedFids.map(fid => fieldLabelById[fid]).join(', '),
+        onDragStart: (e) => { try { e.dataTransfer.setData('text/plain', c.id); e.dataTransfer.effectAllowed = 'move'; } catch (x) {} this.setState({ dragCol: c.id }); },
+        onDragEnd: () => this.setState({ dragCol: null }),
+        stripStyle: 'flex-shrink:0; cursor:grab; user-select:none; opacity:' + (isDragging ? '.4' : '1') + '; transition:opacity .12s;',
+        headStyle: 'height:30px; min-width:120px; padding:0 11px; display:flex; align-items:center; gap:8px; border:1px solid ' + (isMapped ? '#b8e0da' : '#d7dde6') + '; border-bottom:2px solid ' + (isMapped ? '#0f766e' : '#c4cdda') + '; background:' + (isMapped ? '#f0faf8' : '#f3f6fa') + '; border-radius:0;',
+        cellStyle: 'height:34px; min-width:120px; padding:0 11px; display:flex; align-items:center; font-size:11.5px; color:#3a4a63; border:1px solid #e6eaf0; border-top:none; background:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;',
+      };
+    });
+
+    const reqFields = fieldsRaw.filter(f => f.req === 'match' || f.req === 'send');
+    const reqMapped = reqFields.filter(f => colMap[f.id]).length;
+    const reqTotal = reqFields.length;
+    const canImport = reqMapped === reqTotal;
+
+    const reqMeta = {
+      match: { badge: '매칭 필수', style: 'font-size:9.5px; font-weight:800; color:#b42318; background:#fdecec; border:1px solid #f5c6c2; border-radius:4px; padding:1px 6px;' },
+      send: { badge: '발송 필수', style: 'font-size:9.5px; font-weight:800; color:#2f5d8f; background:#eef4fb; border:1px solid #d4e3f2; border-radius:4px; padding:1px 6px;' },
+      opt: { badge: '선택', style: 'font-size:9.5px; font-weight:700; color:#94a1b4; background:#f0f3f7; border:1px solid #e1e7ef; border-radius:4px; padding:1px 6px;' },
+    };
+    const colById = {};
+    this.sheetColsRaw().forEach(c => { colById[c.id] = c; });
+
+    const colSplit = S.colSplit || {};
+    const mapFields = fieldsRaw.map(f => {
+      const colId = colMap[f.id];
+      const col = colId ? colById[colId] : null;
+      const meta = reqMeta[f.req];
+      const active = !!dragging;
+      let zoneStyle = 'border-radius:10px; padding:13px 14px; transition:all .12s; ';
+      if (col) zoneStyle += 'background:#fff; border:1px solid #c8e3df;';
+      else if (active) zoneStyle += 'background:#f0faf8; border:1.5px dashed #5fbfb2;';
+      else zoneStyle += 'background:#fafbfd; border:1.5px dashed #d3dbe8;';
+      // 한 셀에 여러 값 → 분리: 없음(전체) / 구분자(sep,part) / 제품·버전 자동분리(pv)
+      const sp = colSplit[f.id];
+      const mode = !sp ? 'whole' : (sp.mode === 'pv' ? 'pv' : 'delim');
+      const canPv = !!col && (f.id === 'f_product' || f.id === 'f_ver');
+      const pvWhich = (f.id === 'f_ver') ? '버전' : '제품';
+      const sep = (sp && sp.sep) ? sp.sep : ',';
+      const part = (sp && sp.part) || 0;
+      const sample0 = col ? String(col.samples[0] || '') : '';
+      const tokens = (mode === 'delim' && sep) ? sample0.split(sep) : [];
+      let previewVal = col ? col.samples.slice(0, 2).join(', ') : '';
+      if (mode === 'delim' && sep) previewVal = (tokens[part] != null ? String(tokens[part]).trim() : '') || '(빈값)';
+      else if (mode === 'delim') previewVal = (col ? col.samples.slice(0, 1).join(', ') : '') + ' · 구분자 입력 필요(전체 사용)';
+      else if (mode === 'pv') previewVal = '자동분리 → ' + pvWhich;
+      const modeBtn = (m, label) => ({
+        label,
+        style: 'font-family:inherit; font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:5px; cursor:pointer; border:1px solid '
+          + (mode === m ? '#0f766e; background:#0f766e; color:#fff;' : '#d3dbe8; background:#fff; color:#5a6b86;'),
+        onClick: () => this.setState(st => {
+          const cs = Object.assign({}, st.colSplit);
+          if (m === 'whole') delete cs[f.id];
+          else if (m === 'pv') cs[f.id] = { mode: 'pv' };
+          else cs[f.id] = { sep: (cs[f.id] && cs[f.id].sep) || ',', part: (cs[f.id] && cs[f.id].part) || 0 };
+          return { colSplit: cs };
+        }),
+      });
+      return {
+        label: f.label,
+        zoneStyle,
+        reqBadge: meta.badge, reqBadgeStyle: meta.style,
+        mapped: !!col, empty: !col,
+        mappedLetter: col ? col.letter : '',
+        mappedHeader: col ? col.header : '',
+        previewVal,
+        emptyText: active ? '여기에 놓기' : '컬럼을 끌어다 놓으세요',
+        emptyStyle: 'font-size:11.5px; color:' + (active ? '#0f766e' : '#aab4c2') + '; padding:7px 2px; font-weight:' + (active ? '700' : '500') + ';',
+        // 분리 모드 컨트롤
+        canSplit: !!col,
+        canPv,
+        pvWhich,
+        isDelim: mode === 'delim',
+        isPv: mode === 'pv',
+        sepValue: sep,
+        modeWhole: modeBtn('whole', '전체'),
+        modeDelim: modeBtn('delim', '구분자 분할'),
+        modePv: modeBtn('pv', '제품·버전 분리'),
+        onSepInput: (e) => { const v = e.target.value; this.setState(st => { const cs = Object.assign({}, st.colSplit); cs[f.id] = { sep: v, part: (cs[f.id] && cs[f.id].part) || 0 }; return { colSplit: cs }; }); },
+        splitParts: tokens.map((t, idx) => ({
+          label: (String(t).trim() || '(빈값)'),
+          style: 'font-family:inherit; font-size:10.5px; font-weight:600; padding:3px 8px; border-radius:5px; cursor:pointer; border:1px solid '
+            + (idx === part ? '#0f766e; background:#0f766e; color:#fff;' : '#d3dbe8; background:#fff; color:#5a6b86;'),
+          onClick: () => this.setState(st => { const cs = Object.assign({}, st.colSplit); cs[f.id] = { sep: (cs[f.id] && cs[f.id].sep) || ',', part: idx }; return { colSplit: cs }; }),
+        })),
+        onDragOver: (e) => { e.preventDefault(); try { e.dataTransfer.dropEffect = 'move'; } catch (x) {} },
+        onDrop: (e) => {
+          e.preventDefault();
+          let cid = ''; try { cid = e.dataTransfer.getData('text/plain'); } catch (x) {}
+          if (!cid) cid = S.dragCol;
+          if (!cid) return;
+          // 한 컬럼을 여러 필드에 매핑 허용(OS 컬럼 → 제품 + 버전). 중복 제거하지 않음.
+          this.setState(st => ({ colMap: Object.assign({}, st.colMap, { [f.id]: cid }), dragCol: null }));
+        },
+        onClear: () => this.setState(st => {
+          const nm = Object.assign({}, st.colMap); delete nm[f.id];
+          const cs = Object.assign({}, st.colSplit); delete cs[f.id];
+          return { colMap: nm, colSplit: cs };
+        }),
+      };
+    });
+
+    const _statColor = { in_progress: '#e8a33d', not_found_cve: (unresolvedCount ? '#b45309' : '#0f766e'),
+      target_assets: '#0f766e', overdue: '#b42318', due_reminders: '#7a5a9a' };
+    const stats = ((S.apiDash && S.apiDash.stats) || []).map(s => ({
+      label: s.label, value: String(s.value), unit: s.unit, color: _statColor[s.key] || '#0f766e',
+    }));
+    const deptProgress = ((S.apiDash && S.apiDash.dept_progress) || []).map(p => ({
+      dept: p.dept, pct: p.pct,
+      color: p.pct >= 100 ? '#0f766e' : (p.pct >= 50 ? '#e8a33d' : '#d9544a'),
+    }));
+
+    // ── 권고문 처리 게시판(통합 관리) — 등록된 모든 권고문을 독립 카드로, 비동기 진행/에러 표시 ──
+    const _statusKo = { UPLOADED: '접수', EXTRACTING: '추출 중', EXTRACTED: '추출 완료',
+      NEEDS_CVE_UPDATE: 'CVE 미등록', MATCHED: '매칭 완료', NOTIFYING: '발송 중', COMPLETED: '완료', ARCHIVED: '보관' };
+    const _phaseKo = { queued: '대기 중', regex: '정규식 추출 중', llm: 'LLM 분석 중', done: '추출 완료', failed: '추출 실패' };
+    const advisoryBoard = (S.apiRecent || []).map(a => {
+      const phase = a.extract_phase;
+      const processing = a.status === 'EXTRACTING' || phase === 'queued' || phase === 'regex' || phase === 'llm';
+      const isErr = phase === 'failed';
+      const isWarn = !!a.error_message && phase === 'done';
+      const stLabel = processing ? (_phaseKo[phase] || '처리 중') : (_statusKo[a.status] || a.status);
+      let bg = '#f0f3f7', fg = '#5a6b86';
+      if (isErr) { bg = '#fdecec'; fg = '#b42318'; }
+      else if (processing) { bg = '#f3eefb'; fg = '#7a5a9a'; }
+      else if (a.status === 'NEEDS_CVE_UPDATE') { bg = '#fef3e2'; fg = '#b45309'; }
+      else if (a.status === 'EXTRACTED' || a.status === 'MATCHED' || a.status === 'NOTIFYING' || a.status === 'COMPLETED') { bg = '#e6f4f2'; fg = '#0f766e'; }
+      const showSummary = !processing && (phase === 'done' || a.status === 'EXTRACTED' || a.status === 'NEEDS_CVE_UPDATE' || a.status === 'MATCHED' || a.status === 'NOTIFYING' || a.status === 'COMPLETED');
+      return {
+        id: a.id, title: a.title || '보안권고문', docNo: a.doc_no || '-', source: a.source_org || '발신기관',
+        received: this._fmtDate(a.received_at), due: a.due_at ? this._fmtDate(a.due_at) : '-',
+        processing, hasError: isErr, hasWarn: isWarn, errorMsg: a.error_message || '',
+        statusLabel: stLabel,
+        statusStyle: 'display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:3px 10px; border-radius:6px; background:' + bg + '; color:' + fg + ';',
+        cveSummary: showSummary ? ('CVE ' + (a.extracted || 0) + '건 · 조회 ' + (a.found || 0) + ' · 미등록 ' + (a.not_found || 0)) : '',
+        cardStyle: 'background:#fff; border:1px solid ' + (isErr ? '#f3c9c4' : '#e1e7ef') + '; border-radius:12px; padding:15px 18px;',
+        onOpenPdf: () => this._openPdf(a.id, a.title, a.doc_no),
+        onProcess: () => this._openDetail(a.id),
+      };
+    });
+
+    // ── STEP2 원문 PDF 뷰어(이미지 + CVE 강조 오버레이) ──
+    const pv = S.pdfView;
+    const aid = this._advisoryId;
+    const pdfAvailable = !!(pv && pv.available && pv.pages && pv.pages.length && aid);
+    const curPage = pdfAvailable ? Math.max(0, Math.min(S.pdfPage || 0, pv.pages.length - 1)) : 0;
+    const pageMeta = pdfAvailable ? pv.pages[curPage] : null;
+    const pdfScale = pdfAvailable ? (pv.scale || 2) : 2;
+    const pdfPageUrl = pdfAvailable ? ('/api/v1/advisories/' + aid + '/page/' + curPage + '.png?scale=' + pdfScale) : '';
+    const pdfBoxes = (pdfAvailable && pageMeta) ? pv.boxes.filter(b => b.page === curPage).map(b => ({
+      term: b.term,
+      style: 'position:absolute; left:' + (b.x / pageMeta.width * 100).toFixed(2) + '%; top:' + (b.y / pageMeta.height * 100).toFixed(2)
+        + '%; width:' + (b.w / pageMeta.width * 100).toFixed(2) + '%; height:' + (b.h / pageMeta.height * 100).toFixed(2)
+        + '%; background:rgba(232,163,61,.32); border:1.5px solid rgba(208,135,25,.95); border-radius:2px; box-shadow:0 0 0 1px rgba(255,255,255,.45); pointer-events:none;',
+    })) : [];
+
+    // ── 활동 기록 ──
+    const auditFilterDefs = [['', '전체'], ['ADVISORY_UPLOAD', '업로드'], ['NOTIFY_SEND', '발송'],
+      ['ADVISORY_MATCH', '매칭'], ['ASSET_IMPORT_COMMIT', '자산'], ['CVE_FEED_APPLY', '피드']];
+    const auditBadge = (action) => {
+      const grp = action && action.indexOf('NOTIFY') === 0 ? 'send'
+        : (action === 'ADVISORY_UPLOAD' || action === 'ADVISORY_EXTRACT') ? 'doc'
+        : (action && action.indexOf('CVE') === 0 || action && action.indexOf('FEED') >= 0) ? 'db'
+        : (action === 'ASSET_IMPORT_COMMIT') ? 'asset' : 'misc';
+      const c = { send: '#0f766e;background:#e6f4f2;', doc: '#2f5d8f;background:#eef4fb;',
+        db: '#b45309;background:#fef3e2;', asset: '#7a5a9a;background:#f3edfa;', misc: '#5a6b86;background:#f0f3f7;' }[grp];
+      return 'font-size:11px; font-weight:700; padding:3px 9px; border-radius:6px; color:' + c;
+    };
+    const auditRows = (S.apiAudit || []).map(a => ({
+      time: (a.created_at || '').replace('T', ' ').slice(0, 16),
+      actionKo: a.action_ko, actor: a.actor,
+      target: a.advisory_title || (a.entity_type ? (a.entity_type + (a.entity_id ? (' #' + a.entity_id) : '')) : '—'),
+      detail: a.detail ? Object.keys(a.detail).map(k => k + ': ' + a.detail[k]).join(' · ') : '',
+      ip: a.ip || '',
+      hasPdf: !!a.has_pdf,
+      badgeStyle: auditBadge(a.action),
+      onOpenPdf: () => this._openPdf(a.advisory_id, a.advisory_title, a.detail && a.detail.doc_no),
+    }));
+
+    return {
+      navAudit: S.nav === 'audit',
+      auditRows,
+      auditFilters: auditFilterDefs.map(d => ({
+        label: d[1], active: (S.auditFilter || '') === d[0], onClick: () => this._loadAudit(d[0]),
+        style: 'font-family:inherit; font-size:12px; font-weight:600; padding:6px 13px; border-radius:7px; cursor:pointer; border:1px solid '
+          + ((S.auditFilter || '') === d[0] ? '#0f766e; background:#0f766e; color:#fff;' : '#d3dbe8; background:#fff; color:#5a6b86;'),
+      })),
+      auditEmpty: !(S.apiAudit || []).length,
+
+      // STEP2 원문 PDF 뷰어
+      pdfAvailable, pdfTextFallback: !pdfAvailable,
+      pdfPageUrl, pdfBoxes,
+      pdfMultiPage: pdfAvailable && pv.pages.length > 1,
+      pdfPageLabel: pdfAvailable ? ((curPage + 1) + ' / ' + pv.pages.length) : '',
+      pdfPrev: () => this.setState(st => ({ pdfPage: Math.max(0, (st.pdfPage || 0) - 1) })),
+      pdfNext: () => this.setState(st => ({ pdfPage: Math.min((pv ? pv.pages.length - 1 : 0), (st.pdfPage || 0) + 1) })),
+
+      navItems: this.navItemsData(),
+      navProcess: S.nav === 'process', navCvedb: S.nav === 'cvedb', navAssets: S.nav === 'assets',
+      navHistory: S.nav === 'history', navDashboard: S.nav === 'dashboard',
+      pageTitle: pg[0], pageSub: pg[1],
+
+      // 권고문 처리: 게시판(목록) ↔ 권고문별 상세
+      procBoard: S.nav === 'process' && S.procView !== 'detail',
+      procDetail: S.nav === 'process' && S.procView === 'detail',
+      advisoryBoard, boardCount: advisoryBoard.length, boardEmpty: advisoryBoard.length === 0,
+      detailSteps: this.stepsData().filter(s => s.num >= 2),
+      onBackToBoard: () => this._backToBoard(),
+
+      advisory: adv,
+      steps: this.stepsData(),
+      step1: S.step === 1, step2: S.step === 2, step3: S.step === 3, step4: S.step === 4,
+      goStep2: () => this.setState({ step: 2 }),
+      goStep3: () => { if (canProceed) this.setState({ step: 3 }); },
+      goStep4: () => this.setState({ step: 4 }),
+      goCvedb: () => this.setState({ nav: 'cvedb' }),
+
+      // 권고문 PDF 업로드 — 실 파일 선택/드래그드롭 → 서버 업로드 → CVE 추출
+      onPickFile: () => this._pickAdvisoryFile(),
+      onPdfDragOver: (e) => { e.preventDefault(); try { e.dataTransfer.dropEffect = 'copy'; } catch (x) {} },
+      onPdfDrop: (e) => {
+        e.preventDefault();
+        const fs = (e.dataTransfer && e.dataTransfer.files) ? Array.from(e.dataTransfer.files) : [];
+        const pdfs = fs.filter(f => /\.pdf$/i.test(f.name));
+        if (pdfs.length) this._uploadAdvisories(pdfs);
+        else if (this.flashToast) this.flashToast('PDF만 업로드', 'PDF 파일을 끌어다 놓으세요');
+      },
+
+      docLines: this.docLines(),
+      rows, rowCount: rows.length, foundCount,
+      extractedChips,
+      // CVE 수동 보정(§A2)
+      cveEdit: (S.apiCveItems || []).map(i => ({
+        code: i.cve_id_text,
+        chipStyle: 'display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-family:monospace; font-weight:600; padding:3px 7px; border-radius:5px; '
+          + (i.lookup_status === 'FOUND' ? 'background:#e6f4f2;color:#0f766e;border:1px solid #b8e0da;' : 'background:#fef3e2;color:#b45309;border:1px solid #f5d9a8;'),
+        onDelete: () => this._delCve(i.id),
+      })),
+      cveAddText: S.cveAddText || '',
+      onCveAddInput: (e) => this.setState({ cveAddText: e.target.value }),
+      onAddCve: () => this._addCve(),
+      hasUnresolved: unresolvedCount > 0,
+      unresolvedCount,
+      unresolvedColor: unresolvedCount ? '#b45309' : '#0f766e',
+      proceedDisabled: !canProceed,
+      proceedHint: canProceed ? 'CVE 조회 완료 — 다음 단계로 진행할 수 있습니다.' : 'DB 미등록 CVE를 갱신해야 진행할 수 있습니다.',
+      proceedHintColor: canProceed ? '#0f766e' : '#b45309',
+      proceedBtnStyle: 'font-family:inherit; font-size:13px; font-weight:700; padding:11px 22px; border-radius:8px; border:none; ' + (canProceed ? 'background:#0f766e; color:#fff; cursor:pointer;' : 'background:#e3e8ef; color:#a3aebf; cursor:not-allowed;'),
+
+      matches, matchTotal: allMatches.length, excludedCount, deptCount: deptNames.length,
+      deptGroups,
+      sendAll: () => this.setState(s => { const ns = Object.assign({}, s.sent); deptNames.forEach(d => ns[d] = true); return { sent: ns }; }),
+      sendSummary: (sentCount === deptNames.length && deptNames.length > 0) ? ('전체 ' + deptNames.length + '개 부서 발송 완료 — 발송 이력에 기록되었습니다.') : (sentCount + ' / ' + deptNames.length + '개 부서 발송 완료'),
+
+      // cve db
+      cveCount: S.cveStats ? Number(S.cveStats.count || 0).toLocaleString() : '—',
+      updatedAt: (S.cveStats && S.cveStats.last_updated) ? String(S.cveStats.last_updated).slice(0, 16).replace('T', ' ') : '—',
+      updatedColor: '#0f766e',
+      feedStaged: S.feedStaged,
+      feedFileName: S.feedFileName || '피드 파일',
+      feedSummary: S.feedSummary || '',
+      onStageFeed: () => this._pickFeedFile(),
+      onApplyFeed: () => this._applyFeed(),
+      updateLog: updateLogV,
+      cveTableRows,
+
+      recentDocs: this.recentDocs(),
+      assetRows, assetTotal: this.assets().length,
+
+      // 발송 후 — 조치율/SLA/보고서/리마인드 (§★★★★★~★★★★)
+      remRate: (S.apiRem ? S.apiRem.done_rate : 0) + '%',
+      remText: S.apiRem ? ('완료 ' + S.apiRem.done + ' / 진행 ' + S.apiRem.in_progress + ' / 불가 ' + S.apiRem.unable + ' / 미회신 ' + S.apiRem.none + ' · 자산 ' + S.apiRem.asset_done + '/' + S.apiRem.asset_total + '대') : '발송 내역 없음',
+      slaText: (() => { const r = S.apiRem; if (!r) return ''; const map = { NORMAL: '정상', IMMINENT: '임박', OVERDUE: '기한초과', DONE: '완료' }; return (r.d_day != null ? ('D' + (r.d_day >= 0 ? '-' : '+') + Math.abs(r.d_day) + ' · ') : '') + (map[r.sla_status] || r.sla_status || ''); })(),
+      slaStyle: (() => { const s = S.apiRem ? S.apiRem.sla_status : 'NORMAL'; const c = { OVERDUE: 'background:#fdecec;color:#b42318;', IMMINENT: 'background:#fef3e2;color:#b45309;', DONE: 'background:#e6f4f2;color:#0f766e;', NORMAL: 'background:#eef4fb;color:#2f5d8f;' }[s] || 'background:#eef4fb;color:#2f5d8f;'; return 'font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;' + c; })(),
+      onReportXlsx: () => this._report('xlsx'),
+      onReportHtml: () => this._report('html'),
+      onRemind: () => this._remind(),
+      // 게시판 게시(§A3)
+      onPostBoard: () => this._postBoard(),
+      boardLabel: (S.boardPosted || (S.apiAdvisory && S.apiAdvisory.board_post_id)) ? '게시판 게시됨 ✓' : '📋 게시판 게시',
+      boardBtnStyle: 'flex-shrink:0; font-family:inherit; font-size:12px; font-weight:600; padding:8px 13px; border-radius:8px; cursor:pointer; '
+        + ((S.boardPosted || (S.apiAdvisory && S.apiAdvisory.board_post_id)) ? 'background:#e6f4f2;color:#0f766e;border:1px solid #b8e0da;' : 'background:#fff;color:#7a5a9a;border:1px solid #e0d2f0;'),
+      // 권고문 선택(§B) — 조치율/보고서 대상
+      advOptions: (S.apiRecent || []).map(a => ({
+        value: String(a.id),
+        label: (a.doc_no || ('권고문 ' + a.id)) + ' — ' + (a.title || '').slice(0, 24),
+      })),
+      advPickValue: String(S.advPick || this._advisoryId || ''),
+      onPickAdvisory: (e) => this._pickAdvisory(e.target.value),
+
+      // asset import / column mapping
+      assetListView: S.assetView === 'list',
+      assetImportView: S.assetView === 'import',
+      openImport: () => this._uploadAssetExcel(),          // 실 파일 업로드 → preview(§D)
+      closeImport: () => this.setState({ assetView: 'list', importPreview: null }),
+      importedNote: S.assetImported ? ' · 최근 엑셀 매핑 반영됨' : '',
+      sheetCols,
+      previewRowNums: (sheetCols[0] && sheetCols[0].samples && sheetCols[0].samples.length) ? sheetCols[0].samples.map((_, i) => i + 1) : [1, 2, 3, 4],
+      mapFields,
+      reqMapped, reqTotal,
+      reqColor: canImport ? '#0f766e' : '#b45309',
+      autoMap: () => {
+        const nm = {};
+        this.sheetColsRaw().forEach(c => { if (c.suggest) nm[c.suggest] = c.id; });
+        this.setState({ colMap: nm });
+      },
+      // 헤더행 선택(§D — 다중행/병합 대응)
+      importFileName: this._importFile ? this._importFile.name : (S.importPreview ? '업로드 파일' : ''),
+      importSheet: S.importPreview ? S.importPreview.sheet : '',
+      importTotalRows: S.importPreview ? S.importPreview.total_rows : 0,
+      detectedHeaderRow: S.importPreview ? S.importPreview.detected_header_row : 1,
+      headerRowValue: String(S.importHeaderRow || 1),
+      headerRowsValue: String(S.importHeaderRows || 1),
+      headerRowOptions: (S.importPreview && S.importPreview.preview_rows ? S.importPreview.preview_rows.map((r, i) => ({
+        value: String(i + 1),
+        label: (i + 1) + '행: ' + (r.filter(Boolean).slice(0, 4).join(' · ').slice(0, 38) || '(빈 행)'),
+      })) : []),
+      onHeaderRowPick: (e) => this._setHeaderRow(e.target.value),
+      onHeaderRowsPick: (e) => this._setHeaderRows(e.target.value),
+      importDisabled: !canImport,
+      importHint: canImport ? '필수 항목이 모두 매핑되었습니다. 가져오기를 진행할 수 있습니다. (버전은 선택 — 제품 셀에서 자동 분리)' : '필수 항목(제품/OS · 부서 · 담당자)을 모두 매핑해야 합니다.',
+      importHintColor: canImport ? '#0f766e' : '#b45309',
+      importBtnStyle: 'font-family:inherit; font-size:13px; font-weight:700; padding:11px 22px; border-radius:8px; border:none; ' + (canImport ? 'background:#0f766e; color:#fff; cursor:pointer;' : 'background:#e3e8ef; color:#a3aebf; cursor:not-allowed;'),
+      doImport: () => this._doRealImport(),
+
+      historyRows: this.historyRows().map(h => Object.assign({}, h, {
+        onOpenPdf: () => this._openPdf(h.advisoryId, h.title || h.docNo, h.docNo),
+      })),
+
+      // pdf viewer modal — 실제 PDF 임베드 + 다운로드/새탭
+      pdfModalOpen: !!S.pdfModal,
+      pdfTitle: S.pdfModal ? S.pdfModal.title : '',
+      pdfDocNo: S.pdfModal ? S.pdfModal.docNo : '',
+      pdfModalSrc: S.pdfModal ? ('/api/v1/advisories/' + S.pdfModal.advisoryId + '/file') : '',
+      pdfDownload: () => { const m = this.state.pdfModal; if (m) window.open('/api/v1/advisories/' + m.advisoryId + '/file?download=1', '_blank'); },
+      pdfOpenNew: () => { const m = this.state.pdfModal; if (m) window.open('/api/v1/advisories/' + m.advisoryId + '/file', '_blank'); },
+      closePdf: () => this.setState({ pdfModal: null }),
+      stopProp: (e) => { e.stopPropagation(); },
+
+      // toast
+      toastOpen: !!S.toast,
+      toastIsConfirm: !!(S.toast && S.toast.kind === 'dup'),
+      toastClosable: !!(S.toast && S.toast.kind === 'dup'),
+      toastTitle: S.toast ? S.toast.title : '',
+      toastText: S.toast ? S.toast.text : '',
+      toastAccent: (S.toast && S.toast.kind === 'dup') ? '#e8a33d' : '#0f766e',
+      toastIcon: (S.toast && S.toast.kind === 'dup') ? this.icon('warnToast') : this.icon('okToast'),
+      toastYes: () => this.setState({ toast: null, step: 2, excluded: {}, sent: {} }),
+      toastNo: () => this.setState({ toast: null }),
+
+      stats, deptProgress,
+    };
+  }
+}
+</script>
+</body>
+</html>

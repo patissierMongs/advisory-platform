@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "module": "esnext",
+    "target": "es2019",
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": "dts-out"
+  },
+  "include": ["src/components/*.tsx"]
+}

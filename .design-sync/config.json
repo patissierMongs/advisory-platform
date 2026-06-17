@@ -1,0 +1,11 @@
+{
+  "projectId": "11ad8a0e-aee7-4780-af29-795f09e8e1e2",
+  "projectName": "Advisory Platform DS",
+  "shape": "offscript",
+  "source": "web/app.dc.html",
+  "globalName": "AdvisoryDS",
+  "readmeHeader": ".design-sync/conventions.md",
+  "outDir": "ds-bundle",
+  "buildSteps": ["node .ds-build/build.mjs", "node .ds-build/gen.mjs", "node .ds-build/verify.mjs", "node .ds-build/docs.mjs", "node .ds-build/finalize.mjs"],
+  "notes": "Off-script extraction: no npm package / dist / Storybook. 16 components authored from inline-styled patterns in web/app.dc.html. Build toolchain lives under .ds-build/. React 18 vendored from web/vendor. Pretendard font vendored. Components self-style with inline styles + token CSS vars; styles.css carries the @import closure."
+}

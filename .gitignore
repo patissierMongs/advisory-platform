@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.pyc
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/uploads/
+data/feeds/
+data/assets/
+data/outbox.log
+data/*.log
+.claude/settings.local.json
+data/render/
+data/.cve_feeds_loaded
+.env
+
+# 빌드/런타임 산출물 · 대용량 재생성 가능 데이터
+_cache/
+node_modules/
+# 공개 CVE 피드(NVD/CISA KEV, ~290MB, 100MB 초과 파일 포함) — scripts/fetch_cve_feeds.py 로 재생성
+samples/cve_feeds/

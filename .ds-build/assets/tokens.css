@@ -1,0 +1,101 @@
+/* Advisory Platform DS — design tokens.
+   Extracted verbatim from the inline styles in web/app.dc.html. */
+:root {
+  /* ---- Brand / primary (teal) ---- */
+  --ds-color-primary: #0f766e;
+  --ds-color-primary-strong: #0f5d56;
+  --ds-color-primary-tint: #e6f4f2;     /* fill on tinted chips/badges */
+  --ds-color-primary-border: #b8e0da;
+  --ds-color-primary-accent: #5fd0c4;   /* bright accent on dark surfaces */
+
+  /* ---- Navy (sidebar / strong headings) ---- */
+  --ds-color-navy: #0f2742;
+  --ds-color-navy-deep: #15294a;
+  --ds-color-navy-ink: #0f1d2e;
+
+  /* ---- Neutrals ---- */
+  --ds-color-bg: #eef1f5;               /* app canvas */
+  --ds-color-surface: #ffffff;          /* cards */
+  --ds-color-surface-subtle: #fafbfd;   /* table headers, inset panels */
+  --ds-color-surface-muted: #f7f9fc;    /* dropzones */
+  --ds-color-surface-alt: #f4f6f9;      /* pills */
+
+  /* ---- Borders ---- */
+  --ds-color-border: #e1e7ef;           /* card border */
+  --ds-color-border-soft: #eef1f5;      /* inner dividers */
+  --ds-color-border-faint: #f2f5f9;     /* table row dividers */
+  --ds-color-border-field: #d3dbe8;     /* inputs / secondary buttons */
+
+  /* ---- Text ramp ---- */
+  --ds-color-text: #15294a;             /* headings */
+  --ds-color-text-strong: #2a3a52;
+  --ds-color-text-body: #3a4a63;
+  --ds-color-text-muted: #5a6b86;
+  --ds-color-text-soft: #8a98ab;
+  --ds-color-text-faint: #94a1b4;
+
+  /* ---- Semantic: danger (red) ---- */
+  --ds-color-danger: #b42318;
+  --ds-color-danger-text: #8a2820;
+  --ds-color-danger-tint: #fdecec;
+  --ds-color-danger-border: #f5c6c2;
+
+  /* ---- Semantic: warning (amber) ---- */
+  --ds-color-warning: #b45309;
+  --ds-color-warning-strong: #92400e;
+  --ds-color-warning-text: #a16207;
+  --ds-color-warning-tint: #fffaf2;
+  --ds-color-warning-tint-2: #fff6e9;
+  --ds-color-warning-border: #f5d9a8;
+  --ds-color-warning-accent: #e8a33d;
+
+  /* ---- Semantic: info (blue) ---- */
+  --ds-color-info: #2f5d8f;
+  --ds-color-info-tint: #eef4fb;
+  --ds-color-info-border: #d4e3f2;
+
+  /* ---- Semantic: success (mint) ---- */
+  --ds-color-success: #1d7a44;
+  --ds-color-success-tint: #eef6f5;
+  --ds-color-success-border: #c8e3df;
+
+  /* ---- Accent: purple ---- */
+  --ds-color-purple: #7a5a9a;
+  --ds-color-purple-tint: #f3eefa;
+  --ds-color-purple-border: #e0d2f0;
+
+  /* ---- Radius ---- */
+  --ds-radius-xs: 4px;
+  --ds-radius-sm: 6px;
+  --ds-radius-md: 8px;
+  --ds-radius-lg: 11px;
+  --ds-radius-xl: 12px;
+  --ds-radius-2xl: 14px;
+  --ds-radius-pill: 50%;
+
+  /* ---- Spacing scale ---- */
+  --ds-space-1: 4px;
+  --ds-space-2: 7px;
+  --ds-space-3: 11px;
+  --ds-space-4: 14px;
+  --ds-space-5: 18px;
+  --ds-space-6: 22px;
+  --ds-space-7: 26px;
+
+  /* ---- Typography ---- */
+  --ds-font-family: 'Pretendard', 'Pretendard Variable', -apple-system, BlinkMacSystemFont, sans-serif;
+  --ds-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ds-font-size-xs: 11px;
+  --ds-font-size-sm: 12.5px;
+  --ds-font-size-md: 13px;
+  --ds-font-size-lg: 15px;
+  --ds-font-size-xl: 17px;
+  --ds-font-weight-medium: 600;
+  --ds-font-weight-bold: 700;
+  --ds-font-weight-black: 800;
+
+  /* ---- Elevation ---- */
+  --ds-shadow-card: 0 2px 10px rgba(15, 29, 46, .06);
+  --ds-shadow-pop: 0 14px 40px rgba(15, 29, 46, .22);
+  --ds-shadow-modal: 0 24px 70px rgba(0, 0, 0, .35);
+}

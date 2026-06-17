@@ -1,0 +1,130 @@
+[
+  {
+    "name": "Alert",
+    "file": "Alert.jsx",
+    "group": "Feedback",
+    "width": 620,
+    "height": 260,
+    "subtitle": "info / success / warning / danger"
+  },
+  {
+    "name": "Avatar",
+    "file": "Avatar.jsx",
+    "group": "Data Display",
+    "width": 460,
+    "height": 140,
+    "subtitle": "initials circle + identity"
+  },
+  {
+    "name": "Badge",
+    "file": "Badge.jsx",
+    "group": "Data Display",
+    "width": 520,
+    "height": 180,
+    "subtitle": "tones · soft / solid / dot"
+  },
+  {
+    "name": "Button",
+    "file": "Button.jsx",
+    "group": "Actions",
+    "width": 520,
+    "height": 180,
+    "subtitle": "primary / dark / danger / secondary / ghost"
+  },
+  {
+    "name": "Card",
+    "file": "Card.jsx",
+    "group": "Layout",
+    "width": 520,
+    "height": 240,
+    "subtitle": "Base white surface"
+  },
+  {
+    "name": "Chip",
+    "file": "Chip.jsx",
+    "group": "Data Display",
+    "width": 520,
+    "height": 140,
+    "subtitle": "removable tokens (extracted CVEs)"
+  },
+  {
+    "name": "DataTable",
+    "file": "DataTable.jsx",
+    "group": "Data Display",
+    "width": 720,
+    "height": 280,
+    "subtitle": "grid table with badges"
+  },
+  {
+    "name": "Dropzone",
+    "file": "Dropzone.jsx",
+    "group": "Forms",
+    "width": 560,
+    "height": 320,
+    "subtitle": "dashed file-drop area"
+  },
+  {
+    "name": "Modal",
+    "file": "Modal.jsx",
+    "group": "Feedback",
+    "width": 680,
+    "height": 460,
+    "subtitle": "centered overlay dialog"
+  },
+  {
+    "name": "ProgressBar",
+    "file": "ProgressBar.jsx",
+    "group": "Data Display",
+    "width": 480,
+    "height": 280,
+    "subtitle": "per-department progress"
+  },
+  {
+    "name": "SeverityBadge",
+    "file": "SeverityBadge.jsx",
+    "group": "Data Display",
+    "width": 460,
+    "height": 120,
+    "subtitle": "critical / high / medium / low"
+  },
+  {
+    "name": "Sidebar",
+    "file": "Sidebar.jsx",
+    "group": "Navigation",
+    "width": 300,
+    "height": 460,
+    "subtitle": "nav rail with brand + items"
+  },
+  {
+    "name": "StatCard",
+    "file": "StatCard.jsx",
+    "group": "Data Display",
+    "width": 560,
+    "height": 150,
+    "subtitle": "metric tiles"
+  },
+  {
+    "name": "Stepper",
+    "file": "Stepper.jsx",
+    "group": "Navigation",
+    "width": 680,
+    "height": 130,
+    "subtitle": "numbered flow with connectors"
+  },
+  {
+    "name": "Toast",
+    "file": "Toast.jsx",
+    "group": "Feedback",
+    "width": 420,
+    "height": 360,
+    "subtitle": "corner notification + confirm"
+  },
+  {
+    "name": "Topbar",
+    "file": "Topbar.jsx",
+    "group": "Navigation",
+    "width": 760,
+    "height": 120,
+    "subtitle": "page header with status + user"
+  }
+]
