@@ -79,6 +79,7 @@ def advisory_cve_item(ac: AdvisoryCve, *, match_count: int = 0) -> dict:
         "affected_versions": c.affected_versions if c else None,
         "severity": c.severity.value if c else None,
         "description": c.description if c else None,
+        "published_at": _d(c.published_at) if c else None,
         "source": c.source if c else None,
         "is_new": False,
         "match_count": match_count,

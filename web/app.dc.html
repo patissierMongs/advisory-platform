@@ -1409,23 +1409,25 @@ class Component extends DCLogic {
     return (this.state.apiCveItems || []).map(i => ({ id: i.cve_id_text }));
   }
 
-  // 로컬 CVE DB — 서버 /cves 에서 로드(등록된 항목만 존재 → 미등록은 enrichRows 에서 NOT_FOUND).
+  // 추출된 CVE의 DB조회 결과 — 백엔드가 계산한 advisory_cve.lookup_status 를 그대로 사용.
+  // (이전엔 /cves?size=500 로 받은 일부만 클라이언트에서 대조 → 등록된 CVE도 '미등록'으로 오표시되는 버그)
   cveDb() {
     const map = {};
-    (this.state.apiCveList || []).forEach(c => {
-      const av = c.affected_versions;
+    (this.state.apiCveItems || []).forEach(i => {
+      if (i.lookup_status !== 'FOUND') return;       // 미등록은 제외 → enrichRows 에서 NOT_FOUND 처리
+      const av = i.affected_versions;
       const isList = Array.isArray(av);
-      map[c.cve_id] = {
-        product: c.product_name,
-        matchKey: c.product_key,                     // asset.key 와 동일한 정규화 키
+      map[i.cve_id_text] = {
+        product: i.product_name,
+        matchKey: i.product_key,                     // asset.key 와 동일한 정규화 키
         versions: isList ? av : [],
         anyVer: !isList,                             // {"lt":...} / "*" → 제품키만 일치 시 매칭
         versionNote: (av && av.lt) ? (av.lt + ' 미만 전체') : '전체',
-        severity: this._koSev(c.severity),
-        desc: c.description,
-        published: (c.published_at || '').slice(0, 10),
-        source: c.source,
-        isNew: /KISA/i.test(c.source || ''),
+        severity: this._koSev(i.severity),
+        desc: i.description,
+        published: (i.published_at || '').slice(0, 10),
+        source: i.source,
+        isNew: /KISA/i.test(i.source || ''),
       };
     });
     return map;
