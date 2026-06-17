@@ -1,6 +1,9 @@
 """CVE 피드 — 업로드·검증·적용 (명세서 §5.2, §4.4)."""
 from __future__ import annotations
 
+import hashlib
+import os
+import tempfile
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -11,7 +14,6 @@ from .. import enums
 from ..audit import record
 from ..config import DATA_DIR
 from ..core import feeds
-from ..core.extract import sha256_bytes
 from ..core.files import safe_filename
 from ..db import get_db
 from ..deps import get_actor_id
@@ -29,22 +31,41 @@ async def upload_feed(
     source: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
-    content = await file.read()
+    # 대용량(1.6GB+) 대비: 메모리에 통째로 올리지 않고 디스크로 청크 스트리밍 저장(+sha 동시 계산).
+    h = hashlib.sha256()
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=str(FEED_DIR))
     try:
-        records = feeds.parse_feed(file.filename or "", content)
+        with os.fdopen(tmp_fd, "wb") as out:
+            while chunk := await file.read(1 << 20):
+                h.update(chunk)
+                out.write(chunk)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
+    sha = h.hexdigest()
+    path = FEED_DIR / f"{sha}_{safe_filename(file.filename)}"
+    newly_created = not path.exists()
+    if newly_created:
+        os.replace(tmp_path, path)
+    else:
+        os.remove(tmp_path)  # 동일 sha 기존 파일 재사용
+
+    # 검증: 원본 파일에서 스트리밍하며 신규/갱신 카운트(상수 메모리).
+    try:
+        added, updated, first_source = feeds.count_new_updated(
+            db, feeds.iter_records_from_path(str(path), file.filename))
     except Exception as e:  # noqa: BLE001
+        if newly_created:
+            path.unlink(missing_ok=True)
         raise HTTPException(400, f"피드 파싱 실패: {e}")
-    if not records:
+    if added + updated == 0:
+        if newly_created:
+            path.unlink(missing_ok=True)
         raise HTTPException(400, "유효한 CVE 레코드가 없습니다.")
 
-    sha = sha256_bytes(content)
-    path = FEED_DIR / f"{sha}_{safe_filename(file.filename)}"
-    if not path.exists():
-        path.write_bytes(content)
-
-    added, updated = feeds.validate_counts(db, records)
     imp = CveFeedImport(
-        source=source or (records[0].get("source") if records else None) or "UNKNOWN",
+        source=source or first_source or "UNKNOWN",
         import_mode=enums.ImportMode.FILE_UPLOAD,
         file_name=file.filename,
         file_sha256=sha,
@@ -52,7 +73,7 @@ async def upload_feed(
         added_count=added,
         updated_count=updated,
         status=enums.FeedImportStatus.VALIDATED,
-        staged_payload=_jsonable(records),
+        # staged_payload 미사용: 적용 시 원본 파일(file_path)에서 재파싱 — DB 비대화·이중 적재 방지.
     )
     db.add(imp)
     db.flush()
@@ -77,8 +98,13 @@ def apply_feed(import_id: int, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(404, "피드 가져오기 내역 없음")
     if imp.status == enums.FeedImportStatus.APPLIED:
         raise HTTPException(409, "이미 적용된 피드입니다.")
-    records = _from_jsonable(imp.staged_payload or [])
-    added, updated = feeds.apply_records(db, records, imp.id)
+    if not imp.file_path or not os.path.exists(imp.file_path):
+        raise HTTPException(410, "원본 피드 파일이 없어 적용할 수 없습니다. 다시 업로드하세요.")
+    imp_id = imp.id
+    # 원본 파일에서 스트리밍 → 배치 단위 upsert·커밋(상수 메모리, 중단 후 재적용 안전).
+    added, updated = feeds.apply_stream(
+        db, feeds.iter_records_from_path(imp.file_path, imp.file_name), imp_id)
+    imp = db.get(CveFeedImport, imp_id)  # 배치 커밋으로 만료 → 명시적 재취득
     imp.added_count, imp.updated_count = added, updated
     imp.status = enums.FeedImportStatus.APPLIED
     imp.applied_at = datetime.now(timezone.utc)
@@ -132,30 +158,3 @@ def _reevaluate_advisories(db: Session) -> int:
                 adv.status = enums.AdvisoryStatus.EXTRACTED
                 unlocked += 1
     return unlocked
-
-
-def _jsonable(records: list[dict]) -> list[dict]:
-    out = []
-    for r in records:
-        r = dict(r)
-        r["severity"] = r["severity"].value if hasattr(r["severity"], "value") else r["severity"]
-        if r.get("published_at") is not None and hasattr(r["published_at"], "isoformat"):
-            r["published_at"] = r["published_at"].isoformat()
-        out.append(r)
-    return out
-
-
-def _from_jsonable(records: list[dict]) -> list[dict]:
-    from datetime import datetime as _dt
-
-    out = []
-    for r in records:
-        r = dict(r)
-        r["severity"] = enums.Severity(r["severity"]) if isinstance(r["severity"], str) else r["severity"]
-        if isinstance(r.get("published_at"), str):
-            try:
-                r["published_at"] = _dt.strptime(r["published_at"][:10], "%Y-%m-%d").date()
-            except ValueError:
-                r["published_at"] = None
-        out.append(r)
-    return out
