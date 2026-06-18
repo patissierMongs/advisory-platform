@@ -139,7 +139,7 @@ class Advisory(TimestampMixin, Base):
     file_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
     page_count: Mapped[int | None] = mapped_column(Integer)
     extracted_text: Mapped[str | None] = mapped_column(Text)
-    extract_phase: Mapped[str | None] = mapped_column(String(20))   # 비동기 추출: queued|regex|llm|done|failed
+    extract_phase: Mapped[str | None] = mapped_column(String(20))   # 비동기 추출: queued|regex|done|failed
     error_message: Mapped[str | None] = mapped_column(Text)         # 추출 실패/경고 사유(보드 표시)
     status: Mapped[enums.AdvisoryStatus] = mapped_column(
         _enum(enums.AdvisoryStatus), default=enums.AdvisoryStatus.UPLOADED, nullable=False

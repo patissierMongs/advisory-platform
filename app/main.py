@@ -12,7 +12,7 @@ from .config import WEB_DIR, settings
 from .db import SessionLocal, init_db
 from .routers import (
     advisories, assets, audit, cve_feeds, cves, dashboard, departments, matches, notifications,
-    remediation, system,
+    remediation,
 )
 
 
@@ -60,7 +60,7 @@ def _load_bundled_cve_feeds() -> None:
 
 
 def _reconcile_stuck_extractions() -> None:
-    """비정상 종료로 중단된 추출 작업 정리 — 재시작 시 stuck(queued/regex/llm) 해제."""
+    """비정상 종료로 중단된 추출 작업 정리 — 재시작 시 stuck(queued/regex) 해제."""
     from sqlalchemy import select
 
     from . import enums
@@ -68,7 +68,7 @@ def _reconcile_stuck_extractions() -> None:
 
     with SessionLocal() as db:
         stuck = db.scalars(
-            select(Advisory).where(Advisory.extract_phase.in_(["queued", "regex", "llm"]))
+            select(Advisory).where(Advisory.extract_phase.in_(["queued", "regex"]))
         ).all()
         for a in stuck:
             a.extract_phase = "failed"
@@ -89,7 +89,7 @@ app.add_middleware(
 )
 
 for r in (advisories, cve_feeds, cves, assets, matches, notifications, departments, dashboard,
-          remediation, system, audit):
+          remediation, audit):
     app.include_router(r.router)
 
 

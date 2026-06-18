@@ -303,7 +303,7 @@
                       </sc-for>
                     </div>
                     <div style="display:flex; gap:6px; align-items:center; margin-top:9px;">
-                      <input value="{{ cveAddText }}" onInput="{{ onCveAddInput }}" placeholder="CVE-YYYY-NNNN 수동 추가 (LLM/정규식 누락 보정)" style="flex:0 0 330px; max-width:62%; font-family:monospace; font-size:11.5px; padding:6px 9px; border:1px solid #d3dbe8; border-radius:6px; outline:none; color:#33415a;">
+                      <input value="{{ cveAddText }}" onInput="{{ onCveAddInput }}" placeholder="CVE-YYYY-NNNN 수동 추가 (정규식 누락 보정)" style="flex:0 0 330px; max-width:62%; font-family:monospace; font-size:11.5px; padding:6px 9px; border:1px solid #d3dbe8; border-radius:6px; outline:none; color:#33415a;">
                       <button onClick="{{ onAddCve }}" style="background:#fff; color:#0f5d56; border:1px solid #b8e0da; border-radius:6px; padding:6px 13px; font-size:11.5px; font-weight:700; cursor:pointer; font-family:inherit;">+ 추가</button>
                     </div>
                   </div>
@@ -1006,14 +1006,14 @@ class Component extends DCLogic {
       const S = this.state;
       if (S.nav !== 'process') return;
       const recent = S.apiRecent || [];
-      const anyProcessing = recent.some(a => a.status === 'EXTRACTING' || ['queued', 'regex', 'llm'].indexOf(a.extract_phase) >= 0);
+      const anyProcessing = recent.some(a => a.status === 'EXTRACTING' || ['queued', 'regex'].indexOf(a.extract_phase) >= 0);
       // 보드 화면이거나 처리 중인 건이 있을 때만 갱신(상세 편집 방해 최소화)
       if (S.procView !== 'detail' || anyProcessing) this._refreshBoard();
       // 상세에서 해당 권고문이 처리 중이면 CVE 도 갱신(편집 중이면 건너뜀 → 사용자 입력 보존)
       if (S.procView === 'detail' && S.detailId && !this._busy.cveEdit) {
         const did = S.detailId;
         const d = recent.find(a => a.id === did);
-        if (d && (d.status === 'EXTRACTING' || ['queued', 'regex', 'llm'].indexOf(d.extract_phase) >= 0)) {
+        if (d && (d.status === 'EXTRACTING' || ['queued', 'regex'].indexOf(d.extract_phase) >= 0)) {
           this.api('GET', '/advisories/' + did + '/cves')
             .then(c => { if (this.state.procView === 'detail' && this.state.detailId === did && !this._busy.cveEdit) this.setState({ apiCveItems: c.items || [] }); })
             .catch(() => {});
@@ -1109,7 +1109,7 @@ class Component extends DCLogic {
     if (id) window.open('/api/v1/advisories/' + id + '/report.' + kind, '_blank');
   }
 
-  // CVE 수동 추가/삭제(§A2) — LLM/정규식 누락 보정. 게이트 재평가 후 리로드.
+  // CVE 수동 추가/삭제(§A2) — 정규식 누락 보정. 게이트 재평가 후 리로드.
   _addCve() {
     const code = (this.state.cveAddText || '').trim();
     if (!code || !this._advisoryId) return;
@@ -1878,10 +1878,10 @@ class Component extends DCLogic {
     // ── 권고문 처리 게시판(통합 관리) — 등록된 모든 권고문을 독립 카드로, 비동기 진행/에러 표시 ──
     const _statusKo = { UPLOADED: '접수', EXTRACTING: '추출 중', EXTRACTED: '추출 완료',
       NEEDS_CVE_UPDATE: 'CVE 미등록', MATCHED: '매칭 완료', NOTIFYING: '발송 중', COMPLETED: '완료', ARCHIVED: '보관' };
-    const _phaseKo = { queued: '대기 중', regex: '정규식 추출 중', llm: 'LLM 분석 중', done: '추출 완료', failed: '추출 실패' };
+    const _phaseKo = { queued: '대기 중', regex: '정규식 추출 중', done: '추출 완료', failed: '추출 실패' };
     const advisoryBoard = (S.apiRecent || []).map(a => {
       const phase = a.extract_phase;
-      const processing = a.status === 'EXTRACTING' || phase === 'queued' || phase === 'regex' || phase === 'llm';
+      const processing = a.status === 'EXTRACTING' || phase === 'queued' || phase === 'regex';
       const isErr = phase === 'failed';
       const isWarn = !!a.error_message && phase === 'done';
       const stLabel = processing ? (_phaseKo[phase] || '처리 중') : (_statusKo[a.status] || a.status);

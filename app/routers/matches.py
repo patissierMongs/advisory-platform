@@ -24,7 +24,7 @@ def run_match(advisory_id: int, request: Request, db: Session = Depends(get_db))
     if not adv:
         raise HTTPException(404, "권고문 없음")
     # 추출 진행 중에는 매칭 불가(반쯤 갱신된 CVE 목록 대상 매칭/고립 방지).
-    if adv.status == enums.AdvisoryStatus.EXTRACTING or adv.extract_phase in ("queued", "regex", "llm"):
+    if adv.status == enums.AdvisoryStatus.EXTRACTING or adv.extract_phase in ("queued", "regex"):
         raise HTTPException(409, detail={
             "code": "EXTRACTING", "message": "CVE 추출이 진행 중입니다. 완료 후 매칭하세요.",
         })
