@@ -11,8 +11,8 @@ from fastapi.staticfiles import StaticFiles
 from .config import WEB_DIR, settings
 from .db import SessionLocal, init_db
 from .routers import (
-    advisories, assets, audit, cve_feeds, cves, dashboard, departments, matches, notifications,
-    remediation,
+    advisories, assets, audit, board, cve_feeds, cves, dashboard, departments, matches,
+    notifications, remediation,
 )
 
 
@@ -89,7 +89,7 @@ app.add_middleware(
 )
 
 for r in (advisories, cve_feeds, cves, assets, matches, notifications, departments, dashboard,
-          remediation, audit):
+          remediation, audit, board):
     app.include_router(r.router)
 
 
@@ -105,4 +105,15 @@ if WEB_DIR.exists():
 
 @app.get("/")
 def root():
+    # 일반 사용자 진입점 = 내부 게시판. 관리자는 /admin.
+    return RedirectResponse(url="/board")
+
+
+@app.get("/board")
+def board_page():
+    return RedirectResponse(url="/ui/board.html")
+
+
+@app.get("/admin")
+def admin_page():
     return RedirectResponse(url="/ui/app.dc.html")

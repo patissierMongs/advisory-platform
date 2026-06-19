@@ -4,7 +4,14 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from . import enums
-from .models import Advisory, AdvisoryCve, Asset, Cve, Match, Notification
+from .models import Advisory, AdvisoryComment, AdvisoryCve, Asset, Cve, Match, Notification
+
+_SEV_RANK = {
+    enums.Severity.CRITICAL: 4,
+    enums.Severity.HIGH: 3,
+    enums.Severity.MEDIUM: 2,
+    enums.Severity.LOW: 1,
+}
 
 
 def _d(v: date | datetime | None) -> str | None:
@@ -65,6 +72,43 @@ def advisory_brief(a: Advisory, *, match_count: int | None = None) -> dict:
         "not_found": not_found,
         "match_count": match_count,
         "board_post_id": a.board_post_id,
+        "board_published": a.board_published_at is not None,
+        "board_published_at": _d(a.board_published_at),
+    }
+
+
+def _max_severity(a: Advisory) -> str | None:
+    sevs = [ac.cve.severity for ac in a.cves if ac.cve]
+    if not sevs:
+        return None
+    top = max(sevs, key=lambda s: _SEV_RANK.get(s, 0))
+    return top.value
+
+
+def board_advisory_item(a: Advisory, *, comment_count: int | None = None) -> dict:
+    """내부 게시판 목록/상세용 요약 — 사내 누구나 보는 공개 뷰."""
+    brief = advisory_brief(a)
+    brief["max_severity"] = _max_severity(a)
+    brief["max_severity_ko"] = (
+        enums.SEVERITY_KO.get(enums.Severity(brief["max_severity"]))
+        if brief["max_severity"] else None
+    )
+    brief["comment_count"] = comment_count if comment_count is not None else len(a.comments)
+    return brief
+
+
+def comment_item(c: AdvisoryComment) -> dict:
+    return {
+        "id": c.id,
+        "advisory_id": c.advisory_id,
+        "author_name": c.author_name,
+        "department_id": c.author_department_id,
+        "department": c.author_department_name or (c.department.name if c.department else None),
+        "body": c.body,
+        "ack_status": c.ack_status.value if c.ack_status else None,
+        "ack_status_ko": enums.ACK_KO.get(c.ack_status) if c.ack_status else None,
+        "is_admin": c.is_admin,
+        "created_at": _d(c.created_at),
     }
 
 

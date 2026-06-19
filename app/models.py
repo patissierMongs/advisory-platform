@@ -146,9 +146,15 @@ class Advisory(TimestampMixin, Base):
     )
     uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"))
     board_post_id: Mapped[str | None] = mapped_column(String(120))  # 그룹웨어 게시판 글 ID(§★★★)
+    # 내부 게시판 공개 시각 — 설정되면 /board 게시판에 노출(관리자 '게시판 게시' 시 기록).
+    board_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     cves: Mapped[list["AdvisoryCve"]] = relationship(
         back_populates="advisory", cascade="all, delete-orphan"
+    )
+    comments: Mapped[list["AdvisoryComment"]] = relationship(
+        back_populates="advisory", cascade="all, delete-orphan",
+        order_by="AdvisoryComment.id",
     )
 
 
@@ -169,6 +175,27 @@ class AdvisoryCve(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("advisory_id", "cve_id_text", name="uq_advisory_cve"),
     )
+
+
+class AdvisoryComment(TimestampMixin, Base):
+    """내부 게시판 댓글 — 사내 누구나(무인증) 권고문에 회신/질의.
+
+    선택적으로 조치상태(ack_status)를 첨부하면, 해당 (권고문, 부서)의 발송 내역
+    ack 로 동기화된다(둘 다 — 자유 댓글 + 공식 회신 겸용).
+    """
+    __tablename__ = "advisory_comment"
+    advisory_id: Mapped[int] = mapped_column(ForeignKey("advisory.id"), nullable=False, index=True)
+    author_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    # 부서: 드롭다운(검색)으로 기존 부서 선택. 직접입력 대비 이름 스냅샷도 보관.
+    author_department_id: Mapped[int | None] = mapped_column(ForeignKey("department.id"))
+    author_department_name: Mapped[str | None] = mapped_column(String(120))
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    # 선택 조치상태(첨부 시 부서 ack 동기화). 미첨부면 None = 일반 댓글.
+    ack_status: Mapped[enums.AckStatus | None] = mapped_column(_enum(enums.AckStatus))
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # 관리자 작성 표식
+
+    advisory: Mapped["Advisory"] = relationship(back_populates="comments")
+    department: Mapped["Department | None"] = relationship()
 
 
 class Match(TimestampMixin, Base):

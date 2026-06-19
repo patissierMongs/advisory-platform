@@ -88,10 +88,19 @@ advisory-platform/
 | **보고서** | `GET /advisories/:id/report.xlsx` · `GET /advisories/:id/report.html` (인쇄→PDF) |
 | **SLA·리마인드** | `GET /reminders/due` · `POST /advisories/:id/remind` |
 | **CVE 보정** | `POST /advisories/:id/cves` · `DELETE /advisory-cves/:id` |
-| **게시판·오탐기억** | `POST /advisories/:id/board` · `POST /webhooks/groupware/ack` · `GET /exclusion-rules` |
+| **게시판 공개·오탐기억** | `POST /advisories/:id/board`(내부 게시판 공개) · `POST /advisories/:id/board-unpublish` · `POST /webhooks/groupware/ack` · `GET /exclusion-rules` |
+| **내부 게시판(무인증)** | `GET /board/advisories` · `GET /board/advisories/:id` · `POST /board/advisories/:id/comments` · `GET /board/departments` · `DELETE /board/comments/:id` |
 | 기타 | `GET /departments` · `GET /dashboard` (SLA·리마인드 요약) · `GET /api/health` |
 
 대화형 문서: 서버 실행 후 **http://localhost:8000/docs** (Swagger).
+
+## 화면 두 갈래 — 관리자 / 내부 게시판
+
+- **`/admin`** — 기존 SPA. 관제 인원이 권고문 업로드·CVE 추출·자산 매칭·발송·조치추적을 수행.
+- **`/board`** — 사내 누구나(무인증) 들어와 **공개된 보안권고문을 게시글처럼 열람하고 댓글로 회신**하는 내부 게시판. 루트 `/` 는 게시판으로 이동.
+  - 관리자가 권고문 상세에서 **"게시판 게시"** 를 누르면 게시판에 공개됨(`board-unpublish` 로 내림).
+  - 댓글은 **부서(검색 드롭다운 / 직접입력) + 이름**으로 작성. **조치상태(완료/진행중/불가)** 를 첨부하면 해당 부서의 발송 **ack 로 자동 동기화**(자유 댓글 + 공식 회신 겸용).
+  - 외부 그룹웨어 연동 없이 **이 시스템 자체가 게시판** 역할(폐쇄망 내부 공유).
 
 ## 두 개의 서버측 게이트(명세 §2.2 — 프론트 검증에 의존하지 않음)
 

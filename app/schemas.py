@@ -61,3 +61,13 @@ class DepartmentIn(BaseModel):
 class MappingPresetIn(BaseModel):
     name: str
     mapping: dict[str, str | dict]
+
+
+class CommentIn(BaseModel):
+    """내부 게시판 댓글(무인증) — 부서는 드롭다운 선택(id) 또는 직접입력(name)."""
+    author_name: str = Field(min_length=1, max_length=80)
+    department_id: int | None = None
+    department_name: str | None = None        # 직접입력 시 부서명(id 미지정)
+    body: str = Field(min_length=1)
+    ack_status: AckStatus | None = None       # 선택: 조치상태 첨부 → 부서 ack 동기화
+    is_admin: bool = False

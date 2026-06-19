@@ -53,7 +53,8 @@ def init_db() -> None:
 # 신규 컬럼을 기존 SQLite DB 에 무손실 추가(create_all 은 ALTER 안 함). 운영(Postgres)은 정식 마이그레이션 사용.
 _ADDED_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "asset": [("owner_team", "VARCHAR(120)"), ("owner_contact", "VARCHAR(120)")],
-    "advisory": [("extract_phase", "VARCHAR(20)"), ("error_message", "TEXT")],
+    "advisory": [("extract_phase", "VARCHAR(20)"), ("error_message", "TEXT"),
+                 ("board_published_at", "DATETIME")],
 }
 
 

@@ -102,11 +102,25 @@ def post_to_board(advisory_id: int, request: Request, db: Session = Depends(get_
     body = f"[보안권고문] {adv.title}\n문서번호 {adv.doc_no}\n조치기한 {adv.due_at}\n각 부서는 조치 후 댓글로 회신 바랍니다."
     post_id = groupware.post_board(adv.id, adv.doc_no or "", adv.title or "", body)
     adv.board_post_id = post_id
+    # 내부 게시판(/board)에 공개 — 사내 누구나 보고 댓글 회신 가능.
+    if adv.board_published_at is None:
+        adv.board_published_at = datetime.now(timezone.utc)
     db.flush()
     record(db, action="BOARD_POST", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=adv.id, detail={"post_id": post_id}, request=request)
     db.commit()
-    return {"board_post_id": post_id}
+    return {"board_post_id": post_id, "board_published": True}
+
+
+@router.post("/advisories/{advisory_id}/board-unpublish")
+def unpublish_board(advisory_id: int, request: Request, db: Session = Depends(get_db)):
+    """내부 게시판에서 권고문 내림(댓글은 보존). 관리자용."""
+    adv = _adv(db, advisory_id)
+    adv.board_published_at = None
+    record(db, action="BOARD_UNPUBLISH", actor_id=get_actor_id(db), entity_type="advisory",
+           entity_id=adv.id, detail=None, request=request)
+    db.commit()
+    return {"board_published": False}
 
 
 @router.post("/webhooks/groupware/ack")
