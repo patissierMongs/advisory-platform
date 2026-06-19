@@ -23,7 +23,7 @@ STAGE = ROOT.parent / "_advisory_allinone_stage"
 OUT = ROOT.parent / "advisory-platform_allinone.zip"
 PREFIX = "advisory-platform"
 
-INCLUDE_TOP = {"app", "web", "samples", "scripts", "docs",
+INCLUDE_TOP = {"app", "web", "samples", "scripts", "docs", "nvd_powershell_sync",
                "README.md", "requirements.txt", "smoke_test.py"}
 SKIP_DIR = {".venv", "__pycache__", "data", ".claude", ".git", "_cache",
             "_advisory_allinone_stage"}
