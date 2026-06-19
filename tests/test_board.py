@@ -196,6 +196,15 @@ def test_board_surfaces_affected_dept_asset_owner(client):
         m = d["matches"][0]
         assert m["owner_name"] == "김담당" and m["owner_contact"] == "010-1234-5678"
         assert m["department"] == "영향테스트부서"
+
+        # 자유 검색 — 자산번호 / 담당자명 / 부서명 / 제목 부분일치
+        for term in ("IMP-A1", "김담당", "영향테스트부서", "크롬"):
+            hits = client.get("/api/v1/board/advisories",
+                              params={"q": term, "exclude_done": "false"}).json()["items"]
+            assert any(x["doc_no"] == "IMP-1" for x in hits), term
+        miss = client.get("/api/v1/board/advisories",
+                          params={"q": "존재하지않는zzz", "exclude_done": "false"}).json()["items"]
+        assert all(x["doc_no"] != "IMP-1" for x in miss)
     finally:
         with SessionLocal() as db:
             db.execute(delete(Match).where(Match.advisory_id == aid))
@@ -204,6 +213,39 @@ def test_board_surfaces_affected_dept_asset_owner(client):
             db.execute(delete(Asset).where(Asset.id == asid))
             db.execute(delete(Department).where(Department.id == did))
             db.commit()
+
+
+def test_board_pdf_view(client):
+    """게시판에서 원본 PDF 열람 — 공개 시 200(application/pdf), 미공개 시 404."""
+    import os
+    from sqlalchemy import delete
+
+    from app.config import UPLOAD_DIR
+    from app.seed import _minimal_pdf
+
+    pdf = _minimal_pdf(["Board PDF view test"])
+    path = UPLOAD_DIR / "test-board-view.pdf"
+    path.write_bytes(pdf)
+    with SessionLocal() as db:
+        adv = Advisory(doc_no="PDF-1", title="PDF 열람 테스트", file_path=str(path),
+                       status=enums.AdvisoryStatus.EXTRACTED)
+        db.add(adv)
+        db.commit()
+        aid = adv.id
+    try:
+        # 미공개 → 404
+        assert client.get(f"/api/v1/board/advisories/{aid}/file").status_code == 404
+        # 공개 → 200 PDF
+        client.post(f"/api/v1/advisories/{aid}/board")
+        r = client.get(f"/api/v1/board/advisories/{aid}/file")
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "application/pdf"
+        assert r.content[:5] == b"%PDF-"
+    finally:
+        with SessionLocal() as db:
+            db.execute(delete(Advisory).where(Advisory.id == aid))
+            db.commit()
+        os.path.exists(path) and os.remove(path)
 
 
 def test_delete_comment(client, fixture_ids):

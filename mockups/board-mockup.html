@@ -77,7 +77,8 @@ const ACK_KO={DONE:"조치완료",IN_PROGRESS:"진행중",UNABLE:"조치불가"}
 const CH_KO={NCST:"국정원 NCST",WEBMAIL:"웹메일",OFFICIAL_DOC:"공문"};
 const DEPTS=["도로국","철도국","항공정책실","물류정책관","건설정책국","정보통신담당관","기획조정실",
   "주택정책관","교통물류실","대중교통과","자동차정책관","수자원정책국"].map((n,i)=>({id:i+1,name:n}));
-const FILTER={deptName:"",excludeDone:true};
+const FILTER={q:"",excludeDone:true};
+let _searchT;
 
 // 자산(asset)에 부서·제품·버전·담당자·연락처. depts 의 ack 는 부서별 조치상태.
 const ADV=[
@@ -167,8 +168,9 @@ function impactOf(a){
   return {depts:list, products:[...products], assetCount:(a.assets||[]).length};
 }
 function deptChips(a){
+  const ql=FILTER.q.trim().toLowerCase();
   return impactOf(a).depts.map(d=>{
-    const hi=FILTER.deptName&&d.name===FILTER.deptName?" hi":"";
+    const hi=ql&&(d.name.toLowerCase().includes(ql)||d.owners.some(o=>o.toLowerCase().includes(ql)))?" hi":"";
     const own=d.owners.length?" · "+d.owners.slice(0,2).join(", ")+(d.owners.length>2?` 외 ${d.owners.length-2}`:""):"";
     return `<span class="dchip${hi}">${esc(d.name)} ${d.count}${esc(own)}</span>`;
   }).join("");
@@ -181,60 +183,69 @@ function impactLine(a){
 }
 
 function filterBar(){
-  const opts=DEPTS.map(d=>`<option value="${esc(d.name)}">`).join("");
   return `<div class="card filterbar">
-    <div style="flex:1;min-width:200px">
-      <input id="f_dept" list="fdeptlist" placeholder="부서로 필터 (비우면 전체)" value="${esc(FILTER.deptName)}" onchange="onDeptFilter(this.value)">
-      <datalist id="fdeptlist">${opts}</datalist>
+    <div style="flex:1;min-width:220px">
+      <input id="f_q" type="search" placeholder="자산번호 · 담당자명 · 부서명 · 제목 검색" value="${esc(FILTER.q)}" oninput="onSearch(this.value)">
     </div>
     <label class="ck"><input type="checkbox" ${FILTER.excludeDone?"checked":""} onchange="onDoneFilter(this.checked)"> 완료 제외</label>
-    ${FILTER.deptName||!FILTER.excludeDone?`<button class="btn-ghost" onclick="resetFilter()">초기화</button>`:""}
+    ${FILTER.q||!FILTER.excludeDone?`<button class="btn-ghost" onclick="resetFilter()">초기화</button>`:""}
   </div>`;
 }
-function onDeptFilter(name){const d=DEPTS.find(x=>x.name===(name||"").trim());FILTER.deptName=d?d.name:"";renderList();}
-function onDoneFilter(v){FILTER.excludeDone=!!v;renderList();}
-function resetFilter(){FILTER.deptName="";FILTER.excludeDone=true;renderList();}
+function onSearch(v){FILTER.q=v;clearTimeout(_searchT);_searchT=setTimeout(loadResults,180);}
+function onDoneFilter(v){FILTER.excludeDone=!!v;loadResults();}
+function resetFilter(){FILTER.q="";FILTER.excludeDone=true;renderList();}
 
+function matchesQ(a,ql){
+  if((a.title||"").toLowerCase().includes(ql)) return true;
+  if((a.doc_no||"").toLowerCase().includes(ql)) return true;
+  if((a.source_org||"").toLowerCase().includes(ql)) return true;
+  return (a.assets||[]).some(s=> s.asset_no.toLowerCase().includes(ql)
+    || (s.owner_name||"").toLowerCase().includes(ql) || (s.dept||"").toLowerCase().includes(ql));
+}
 function visibleList(){
   let list=ADV.slice();
-  if(FILTER.deptName){
-    list=list.filter(a=>a.depts.some(d=>d.name===FILTER.deptName));
-    if(FILTER.excludeDone) list=list.filter(a=>{const d=a.depts.find(x=>x.name===FILTER.deptName);return !d||d.ack!=="DONE";});
-  } else if(FILTER.excludeDone){ list=list.filter(a=>!a.completed); }
+  if(FILTER.excludeDone) list=list.filter(a=>!a.completed);
+  const ql=FILTER.q.trim().toLowerCase();
+  if(ql) list=list.filter(a=>matchesQ(a,ql));
   return list;
 }
 
 function route(){const m=location.hash.match(/^#\/a\/(\d+)/);if(m)renderDetail(parseInt(m[1],10));else renderList();window.scrollTo(0,0);}
 
+function rowHtml(a){
+  return `<div class="card row" onclick="location.hash='#/a/${a.id}'">
+    <div class="ttl">${esc(a.title)}</div>
+    <div class="meta">
+      ${sevBadge(a.max_severity,a.max_severity_ko)} ${slaBadge(a.sla_status)}
+      <span class="chip">${dday(a.d_day)}</span>
+      <span>${esc(a.source_org)}</span><span>· ${CH_KO[a.receive_channel]}</span>
+      <span>· 기한 ${fmtDate(a.due_at)}</span><span>· 💬 ${a.comments.length}</span>
+    </div>
+    ${impactLine(a)}
+  </div>`;
+}
 function renderList(){
+  app.innerHTML=`<h2 class="section">게시된 보안권고문</h2>${filterBar()}<div id="results"></div>`;
+  loadResults();
+}
+function loadResults(){
+  const res=document.getElementById("results"); if(!res) return;
   const list=visibleList();
-  const head=`<h2 class="section">게시된 보안권고문 · ${list.length}건${FILTER.deptName?` <span class="muted">· ${esc(FILTER.deptName)}</span>`:""}</h2>`;
-  const rows=list.length?list.map(a=>{
-    const dack=FILTER.deptName?(a.depts.find(x=>x.name===FILTER.deptName)||{}).ack:null;
-    return `<div class="card row" onclick="location.hash='#/a/${a.id}'">
-      <div class="ttl">${esc(a.title)}</div>
-      <div class="meta">
-        ${sevBadge(a.max_severity,a.max_severity_ko)} ${slaBadge(a.sla_status)}
-        <span class="chip">${dday(a.d_day)}</span>
-        ${FILTER.deptName?ackBadge(dack):""}
-        <span>${esc(a.source_org)}</span><span>· ${CH_KO[a.receive_channel]}</span>
-        <span>· 기한 ${fmtDate(a.due_at)}</span><span>· 💬 ${a.comments.length}</span>
-      </div>
-      ${impactLine(a)}
-    </div>`;}).join(""):`<div class="empty">조건에 맞는 권고문이 없습니다.</div>`;
-  app.innerHTML=head+filterBar()+rows;
+  const info=`<div class="muted" style="margin:2px 2px 12px;font-size:12px">${list.length}건${FILTER.q.trim()?` · "${esc(FILTER.q.trim())}" 검색 결과`:""}</div>`;
+  res.innerHTML=info+(list.length?list.map(rowHtml).join(""):`<div class="empty">조건에 맞는 권고문이 없습니다.</div>`);
 }
 
 function renderDetail(id){
   const a=getAdv(id); if(!a){location.hash='#/';return;}
-  // 영향 자산·담당자 — 부서별 그룹(필터 부서 우선)
+  // 영향 자산·담당자 — 부서별 그룹(검색어 일치 부서 우선·강조)
+  const ql=FILTER.q.trim().toLowerCase();
   const groups={}; (a.assets||[]).forEach(s=>{(groups[s.dept]=groups[s.dept]||[]).push(s);});
   let gk=Object.keys(groups).sort();
-  if(FILTER.deptName) gk=gk.sort((x,y)=>x===FILTER.deptName?-1:y===FILTER.deptName?1:x.localeCompare(y));
+  if(ql) gk.sort((x,y)=>{const xm=x.toLowerCase().includes(ql),ym=y.toLowerCase().includes(ql);return xm===ym?x.localeCompare(y):(xm?-1:1);});
   const assetsSection=gk.length?`<table class="assets">
     <tr><th>부서 / 자산</th><th>제품 · 버전</th><th>담당자</th><th>심각도</th></tr>
     ${gk.map(g=>{const rs=groups[g];const owners=[...new Set(rs.map(s=>s.owner_name).filter(Boolean))];
-      const hi=FILTER.deptName===g?' style="background:#eef4ff"':'';
+      const hi=ql&&g.toLowerCase().includes(ql)?' style="background:#eef4ff"':'';
       return `<tr class="dh"${hi}><td colspan="4">${esc(g)} · ${rs.length}건${owners.length?` · 담당 ${esc(owners.slice(0,3).join(", "))}`:""}</td></tr>`
         +rs.map(s=>`<tr>
           <td>${esc(s.asset_no)}</td>
@@ -265,6 +276,10 @@ function renderDetail(id){
       </div>
       <div class="meta"><span>문서번호 ${esc(a.doc_no)}</span><span>· 접수 ${fmtDate(a.received_at)}</span><span>· 조치기한 <b>${fmtDate(a.due_at)}</b></span></div>
       ${impactLine(a)}
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-ghost" onclick="toast('데모: 실 시스템에서는 업로드한 원본 PDF가 새 탭/인라인으로 열립니다')">📄 원문 PDF 새 탭으로</button>
+        <button class="btn-ghost" onclick="toast('데모: 실 시스템에서는 여기에 PDF가 인라인으로 표시됩니다')">📄 여기서 보기 / 닫기</button>
+      </div>
     </div>
 
     <h2 class="section">영향 부서 · 자산 · 담당자</h2>

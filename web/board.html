@@ -83,7 +83,8 @@
 const API = "/api/v1/board";
 const app = document.getElementById("app");
 let DEPTS = [];
-const FILTER = { deptId: null, deptName: "", excludeDone: true };  // 기본: 완료 제외 ON
+const FILTER = { q: "", excludeDone: true };  // 기본: 완료 제외 ON
+let _searchT;
 
 async function loadDepts(){
   if(DEPTS.length) return;
@@ -111,23 +112,20 @@ function route(){
 }
 
 function filterBar(){
-  const opts = DEPTS.map(d=>`<option value="${esc(d.name)}">`).join("");
   return `<div class="card filterbar">
-    <div style="flex:1;min-width:200px">
-      <input id="f_dept" list="fdeptlist" placeholder="부서로 필터 (비우면 전체)" value="${esc(FILTER.deptName)}"
-             onchange="onDeptFilter(this.value)">
-      <datalist id="fdeptlist">${opts}</datalist>
+    <div style="flex:1;min-width:220px">
+      <input id="f_q" type="search" placeholder="자산번호 · 담당자명 · 부서명 · 제목 검색" value="${esc(FILTER.q)}" oninput="onSearch(this.value)">
     </div>
-    <label class="ck"><input type="checkbox" id="f_done" ${FILTER.excludeDone?"checked":""}
-      onchange="onDoneFilter(this.checked)"> 완료 제외</label>
-    ${FILTER.deptId||!FILTER.excludeDone?`<button class="btn-ghost" onclick="resetFilter()">초기화</button>`:""}
+    <label class="ck"><input type="checkbox" ${FILTER.excludeDone?"checked":""} onchange="onDoneFilter(this.checked)"> 완료 제외</label>
+    ${FILTER.q||!FILTER.excludeDone?`<button class="btn-ghost" onclick="resetFilter()">초기화</button>`:""}
   </div>`;
 }
-function ackBadge(s,ko){ return s?`<span class="ack ack-${s}">${esc(ko||s)}</span>`:""; }
 function deptChips(a){
+  const ql = FILTER.q.trim().toLowerCase();
   return (a.affected_departments||[]).map(d=>{
-    const hi = FILTER.deptName && d.name===FILTER.deptName ? " hi" : "";
-    const own = d.owners&&d.owners.length ? " · "+d.owners.slice(0,2).join(", ")+(d.owners.length>2?` 외 ${d.owners.length-2}`:"") : "";
+    const owns = d.owners||[];
+    const hi = ql && (d.name.toLowerCase().includes(ql) || owns.some(o=>o.toLowerCase().includes(ql))) ? " hi" : "";
+    const own = owns.length ? " · "+owns.slice(0,2).join(", ")+(owns.length>2?` 외 ${owns.length-2}`:"") : "";
     return `<span class="dchip${hi}">${esc(d.name)} ${d.asset_count}${esc(own)}</span>`;
   }).join("");
 }
@@ -142,44 +140,45 @@ function impactLine(a){
   return `<div class="impact"><b style="color:#4a5568">영향 ${a.affected_dept_count}개 부서 · 자산 ${a.affected_asset_count}</b> ${deptChips(a)} ${productSummary(a)}</div>`;
 }
 
-window.onDeptFilter = function(name){
-  const d = DEPTS.find(x=>x.name===(name||"").trim());
-  FILTER.deptName = d ? d.name : "";
-  FILTER.deptId = d ? d.id : null;
-  renderList();
-};
-window.onDoneFilter = function(v){ FILTER.excludeDone = !!v; renderList(); };
-window.resetFilter = function(){ FILTER.deptId=null; FILTER.deptName=""; FILTER.excludeDone=true; renderList(); };
+window.onSearch = function(v){ FILTER.q = v; clearTimeout(_searchT); _searchT = setTimeout(loadResults, 220); };
+window.onDoneFilter = function(v){ FILTER.excludeDone = !!v; loadResults(); };
+window.resetFilter = function(){ FILTER.q=""; FILTER.excludeDone=true; renderList(); };
+
+function rowHtml(a){
+  return `<div class="card row" onclick="location.hash='#/a/${a.id}'">
+    <div class="ttl">${esc(a.title||a.doc_no||"제목 없음")}</div>
+    <div class="meta">
+      ${sevBadge(a.max_severity,a.max_severity_ko)}
+      ${slaBadge(a.sla_status)}
+      ${a.d_day!=null?`<span class="chip">${dday(a.d_day)}</span>`:""}
+      ${a.source_org?`<span>${esc(a.source_org)}</span>`:""}
+      ${a.receive_channel?`<span>· ${CH_KO[a.receive_channel]||a.receive_channel}</span>`:""}
+      <span>· 기한 ${fmtDate(a.due_at)}</span>
+      <span>· 💬 ${a.comment_count}</span>
+    </div>
+    ${impactLine(a)}
+  </div>`;
+}
 
 async function renderList(){
   await loadDepts();
-  app.innerHTML = `<h2 class="section">게시된 보안권고문</h2>${filterBar()}<div class="empty">불러오는 중…</div>`;
+  app.innerHTML = `<h2 class="section">게시된 보안권고문</h2>${filterBar()}<div id="results"><div class="empty">불러오는 중…</div></div>`;
+  await loadResults();
+}
+
+async function loadResults(){
+  const res = document.getElementById("results");
+  if(!res) return;
   const qs = new URLSearchParams();
-  if(FILTER.deptId) qs.set("department_id", FILTER.deptId);
+  if(FILTER.q.trim()) qs.set("q", FILTER.q.trim());
   qs.set("exclude_done", FILTER.excludeDone);
   try{
     const {items} = await api("/advisories?"+qs.toString());
-    const head = `<h2 class="section">게시된 보안권고문 · ${items.length}건${FILTER.deptId?` <span class="muted">· ${esc(FILTER.deptName)}</span>`:""}</h2>`;
-    const body = items.length ? items.map(a=>`
-      <div class="card row" onclick="location.hash='#/a/${a.id}'">
-        <div class="ttl">${esc(a.title||a.doc_no||"제목 없음")}</div>
-        <div class="meta">
-          ${sevBadge(a.max_severity,a.max_severity_ko)}
-          ${slaBadge(a.sla_status)}
-          ${a.d_day!=null?`<span class="chip">${dday(a.d_day)}</span>`:""}
-          ${FILTER.deptId?ackBadge(a.dept_ack_status,a.dept_ack_status_ko):""}
-          ${a.source_org?`<span>${esc(a.source_org)}</span>`:""}
-          ${a.receive_channel?`<span>· ${CH_KO[a.receive_channel]||a.receive_channel}</span>`:""}
-          <span>· 기한 ${fmtDate(a.due_at)}</span>
-          <span>· 💬 ${a.comment_count}</span>
-        </div>
-        ${impactLine(a)}
-      </div>`).join("")
-      : `<div class="empty">${FILTER.deptId||FILTER.excludeDone?"조건에 맞는 권고문이 없습니다.":"게시된 보안권고문이 없습니다."}</div>`;
-    app.innerHTML = head + filterBar() + body;
-  }catch(e){ app.innerHTML = head_err(e); }
+    const info = `<div class="muted" style="margin:2px 2px 12px;font-size:12px">${items.length}건${FILTER.q.trim()?` · "${esc(FILTER.q.trim())}" 검색 결과`:""}</div>`;
+    res.innerHTML = info + (items.length ? items.map(rowHtml).join("")
+      : `<div class="empty">${FILTER.q.trim()||FILTER.excludeDone?"조건에 맞는 권고문이 없습니다.":"게시된 보안권고문이 없습니다."}</div>`);
+  }catch(e){ res.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
-function head_err(e){ return `<h2 class="section">게시된 보안권고문</h2>${filterBar()}<div class="err">${esc(e.message)}</div>`; }
 
 async function renderDetail(id){
   app.innerHTML = `<div class="empty">불러오는 중…</div>`;
@@ -195,17 +194,18 @@ async function renderDetail(id){
         ${c.lookup_status==="NOT_FOUND"?`<span class="chip">DB 미등록</span>`:""}
       </div>`).join("") : `<div class="muted" style="font-size:12.5px">추출된 CVE 없음</div>`;
 
-    // 영향 자산·담당자 — 부서별 그룹. 필터된 부서가 있으면 맨 위로.
+    // 영향 자산·담당자 — 부서별 그룹. 검색어와 일치하는 부서를 맨 위로/강조.
+    const ql = FILTER.q.trim().toLowerCase();
     const groups = {};
     (d.matches||[]).forEach(m=>{ const k=m.department||"(부서 미지정)"; (groups[k]=groups[k]||[]).push(m); });
     let gkeys = Object.keys(groups).sort();
-    if(FILTER.deptName) gkeys = gkeys.sort((a,b)=> (a===FILTER.deptName?-1:b===FILTER.deptName?1:a.localeCompare(b)));
+    if(ql) gkeys.sort((a,b)=>{ const am=a.toLowerCase().includes(ql), bm=b.toLowerCase().includes(ql); return am===bm?a.localeCompare(b):(am?-1:1); });
     const assetsSection = gkeys.length ? `<table class="assets">
       <tr><th>부서 / 자산</th><th>제품 · 버전</th><th>담당자</th><th>심각도</th></tr>
       ${gkeys.map(g=>{
         const rows = groups[g];
         const owners = [...new Set(rows.map(m=>m.owner_name).filter(Boolean))];
-        const hi = FILTER.deptName===g ? ' style="background:#eef4ff"' : '';
+        const hi = ql && g.toLowerCase().includes(ql) ? ' style="background:#eef4ff"' : '';
         return `<tr class="dh"${hi}><td colspan="4">${esc(g)} · ${rows.length}건${owners.length?` · 담당 ${esc(owners.slice(0,3).join(", "))}`:""}</td></tr>`
           + rows.map(m=>`<tr>
               <td>${esc(m.asset_no||"")}${m.ip?`<div class="ownc">${esc(m.ip)}</div>`:""}</td>
@@ -244,6 +244,11 @@ async function renderDetail(id){
           <span>· 조치기한 <b>${fmtDate(a.due_at)}</b></span>
         </div>
         ${impactLine(a)}
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <a class="btn-ghost" href="${API}/advisories/${id}/file" target="_blank" rel="noopener">📄 원문 PDF 새 탭으로</a>
+          <button class="btn-ghost" onclick="togglePdf(${id})">📄 여기서 보기 / 닫기</button>
+        </div>
+        <div id="pdfbox"></div>
       </div>
 
       <h2 class="section">영향 부서 · 자산 · 담당자</h2>
@@ -300,6 +305,15 @@ async function submitComment(id){
     renderDetail(id);
   }catch(e){ errEl.innerHTML = `<div class="err">${esc(e.message)}</div>`; btn.disabled=false; btn.textContent="댓글 등록"; }
 }
+
+window.togglePdf = function(id){
+  const box = document.getElementById("pdfbox");
+  if(!box) return;
+  if(box.dataset.open){ box.innerHTML=""; box.dataset.open=""; return; }
+  box.innerHTML = `<iframe src="${API}/advisories/${id}/file" title="원문 PDF"
+    style="width:100%;height:620px;border:1px solid var(--line);border-radius:10px;margin-top:10px;background:#fff"></iframe>`;
+  box.dataset.open = "1";
+};
 
 window.addEventListener("hashchange", route);
 route();

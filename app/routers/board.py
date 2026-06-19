@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -64,8 +65,27 @@ def _relevant_advisory_ids(db: Session, department_id: int) -> set[int]:
     return notif | matched
 
 
+def _matches_query(a: Advisory, ql: str) -> bool:
+    """자유 검색 — 제목·문서번호·출처, 그리고 매칭된 자산의 자산번호·담당자·부서명."""
+    for v in (a.title, a.doc_no, a.source_org):
+        if v and ql in v.lower():
+            return True
+    for m in a.matches:
+        if m.status != enums.MatchStatus.MATCHED or m.asset is None:
+            continue
+        asset = m.asset
+        if asset.asset_no and ql in asset.asset_no.lower():
+            return True
+        if asset.owner_name and ql in asset.owner_name.lower():
+            return True
+        if asset.department is not None and ql in asset.department.name.lower():
+            return True
+    return False
+
+
 @router.get("/advisories")
 def board_list(
+    q: str | None = None,
     department_id: int | None = None,
     exclude_done: bool = True,
     db: Session = Depends(get_db),
@@ -73,6 +93,7 @@ def board_list(
     """게시판 목록 — 공개된 권고문을 최근 게시순으로. 댓글 수 포함.
 
     필터(선택):
+      · q — 자유 검색: 자산번호·담당자명·부서명·제목·문서번호 부분일치.
       · department_id — 해당 부서 대상 권고문만(발송 OR 자산 매칭).
       · exclude_done — 완료 제외(기본 True). 부서 지정 시 그 부서가 '조치완료'한 건 제외,
         미지정 시 권고문 상태가 COMPLETED 인 건 제외.
@@ -93,6 +114,10 @@ def board_list(
     elif exclude_done:
         advs = [a for a in advs if a.status != enums.AdvisoryStatus.COMPLETED]
 
+    if q and q.strip():
+        ql = q.strip().lower()
+        advs = [a for a in advs if _matches_query(a, ql)]
+
     counts = dict(
         db.execute(
             select(AdvisoryComment.advisory_id, func.count(AdvisoryComment.id))
@@ -107,7 +132,19 @@ def board_list(
             item["dept_ack_status"] = ack.value if ack else None
             item["dept_ack_status_ko"] = enums.ACK_KO.get(ack) if ack else None
         items.append(item)
-    return {"items": items, "department_id": department_id, "exclude_done": exclude_done}
+    return {"items": items, "q": q, "department_id": department_id, "exclude_done": exclude_done}
+
+
+@router.get("/advisories/{advisory_id}/file")
+def board_file(advisory_id: int, db: Session = Depends(get_db)):
+    """게시판 공개 권고문의 원본 PDF 열람(inline). 공개 안 된 건 404."""
+    import os
+
+    adv = _published(db, advisory_id)
+    if not adv.file_path or not os.path.exists(adv.file_path):
+        raise HTTPException(404, "원본 PDF 파일이 없습니다")
+    return FileResponse(adv.file_path, media_type="application/pdf",
+                        headers={"Content-Disposition": "inline"})
 
 
 @router.get("/advisories/{advisory_id}")
