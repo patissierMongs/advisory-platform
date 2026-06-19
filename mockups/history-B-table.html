@@ -1,0 +1,86 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>발송이력·조치관리 — B. 현황 테이블</title>
+<style>
+  :root{--bg:#f4f6fa;--card:#fff;--ink:#15294a;--sub:#7a889c;--line:#e3e9f2;--brand:#2f5bd0}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Pretendard","Malgun Gothic",system-ui,sans-serif;font-size:13.5px}
+  .top{background:var(--card);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  .top h1{font-size:15px;margin:0;font-weight:800}.sp{flex:1}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{border:none;background:#fff;padding:7px 14px;font-size:12.5px;font-weight:700;color:var(--sub);cursor:pointer;font-family:inherit}
+  .seg button.on{background:var(--brand);color:#fff}
+  input,select{font-family:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fcfdff;outline:none;color:var(--ink)}
+  .wrap{max-width:1080px;margin:18px auto;padding:0 16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;color:var(--sub);font-size:11.5px;padding:11px 12px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap}
+  th:hover{color:var(--brand)} td{padding:11px 12px;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:middle}
+  tr.adv{cursor:pointer}tr.adv:hover{background:#f6f9fe}
+  tr.sub td{background:#fbfcfe;font-size:12px}
+  .badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px}
+  .s-DONE{background:#e7f6ee;color:#2e7d52}.s-IN_PROGRESS{background:#fcf4e0;color:#9a7d12}.s-UNABLE{background:#fdecec;color:#c0392b}.s-NONE{background:#eef1f5;color:#67748a}
+  .sev-CRITICAL{background:#fdecec;color:#c0392b}.sev-HIGH{background:#fdf0e6;color:#d35400}
+  .bar{height:8px;border-radius:99px;background:#edf0f5;overflow:hidden;display:flex;width:130px}
+  .bar i{height:100%}.b-DONE{background:#2e9e5b}.b-IN_PROGRESS{background:#e0a82e}.b-UNABLE{background:#c0392b}.b-NONE{background:#cfd6e0}
+  .cnt{display:inline-flex;gap:4px}.cnt span{font-size:11px;font-weight:700;padding:1px 6px;border-radius:5px}
+  .ev{font-size:11px;color:var(--brand);background:#eef2fb;padding:2px 7px;border-radius:6px}
+  .pill{font-size:11px;background:#eef1f5;color:#5a6678;padding:2px 8px;border-radius:6px}
+  .demo{background:#fff8e6;color:#8a6d1a;font-size:11.5px;text-align:center;padding:5px}
+  .chev{display:inline-block;width:14px;color:var(--sub)}
+</style></head><body>
+<div class="demo">레이아웃 목업 B — 풀폭 현황 테이블(엑셀형). 헤더 클릭 정렬, 행 클릭 시 부서별 펼침. 한눈에 카운트/진행바</div>
+<div class="top">
+  <h1>📨 발송이력 · 조치관리</h1>
+  <div class="seg" id="seg"><button class="on" onclick="setView('adv')">권고문별</button><button onclick="setView('dept')">부서별</button></div>
+  <input id="q" placeholder="검색: 권고문·부서·담당자" oninput="render()" style="width:240px">
+  <select id="fst" onchange="render()"><option value="">상태 전체</option><option value="NONE">미회신</option><option value="IN_PROGRESS">진행중</option><option value="DONE">완료</option><option value="UNABLE">불가</option></select>
+  <span class="sp"></span><span class="pill" id="count"></span>
+</div>
+<div class="wrap"><div class="card"><table id="tbl"></table></div></div>
+<script>
+const KO={DONE:"완료",IN_PROGRESS:"진행중",UNABLE:"불가",NONE:"미회신"};
+const CH={NCST:"국정원 NCST",WEBMAIL:"웹메일",OFFICIAL_DOC:"공문"};
+const ADVS=[
+ {id:1,doc:"국정원-사이버-2026-0612",title:"Windows LSA 원격코드실행 긴급 조치",org:"국가정보원",ch:"NCST",sev:"CRITICAL",due:"2026-06-22",dday:3,
+  depts:[{dept:"도로국",owner:"박도로",status:"DONE",sent:"06-16",ev:"패치완료_도로국.png"},{dept:"철도국",owner:"이철도",status:"IN_PROGRESS",sent:"06-16",ev:null},{dept:"항공정책실",owner:"정항공",status:"NONE",sent:"06-16",ev:null},{dept:"정보통신담당관",owner:"김관제",status:"DONE",sent:"06-16",ev:"점검스크린샷.png"}]},
+ {id:2,doc:"국토부-정보보호-2026-0531",title:"Apache Log4j2 추가 취약점 패치",org:"국토교통부",ch:"OFFICIAL_DOC",sev:"HIGH",due:"2026-06-30",dday:11,
+  depts:[{dept:"물류정책관",owner:"정물류",status:"UNABLE",sent:"06-11",ev:null},{dept:"건설정책국",owner:"한건설",status:"DONE",sent:"06-11",ev:"조치결과.pdf"},{dept:"정보통신담당관",owner:"김관제",status:"NONE",sent:"06-11",ev:null}]},
+ {id:3,doc:"국정원-사이버-2026-0588",title:"Google Chrome V8 임의코드실행",org:"국가정보원",ch:"WEBMAIL",sev:"HIGH",due:"2026-06-12",dday:-7,
+  depts:[{dept:"도로국",owner:"박도로",status:"DONE",sent:"06-06",ev:"chrome_update.png"},{dept:"철도국",owner:"이철도",status:"DONE",sent:"06-06",ev:null},{dept:"항공정책실",owner:"정항공",status:"IN_PROGRESS",sent:"06-06",ev:null}]},
+];
+let VIEW="adv",SORT="due",DIR=1,OPEN={};
+const esc=s=>(s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const cnt=a=>({DONE:a.depts.filter(d=>d.status==="DONE").length,IN_PROGRESS:a.depts.filter(d=>d.status==="IN_PROGRESS").length,UNABLE:a.depts.filter(d=>d.status==="UNABLE").length,NONE:a.depts.filter(d=>d.status==="NONE").length});
+const dday=n=>n<0?`기한+${-n}`:(n===0?"D-DAY":`D-${n}`);
+function bar(a){const t=a.depts.length;const c=cnt(a);const seg=s=>c[s]?`<i class="b-${s}" style="width:${c[s]/t*100}%"></i>`:"";return `<div class="bar">${seg("DONE")}${seg("IN_PROGRESS")}${seg("UNABLE")}${seg("NONE")}</div>`;}
+function countChips(a){const c=cnt(a);return `<span class="cnt"><span class="s-DONE">완 ${c.DONE}</span><span class="s-IN_PROGRESS">진 ${c.IN_PROGRESS}</span><span class="s-UNABLE">불 ${c.UNABLE}</span><span class="s-NONE">미 ${c.NONE}</span></span>`;}
+function setView(v){VIEW=v;document.querySelectorAll("#seg button").forEach((b,i)=>b.classList.toggle("on",(v==="adv")===(i===0)));OPEN={};render();}
+function setSort(k){if(SORT===k)DIR=-DIR;else{SORT=k;DIR=1;}render();}
+function toggle(id){OPEN[id]=!OPEN[id];render();}
+
+function render(){
+  const q=document.getElementById("q").value.trim().toLowerCase();const st=document.getElementById("fst").value;
+  const tbl=document.getElementById("tbl");
+  if(VIEW==="adv"){
+    let rows=ADVS.filter(a=>{const hay=(a.title+a.doc+a.org+a.depts.map(d=>d.dept+d.owner).join("")).toLowerCase();return (!q||hay.includes(q))&&(!st||a.depts.some(d=>d.status===st));});
+    rows.sort((x,y)=>{let v=SORT==="due"?x.dday-y.dday:SORT==="title"?(x.title<y.title?-1:1):SORT==="open"?(cnt(y).NONE+cnt(y).IN_PROGRESS)-(cnt(x).NONE+cnt(x).IN_PROGRESS):0;return v*DIR;});
+    document.getElementById("count").textContent=rows.length+"건";
+    tbl.innerHTML=`<tr><th onclick="setSort('title')">권고문 ▾</th><th onclick="setSort('due')">기한 ▾</th><th>심각도</th><th>조치 현황</th><th onclick="setSort('open')">미완료 ▾</th><th>원문</th></tr>`+
+      rows.map(a=>{const c=cnt(a);const sub=OPEN[a.id]?a.depts.map(d=>`<tr class="sub"><td colspan="6">↳ ${esc(d.dept)} · ${esc(d.owner)} &nbsp;<span class="badge s-${d.status}">${KO[d.status]}</span> ${d.ev?`<span class="ev">📎 ${esc(d.ev)}</span>`:''} <span style="color:var(--sub)">· 발송 ${d.sent}</span></td></tr>`).join(""):"";
+        return `<tr class="adv" onclick="toggle(${a.id})"><td><span class="chev">${OPEN[a.id]?'▾':'▸'}</span>${esc(a.title)}<div style="color:var(--sub);font-size:11px">${esc(a.doc)} · ${CH[a.ch]}</div></td>
+          <td>${a.due}<div style="color:var(--sub);font-size:11px">${dday(a.dday)}</div></td>
+          <td><span class="badge sev-${a.sev}">${a.sev==='CRITICAL'?'긴급':'높음'}</span></td>
+          <td>${bar(a)}<div style="margin-top:5px">${countChips(a)}</div></td>
+          <td><b style="color:#c0392b">${c.NONE+c.IN_PROGRESS}</b>/${a.depts.length}</td>
+          <td><a class="ev" href="#" onclick="event.stopPropagation()">📄 PDF</a></td></tr>`+sub;}).join("");
+  } else {
+    const m={};ADVS.forEach(a=>a.depts.forEach(d=>{const e=m[d.dept]=m[d.dept]||{dept:d.dept,owner:d.owner,items:[]};e.items.push({a,d});}));
+    let rows=Object.values(m).filter(r=>{return (!q||(r.dept+r.owner).toLowerCase().includes(q))&&(!st||r.items.some(it=>it.d.status===st));});
+    rows.sort((x,y)=>{const ox=x.items.filter(it=>it.d.status!=="DONE").length,oy=y.items.filter(it=>it.d.status!=="DONE").length;let v=SORT==="open"?oy-ox:(x.dept<y.dept?-1:1);return v*DIR;});
+    document.getElementById("count").textContent=rows.length+"개 부서";
+    tbl.innerHTML=`<tr><th>부서</th><th>담당자</th><th onclick="setSort('open')">미완료 ▾</th><th>담당 권고문</th></tr>`+
+      rows.map((r,i)=>{const open=r.items.filter(it=>it.d.status!=="DONE").length;const sub=OPEN['d'+i]?r.items.map(it=>`<tr class="sub"><td colspan="4">↳ ${esc(it.a.title)} <span class="pill">${it.a.due}</span> <span class="badge s-${it.d.status}">${KO[it.d.status]}</span> ${it.d.ev?`<span class="ev">📎 ${esc(it.d.ev)}</span>`:''}</td></tr>`).join(""):"";
+        return `<tr class="adv" onclick="toggle('d${i}')"><td><span class="chev">${OPEN['d'+i]?'▾':'▸'}</span>${esc(r.dept)}</td><td>${esc(r.owner)}</td><td><b style="color:#c0392b">${open}</b>/${r.items.length}</td><td>${r.items.map(it=>`<span class="badge s-${it.d.status}" title="${esc(it.a.title)}">${KO[it.d.status]}</span>`).join(" ")}</td></tr>`+sub;}).join("");
+  }
+}
+render();
+</script></body></html>

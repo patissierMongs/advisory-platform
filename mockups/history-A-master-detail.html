@@ -1,0 +1,122 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>발송이력·조치관리 — A. 마스터-디테일</title>
+<style>
+  :root{--bg:#f4f6fa;--card:#fff;--ink:#15294a;--sub:#7a889c;--line:#e3e9f2;--brand:#2f5bd0}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Pretendard","Malgun Gothic",system-ui,sans-serif;font-size:13.5px}
+  .top{background:var(--card);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  .top h1{font-size:15px;margin:0;font-weight:800}.sp{flex:1}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{border:none;background:#fff;padding:7px 14px;font-size:12.5px;font-weight:700;color:var(--sub);cursor:pointer;font-family:inherit}
+  .seg button.on{background:var(--brand);color:#fff}
+  input,select{font-family:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fcfdff;outline:none;color:var(--ink)}
+  .wrap{display:grid;grid-template-columns:380px 1fr;gap:0;height:calc(100vh - 58px)}
+  .list{overflow:auto;border-right:1px solid var(--line);background:#fbfcfe}
+  .detail{overflow:auto;padding:20px 24px}
+  .li{padding:13px 16px;border-bottom:1px solid var(--line);cursor:pointer}
+  .li:hover{background:#f0f4fb}.li.on{background:#e8effb;box-shadow:inset 3px 0 0 var(--brand)}
+  .li .t{font-weight:700;margin-bottom:5px;font-size:13px}
+  .li .m{color:var(--sub);font-size:11.5px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .bar{height:7px;border-radius:99px;background:#edf0f5;overflow:hidden;display:flex;margin-top:8px}
+  .bar i{height:100%}.b-DONE{background:#2e9e5b}.b-IN_PROGRESS{background:#e0a82e}.b-UNABLE{background:#c0392b}.b-NONE{background:#cfd6e0}
+  .badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px}
+  .s-DONE{background:#e7f6ee;color:#2e7d52}.s-IN_PROGRESS{background:#fcf4e0;color:#9a7d12}.s-UNABLE{background:#fdecec;color:#c0392b}.s-NONE{background:#eef1f5;color:#67748a}
+  .sev-CRITICAL{background:#fdecec;color:#c0392b}.sev-HIGH{background:#fdf0e6;color:#d35400}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+  h2{font-size:12.5px;color:var(--sub);margin:18px 2px 9px;font-weight:700}
+  table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:middle}
+  th{color:var(--sub);font-size:11px}
+  .ev{font-size:11px;color:var(--brand);background:#eef2fb;padding:2px 7px;border-radius:6px}
+  .pill{font-size:11px;background:#eef1f5;color:#5a6678;padding:2px 8px;border-radius:6px}
+  .btn{background:var(--brand);color:#fff;border:none;border-radius:8px;padding:8px 13px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit}
+  .ghost{background:#fff;border:1px solid var(--line);color:#5a6678;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+  textarea{width:100%;font-family:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:9px;min-height:70px;background:#fcfdff}
+  .demo{background:#fff8e6;color:#8a6d1a;font-size:11.5px;text-align:center;padding:5px}
+</style></head><body>
+<div class="demo">레이아웃 목업 A — 마스터-디테일(관리 콘솔형). 좌측 리스트에서 선택 → 우측 상세에서 조치현황·발송문구·증빙 관리</div>
+<div class="top">
+  <h1>📨 발송이력 · 조치관리</h1>
+  <div class="seg" id="seg"><button class="on" onclick="setView('adv')">권고문별</button><button onclick="setView('dept')">부서별</button></div>
+  <input id="q" placeholder="검색: 권고문·부서·담당자·자산" oninput="render()" style="width:240px">
+  <select id="fst" onchange="render()"><option value="">상태 전체</option><option value="NONE">미회신</option><option value="IN_PROGRESS">진행중</option><option value="DONE">완료</option><option value="UNABLE">불가</option></select>
+  <select id="sort" onchange="render()"><option value="due">정렬: 기한임박</option><option value="prog">정렬: 미완료많은순</option><option value="sev">정렬: 심각도</option></select>
+  <span class="sp"></span><span class="pill" id="count"></span>
+</div>
+<div class="wrap"><div class="list" id="list"></div><div class="detail" id="detail"></div></div>
+<script>
+const KO={DONE:"완료",IN_PROGRESS:"진행중",UNABLE:"불가",NONE:"미회신"};
+const CH={NCST:"국정원 NCST",WEBMAIL:"웹메일",OFFICIAL_DOC:"공문"};
+const ADVS=[
+ {id:1,doc:"국정원-사이버-2026-0612",title:"Windows LSA 원격코드실행 긴급 조치",org:"국가정보원",ch:"NCST",sev:"CRITICAL",due:"2026-06-22",dday:3,
+  depts:[{dept:"도로국",owner:"박도로",status:"DONE",sent:"06-16",ev:"패치완료_도로국.png"},{dept:"철도국",owner:"이철도",status:"IN_PROGRESS",sent:"06-16",ev:null},{dept:"항공정책실",owner:"정항공",status:"NONE",sent:"06-16",ev:null},{dept:"정보통신담당관",owner:"김관제",status:"DONE",sent:"06-16",ev:"점검스크린샷.png"}]},
+ {id:2,doc:"국토부-정보보호-2026-0531",title:"Apache Log4j2 추가 취약점 패치",org:"국토교통부",ch:"OFFICIAL_DOC",sev:"HIGH",due:"2026-06-30",dday:11,
+  depts:[{dept:"물류정책관",owner:"정물류",status:"UNABLE",sent:"06-11",ev:null},{dept:"건설정책국",owner:"한건설",status:"DONE",sent:"06-11",ev:"조치결과.pdf"},{dept:"정보통신담당관",owner:"김관제",status:"NONE",sent:"06-11",ev:null}]},
+ {id:3,doc:"국정원-사이버-2026-0588",title:"Google Chrome V8 임의코드실행",org:"국가정보원",ch:"WEBMAIL",sev:"HIGH",due:"2026-06-12",dday:-7,
+  depts:[{dept:"도로국",owner:"박도로",status:"DONE",sent:"06-06",ev:"chrome_update.png"},{dept:"철도국",owner:"이철도",status:"DONE",sent:"06-06",ev:null},{dept:"항공정책실",owner:"정항공",status:"IN_PROGRESS",sent:"06-06",ev:null}]},
+];
+const PRESETS=["[긴급] 보안권고 즉시조치 요청","[정기] 월간 보안패치 안내","[리마인드] 조치기한 임박 안내"];
+let VIEW="adv", SEL=1;
+const esc=s=>(s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const prog=a=>{const d=a.depts.length,done=a.depts.filter(x=>x.status==="DONE").length;return{done,total:d,pct:Math.round(done/d*100)};};
+const dday=n=>n<0?`기한+${-n}`:(n===0?"D-DAY":`D-${n}`);
+function bar(depts){const t=depts.length;const seg=s=>{const c=depts.filter(x=>x.status===s).length;return c?`<i class="b-${s}" style="width:${c/t*100}%"></i>`:"";};return `<div class="bar">${seg("DONE")}${seg("IN_PROGRESS")}${seg("UNABLE")}${seg("NONE")}</div>`;}
+function setView(v){VIEW=v;document.querySelectorAll("#seg button").forEach((b,i)=>b.classList.toggle("on",(v==="adv")===(i===0)));render();}
+
+function deptRows(){ // 부서별 집계
+  const m={};ADVS.forEach(a=>a.depts.forEach(d=>{(m[d.dept]=m[d.dept]||{dept:d.dept,owner:d.owner,items:[]}).items.push({a,d});}));
+  return Object.values(m);
+}
+function filt(text){const q=document.getElementById("q").value.trim().toLowerCase();const st=document.getElementById("fst").value;return {q,st};}
+function render(){
+  const {q,st}=filt();const list=document.getElementById("list");
+  if(VIEW==="adv"){
+    let rows=ADVS.filter(a=>{
+      const hay=(a.title+a.doc+a.org+a.depts.map(d=>d.dept+d.owner).join("")).toLowerCase();
+      const okq=!q||hay.includes(q); const oks=!st||a.depts.some(d=>d.status===st); return okq&&oks;});
+    const s=document.getElementById("sort").value;
+    rows.sort((x,y)=> s==="due"?x.dday-y.dday : s==="sev"?(x.sev<y.sev?-1:1) : (prog(y).total-prog(y).done)-(prog(x).total-prog(x).done));
+    document.getElementById("count").textContent=rows.length+"건";
+    list.innerHTML=rows.map(a=>{const p=prog(a);return `<div class="li ${a.id===SEL?'on':''}" onclick="SEL=${a.id};render()">
+      <div class="t">${esc(a.title)}</div>
+      <div class="m"><span class="badge sev-${a.sev}">${a.sev==='CRITICAL'?'긴급':'높음'}</span><span>${esc(a.doc)}</span><span>· ${dday(a.dday)}</span></div>
+      ${bar(a.depts)}<div class="m" style="margin-top:6px">완료 ${p.done}/${p.total} · ${p.pct}%</div></div>`;}).join("");
+    renderAdvDetail(rows.find(a=>a.id===SEL)||rows[0]);
+  } else {
+    let rows=deptRows().filter(r=>{const okq=!q||(r.dept+r.owner).toLowerCase().includes(q);const oks=!st||r.items.some(it=>it.d.status===st);return okq&&oks;});
+    document.getElementById("count").textContent=rows.length+"개 부서";
+    list.innerHTML=rows.map((r,i)=>{const open=r.items.filter(it=>it.d.status!=="DONE").length;return `<div class="li ${i===0?'on':''}" onclick="SELDEPT='${esc(r.dept)}';render()">
+      <div class="t">${esc(r.dept)} <span class="pill">${esc(r.owner)}</span></div>
+      <div class="m"><span>담당 권고문 ${r.items.length}</span><span>· 미완료 <b style="color:#c0392b">${open}</b></span></div></div>`;}).join("");
+    renderDeptDetail(rows[0]);
+  }
+}
+function presetBox(){return `<h2>발송 문구</h2><div class="card">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+    <select style="flex:1">${PRESETS.map(p=>`<option>${esc(p)}</option>`).join("")}<option>+ 직접 작성</option></select>
+    <button class="ghost">＋프리셋 추가</button><button class="ghost">🗑 삭제</button></div>
+  <textarea>[보안권고문] {제목}\n조치기한 {기한}까지 패치 후 댓글로 회신 바랍니다.</textarea>
+  <div style="text-align:right;margin-top:8px"><button class="btn">미회신 부서 재발송</button></div></div>`;}
+function renderAdvDetail(a){if(!a){document.getElementById("detail").innerHTML="";return;}const p=prog(a);
+  document.getElementById("detail").innerHTML=`
+   <div class="card"><div style="font-size:16px;font-weight:800">${esc(a.title)}</div>
+     <div class="m" style="color:var(--sub);margin-top:6px">${esc(a.doc)} · ${esc(a.org)} · ${CH[a.ch]} · 기한 ${a.due} (${dday(a.dday)})
+       &nbsp;<a class="ev" href="#">📄 원문 PDF</a></div>
+     <div style="margin-top:12px;font-weight:700">조치 현황 — 완료 ${p.done}/${p.total} (${p.pct}%)</div>${bar(a.depts)}</div>
+   <h2>부서별 조치 상태 (게시판 댓글 ↔ 발송이력 동기화)</h2>
+   <div class="card"><table><tr><th>부서</th><th>담당자</th><th>상태</th><th>증빙</th><th>발송</th></tr>
+     ${a.depts.map(d=>`<tr><td>${esc(d.dept)}</td><td>${esc(d.owner)}</td>
+       <td><span class="badge s-${d.status}">${KO[d.status]}</span></td>
+       <td>${d.ev?`<span class="ev">📎 ${esc(d.ev)}</span>`:'<span class="pill">없음</span>'}</td>
+       <td style="color:var(--sub)">${d.sent}</td></tr>`).join("")}</table></div>
+   ${presetBox()}`;}
+function renderDeptDetail(r){if(!r){document.getElementById("detail").innerHTML="";return;}
+  document.getElementById("detail").innerHTML=`
+   <div class="card"><div style="font-size:16px;font-weight:800">${esc(r.dept)} <span class="pill">담당 ${esc(r.owner)}</span></div>
+     <div class="m" style="color:var(--sub);margin-top:6px">담당 권고문 ${r.items.length}건</div></div>
+   <h2>이 부서의 권고문별 조치</h2>
+   <div class="card"><table><tr><th>권고문</th><th>기한</th><th>상태</th><th>증빙</th></tr>
+     ${r.items.map(it=>`<tr><td>${esc(it.a.title)}<div style="color:var(--sub);font-size:11px">${esc(it.a.doc)}</div></td>
+       <td>${it.a.due}</td><td><span class="badge s-${it.d.status}">${KO[it.d.status]}</span></td>
+       <td>${it.d.ev?`<span class="ev">📎 ${esc(it.d.ev)}</span>`:'<span class="pill">없음</span>'}</td></tr>`).join("")}</table></div>
+   ${presetBox()}`;}
+let SELDEPT;render();
+</script></body></html>
