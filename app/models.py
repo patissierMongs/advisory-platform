@@ -156,6 +156,10 @@ class Advisory(TimestampMixin, Base):
         back_populates="advisory", cascade="all, delete-orphan",
         order_by="AdvisoryComment.id",
     )
+    # 영향 자산 매칭(읽기 전용) — 게시판에서 영향 부서/자산/담당자 집계에 사용.
+    matches: Mapped[list["Match"]] = relationship(
+        primaryjoin="Advisory.id == Match.advisory_id", viewonly=True,
+    )
 
 
 class AdvisoryCve(TimestampMixin, Base):

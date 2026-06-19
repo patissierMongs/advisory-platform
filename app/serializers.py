@@ -85,6 +85,40 @@ def _max_severity(a: Advisory) -> str | None:
     return top.value
 
 
+def _impact(a: Advisory) -> dict:
+    """권고문의 영향 집계 — 매칭(MATCHED)된 자산 기준 부서·담당자·제품."""
+    depts: dict[int, dict] = {}
+    products: dict[str, int] = {}
+    asset_total = 0
+    for m in a.matches:
+        if m.status != enums.MatchStatus.MATCHED:
+            continue
+        asset = m.asset
+        if asset is None:
+            continue
+        asset_total += 1
+        d = asset.department
+        if d is not None:
+            e = depts.setdefault(d.id, {"id": d.id, "name": d.name, "asset_ids": set(), "owners": set()})
+            e["asset_ids"].add(asset.id)
+            if asset.owner_name:
+                e["owners"].add(asset.owner_name)
+        prod = asset.product_raw or asset.product_key
+        if prod:
+            products[prod] = products.get(prod, 0) + 1
+    dept_list = sorted(
+        ({"id": e["id"], "name": e["name"], "asset_count": len(e["asset_ids"]),
+          "owners": sorted(e["owners"])} for e in depts.values()),
+        key=lambda x: x["name"],
+    )
+    return {
+        "affected_departments": dept_list,
+        "affected_dept_count": len(dept_list),
+        "affected_products": sorted(products.keys()),
+        "affected_asset_count": asset_total,
+    }
+
+
 def board_advisory_item(a: Advisory, *, comment_count: int | None = None) -> dict:
     """내부 게시판 목록/상세용 요약 — 사내 누구나 보는 공개 뷰."""
     brief = advisory_brief(a)
@@ -94,6 +128,7 @@ def board_advisory_item(a: Advisory, *, comment_count: int | None = None) -> dic
         if brief["max_severity"] else None
     )
     brief["comment_count"] = comment_count if comment_count is not None else len(a.comments)
+    brief.update(_impact(a))
     return brief
 
 
@@ -162,6 +197,8 @@ def match_item(m: Match) -> dict:
         "department_id": a.department_id,
         "department": a.department.name if a.department else None,
         "owner_name": a.owner_name,
+        "owner_team": a.owner_team,
+        "owner_contact": a.owner_contact,
         "product": a.product_raw or a.product_key,
         "version": a.version_raw or a.version_norm,
         "product_ver": f"{a.product_raw or a.product_key} · {a.version_raw or a.version_norm or ''}".strip(" ·"),

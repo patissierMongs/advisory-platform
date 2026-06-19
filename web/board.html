@@ -58,6 +58,15 @@
   .filterbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
   .filterbar .ck{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#4a5568;cursor:pointer;white-space:nowrap}
   .filterbar input[type=checkbox]{width:16px;height:16px;accent-color:var(--brand);cursor:pointer}
+  .impact{font-size:12px;margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;color:var(--sub)}
+  .dchip{background:#eef2fb;color:#2f5bd0;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px}
+  .dchip.hi{background:#2f5bd0;color:#fff}
+  .impact .prod{color:#4a5568}
+  table.assets{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.assets th{text-align:left;color:var(--sub);font-weight:700;font-size:11.5px;padding:6px 8px;border-bottom:1px solid var(--line)}
+  table.assets td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.assets tr.dh td{background:#f7f9fc;font-weight:700;color:#2f5bd0}
+  .own{font-weight:600}.ownc{color:var(--sub);font-size:11.5px}
 </style>
 </head>
 <body>
@@ -115,6 +124,23 @@ function filterBar(){
   </div>`;
 }
 function ackBadge(s,ko){ return s?`<span class="ack ack-${s}">${esc(ko||s)}</span>`:""; }
+function deptChips(a){
+  return (a.affected_departments||[]).map(d=>{
+    const hi = FILTER.deptName && d.name===FILTER.deptName ? " hi" : "";
+    const own = d.owners&&d.owners.length ? " · "+d.owners.slice(0,2).join(", ")+(d.owners.length>2?` 외 ${d.owners.length-2}`:"") : "";
+    return `<span class="dchip${hi}">${esc(d.name)} ${d.asset_count}${esc(own)}</span>`;
+  }).join("");
+}
+function productSummary(a){
+  const p = a.affected_products||[];
+  if(!p.length) return "";
+  const shown = p.slice(0,3).map(esc).join(", ");
+  return `<span class="prod">· ${shown}${p.length>3?` 외 ${p.length-3}`:""}</span>`;
+}
+function impactLine(a){
+  if(!a.affected_dept_count) return `<div class="impact">영향 자산 분석 전 <span class="muted">(관리자 매칭 대기)</span></div>`;
+  return `<div class="impact"><b style="color:#4a5568">영향 ${a.affected_dept_count}개 부서 · 자산 ${a.affected_asset_count}</b> ${deptChips(a)} ${productSummary(a)}</div>`;
+}
 
 window.onDeptFilter = function(name){
   const d = DEPTS.find(x=>x.name===(name||"").trim());
@@ -144,10 +170,10 @@ async function renderList(){
           ${FILTER.deptId?ackBadge(a.dept_ack_status,a.dept_ack_status_ko):""}
           ${a.source_org?`<span>${esc(a.source_org)}</span>`:""}
           ${a.receive_channel?`<span>· ${CH_KO[a.receive_channel]||a.receive_channel}</span>`:""}
-          ${a.doc_no?`<span>· ${esc(a.doc_no)}</span>`:""}
           <span>· 기한 ${fmtDate(a.due_at)}</span>
           <span>· 💬 ${a.comment_count}</span>
         </div>
+        ${impactLine(a)}
       </div>`).join("")
       : `<div class="empty">${FILTER.deptId||FILTER.excludeDone?"조건에 맞는 권고문이 없습니다.":"게시된 보안권고문이 없습니다."}</div>`;
     app.innerHTML = head + filterBar() + body;
@@ -168,6 +194,27 @@ async function renderDetail(id){
         <span class="muted">${esc(c.product_name||"")}</span>
         ${c.lookup_status==="NOT_FOUND"?`<span class="chip">DB 미등록</span>`:""}
       </div>`).join("") : `<div class="muted" style="font-size:12.5px">추출된 CVE 없음</div>`;
+
+    // 영향 자산·담당자 — 부서별 그룹. 필터된 부서가 있으면 맨 위로.
+    const groups = {};
+    (d.matches||[]).forEach(m=>{ const k=m.department||"(부서 미지정)"; (groups[k]=groups[k]||[]).push(m); });
+    let gkeys = Object.keys(groups).sort();
+    if(FILTER.deptName) gkeys = gkeys.sort((a,b)=> (a===FILTER.deptName?-1:b===FILTER.deptName?1:a.localeCompare(b)));
+    const assetsSection = gkeys.length ? `<table class="assets">
+      <tr><th>부서 / 자산</th><th>제품 · 버전</th><th>담당자</th><th>심각도</th></tr>
+      ${gkeys.map(g=>{
+        const rows = groups[g];
+        const owners = [...new Set(rows.map(m=>m.owner_name).filter(Boolean))];
+        const hi = FILTER.deptName===g ? ' style="background:#eef4ff"' : '';
+        return `<tr class="dh"${hi}><td colspan="4">${esc(g)} · ${rows.length}건${owners.length?` · 담당 ${esc(owners.slice(0,3).join(", "))}`:""}</td></tr>`
+          + rows.map(m=>`<tr>
+              <td>${esc(m.asset_no||"")}${m.ip?`<div class="ownc">${esc(m.ip)}</div>`:""}</td>
+              <td>${esc(m.product_ver||m.product||"")}</td>
+              <td><span class="own">${esc(m.owner_name||"-")}</span>${m.owner_contact?`<div class="ownc">${esc(m.owner_contact)}</div>`:""}${m.owner_team?`<div class="ownc">${esc(m.owner_team)}</div>`:""}</td>
+              <td>${sevBadge(m.severity)} <span class="ownc">${esc(m.cve||"")}</span></td>
+            </tr>`).join("");
+      }).join("")}
+    </table>` : `<div class="muted" style="font-size:12.5px">영향 자산 매칭 결과가 없습니다(관리자 매칭 전이거나 해당 자산 없음).</div>`;
 
     const comments = d.comments.length ? d.comments.map(c=>`
       <div class="cmt">
@@ -196,7 +243,11 @@ async function renderDetail(id){
           <span>· 접수 ${fmtDate(a.received_at)}</span>
           <span>· 조치기한 <b>${fmtDate(a.due_at)}</b></span>
         </div>
+        ${impactLine(a)}
       </div>
+
+      <h2 class="section">영향 부서 · 자산 · 담당자</h2>
+      <div class="card">${assetsSection}</div>
 
       <h2 class="section">영향 취약점 (CVE)</h2>
       <div class="card">${cveRows}</div>

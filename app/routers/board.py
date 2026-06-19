@@ -123,9 +123,12 @@ def board_detail(advisory_id: int, db: Session = Depends(get_db)):
         }
         for ac in adv.cves
     ]
+    matches = [serializers.match_item(m) for m in adv.matches
+               if m.status == enums.MatchStatus.MATCHED]
     return {
         "advisory": serializers.board_advisory_item(adv, comment_count=len(adv.comments)),
         "cves": cves,
+        "matches": matches,
         "comments": [serializers.comment_item(c) for c in adv.comments],
     }
 

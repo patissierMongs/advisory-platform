@@ -3,9 +3,13 @@ from __future__ import annotations
 
 import pytest
 
+from datetime import datetime
+
 from app import enums
 from app.db import SessionLocal
-from app.models import Advisory, AdvisoryComment, Department, Notification
+from app.models import (
+    Advisory, AdvisoryComment, AdvisoryCve, Asset, Department, Match, Notification,
+)
 
 
 @pytest.fixture()
@@ -153,6 +157,52 @@ def test_department_filter_and_exclude_done(client):
             db.execute(delete(Notification).where(Notification.advisory_id.in_([ids["pub"], ids["done"]])))
             db.execute(delete(Advisory).where(Advisory.id.in_([ids["pub"], ids["done"]])))
             db.execute(delete(Department).where(Department.id.in_([ids["A"], ids["B"], ids["C"]])))
+            db.commit()
+
+
+def test_board_surfaces_affected_dept_asset_owner(client):
+    """게시판이 매칭된 부서·자산·담당자를 노출."""
+    from sqlalchemy import delete
+    with SessionLocal() as db:
+        dept = Department(name="영향테스트부서", is_active=True)
+        db.add(dept)
+        db.commit()
+        did = dept.id
+        asset = Asset(asset_no="IMP-A1", department_id=did, product_key="google_chrome",
+                      product_raw="Google Chrome", version_raw="120", owner_name="김담당",
+                      owner_contact="010-1234-5678", status=enums.AssetStatus.NORMAL)
+        adv = Advisory(doc_no="IMP-1", title="크롬 취약점", status=enums.AdvisoryStatus.MATCHED)
+        db.add_all([asset, adv])
+        db.commit()
+        aid, asid = adv.id, asset.id
+        ac = AdvisoryCve(advisory_id=aid, cve_id_text="CVE-2026-30012",
+                         lookup_status=enums.LookupStatus.FOUND)
+        db.add(ac)
+        db.commit()
+        db.add(Match(advisory_id=aid, advisory_cve_id=ac.id, asset_id=asid,
+                     status=enums.MatchStatus.MATCHED))
+        db.get(Advisory, aid).board_published_at = datetime.now()
+        db.commit()
+    try:
+        items = client.get("/api/v1/board/advisories?exclude_done=false").json()["items"]
+        row = next(a for a in items if a["doc_no"] == "IMP-1")
+        assert row["affected_dept_count"] == 1 and row["affected_asset_count"] == 1
+        ad = row["affected_departments"][0]
+        assert ad["name"] == "영향테스트부서" and ad["asset_count"] == 1 and "김담당" in ad["owners"]
+        assert "Google Chrome" in row["affected_products"]
+
+        d = client.get(f"/api/v1/board/advisories/{aid}").json()
+        assert len(d["matches"]) == 1
+        m = d["matches"][0]
+        assert m["owner_name"] == "김담당" and m["owner_contact"] == "010-1234-5678"
+        assert m["department"] == "영향테스트부서"
+    finally:
+        with SessionLocal() as db:
+            db.execute(delete(Match).where(Match.advisory_id == aid))
+            db.execute(delete(AdvisoryCve).where(AdvisoryCve.advisory_id == aid))
+            db.execute(delete(Advisory).where(Advisory.id == aid))
+            db.execute(delete(Asset).where(Asset.id == asid))
+            db.execute(delete(Department).where(Department.id == did))
             db.commit()
 
 
