@@ -1296,8 +1296,10 @@ class Component extends DCLogic {
         this._matchInfo[key] = { id: x.id, suggested: x.suggested_exclude, candidate: x.candidate, status: x.status };
         if (x.status === 'EXCLUDED') excl[key] = true;   // 서버 제외 상태를 클라이언트에 동기화(§A1)
       });
+      // 서버 매칭을 확보했음을 표시 → 이후 매칭 표는 서버 저장분만 렌더(게시판·발송과 일치).
+      this._matchesLoaded = true;
       if (Object.keys(excl).length) this.setState(s => ({ excluded: Object.assign({}, excl, s.excluded) }));
-    } catch (e) { /* 매칭 아직 없음 */ }
+    } catch (e) { /* 매칭 조회 실패 — 클라이언트 추정 유지 */ }
   }
 
   // 사용자 액션(클라이언트 상태 변화)을 서버에 반영 — 기존 UI 핸들러를 건드리지 않고 후킹.
@@ -1320,6 +1322,7 @@ class Component extends DCLogic {
     // ② 자산 매칭 단계 진입(step→3): 서버 매칭 실행
     if (S.step === 3 && P.step !== 3 && !this._busy.match && this._advisoryId) {
       this._busy.match = true;
+      this._matchesLoaded = false;   // 서버 매칭 로드 전까지는 클라이언트 추정 표시
       this._prev = Object.assign({}, P, { step: 3 });
       try { await this.api('POST', '/advisories/' + this._advisoryId + '/match'); await this._loadMatches(); this.forceUpdate(); }
       catch (e) { /* 게이트 미충족 등 */ }
@@ -1503,11 +1506,16 @@ class Component extends DCLogic {
   buildMatches() {
     const out = [];
     const db = this.cveDb();
+    const info = this._matchInfo || {};
     this.extractedCves().forEach(c => {
       const e = db[c.id];
       if (!e) return;
       this.assets().forEach(a => {
-        if (this.rowMatches(e, a)) out.push({ key: a.id + '__' + c.id, asset: a, entry: e, cve: c.id });
+        const key = a.id + '__' + c.id;
+        // 서버 매칭을 불러왔으면 '서버가 실제 저장한 매칭'만 표시 — 게시판·발송·보고서와
+        // 100% 일치(유령 매칭 차단). 로드 전(초기 렌더)에는 클라이언트 추정으로 임시 표시.
+        const ok = this._matchesLoaded ? !!info[key] : this.rowMatches(e, a);
+        if (ok) out.push({ key, asset: a, entry: e, cve: c.id });
       });
     });
     return out;
