@@ -15,17 +15,27 @@ from .versioning import version_matches
 
 
 def asset_matches_cve(asset: Asset, cve: Cve) -> tuple[bool, dict | None]:
-    """단일 자산 ↔ CVE 매칭 판정. 근거(reason) 동봉."""
+    """단일 자산 ↔ CVE 매칭 판정. 근거(reason) 동봉.
+
+    자산 버전은 정규화값(version_norm)과 원본(version_raw) 둘 다로 판정한다.
+    정규화가 과하게 변형되어(예: "2021" → "21.001.20155") CVE 영향버전 목록과
+    어긋나는 경우 취약 자산을 놓치지 않도록(보안 도구: 누락 < 오탐) — 둘 중 하나라도
+    규칙을 만족하면 매칭. 관리자 화면(클라이언트 매칭)과 서버 저장 결과의 불일치도 해소.
+    """
     if not cve.product_key or asset.product_key != cve.product_key:
         return False, None
-    matched, candidate = version_matches(asset.version_norm, cve.affected_versions)
-    if not matched:
+    matched_n, cand_n = version_matches(asset.version_norm, cve.affected_versions)
+    matched_r, cand_r = version_matches(asset.version_raw, cve.affected_versions)
+    if not (matched_n or matched_r):
         return False, None
+    # 둘 중 '확정 매칭'(matched & not candidate)이 하나라도 있으면 확정, 아니면 후보(사람 검토).
+    confident = (matched_n and not cand_n) or (matched_r and not cand_r)
     return True, {
         "product_key": cve.product_key,
         "version_rule": cve.affected_versions,
         "asset_version": asset.version_norm,
-        "candidate": candidate,  # True=버전 비교 불가로 사람 검토 권장
+        "asset_version_raw": asset.version_raw,
+        "candidate": not confident,  # True=버전 비교 불가/원본으로만 일치 → 사람 검토 권장
     }
 
 
