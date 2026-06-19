@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>보안권고문 게시판 — 목업</title>
+<style>
+  :root{
+    --bg:#f4f6fa; --card:#fff; --ink:#15294a; --sub:#7a889c; --line:#e3e9f2;
+    --brand:#2f5bd0; --brand-d:#21408f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;font-size:14px;line-height:1.5}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:920px;margin:0 auto;padding:0 16px 64px}
+  header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+  .hd{max-width:920px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:12px}
+  .hd h1{font-size:16px;margin:0;font-weight:800;letter-spacing:-.3px}
+  .hd .sp{flex:1}
+  .hd .admin{font-size:12px;color:var(--sub);border:1px solid var(--line);padding:6px 11px;border-radius:8px}
+  .hd .admin:hover{color:var(--brand);border-color:#c3d2f0}
+  .demo{background:#fff8e6;border-bottom:1px solid #f0e2b8;color:#8a6d1a;font-size:12px;text-align:center;padding:6px}
+  h2.section{font-size:13px;color:var(--sub);font-weight:700;margin:24px 2px 10px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:12px}
+  .row{cursor:pointer;transition:box-shadow .12s,border-color .12s}
+  .row:hover{border-color:#c3d2f0;box-shadow:0 3px 14px rgba(20,41,74,.07)}
+  .ttl{font-size:15px;font-weight:700;margin:0 0 6px;letter-spacing:-.2px}
+  .meta{font-size:12px;color:var(--sub);display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;line-height:1.4}
+  .sev-CRITICAL{background:#fdecec;color:#c0392b}.sev-HIGH{background:#fdf0e6;color:#d35400}
+  .sev-MEDIUM{background:#fcf6e3;color:#9a7d12}.sev-LOW{background:#eef1f5;color:#67748a}
+  .sla-OVERDUE{background:#fdecec;color:#c0392b}.sla-IMMINENT{background:#fdf0e6;color:#d35400}
+  .sla-NORMAL{background:#eaf3ee;color:#2e7d52}.sla-DONE{background:#e8effb;color:#2f5bd0}
+  .chip{background:#eef1f5;color:#5a6678;font-size:11px;padding:3px 8px;border-radius:6px}
+  .muted{color:var(--sub)}
+  .btn{background:var(--brand);color:#fff;border:none;border-radius:9px;padding:10px 16px;font-size:13.5px;
+    font-weight:700;cursor:pointer;font-family:inherit}
+  .btn:hover{background:var(--brand-d)} .btn:disabled{opacity:.5;cursor:default}
+  label.f{display:block;font-size:12px;font-weight:700;color:#4a5568;margin:0 0 5px}
+  input,textarea,select{width:100%;font-family:inherit;font-size:13.5px;color:var(--ink);
+    border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#fcfdff;outline:none}
+  input:focus,textarea:focus,select:focus{border-color:var(--brand)}
+  textarea{resize:vertical;min-height:84px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .cmt{border-top:1px solid var(--line);padding:13px 0}
+  .cmt:first-of-type{border-top:none}
+  .cmt .who{font-weight:700;font-size:13px}
+  .cmt .when{font-size:11.5px;color:var(--sub)}
+  .cmt .body{margin-top:5px;white-space:pre-wrap;word-break:break-word}
+  .empty{text-align:center;color:var(--sub);padding:48px 12px;font-size:13px}
+  .err{background:#fdecec;color:#c0392b;border:1px solid #f6cdcb;padding:10px 13px;border-radius:8px;font-size:12.5px;margin:10px 0}
+  .ack{font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px}
+  .ack-DONE{background:#e8f6ee;color:#2e7d52}.ack-IN_PROGRESS{background:#fcf6e3;color:#9a7d12}
+  .ack-UNABLE{background:#fdecec;color:#c0392b}
+  .back{font-size:13px;color:var(--brand);font-weight:600;cursor:pointer;display:inline-block;margin:18px 0 4px}
+  .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#15294a;color:#fff;
+    font-size:13px;padding:10px 18px;border-radius:10px;box-shadow:0 6px 24px rgba(20,41,74,.25);opacity:0;
+    transition:opacity .2s,transform .2s;pointer-events:none}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(-4px)}
+</style>
+</head>
+<body>
+<div class="demo">목업(데모) — 백엔드 없이 동작. 댓글은 이 브라우저 세션에만 임시 저장됩니다.</div>
+<header>
+  <div class="hd">
+    <h1>🛡️ 보안권고문 게시판</h1>
+    <span class="sp"></span>
+    <a class="admin" href="#" onclick="toast('목업에서는 관리자 화면이 비활성화되어 있습니다');return false;">관리자 ↗</a>
+  </div>
+</header>
+<div class="wrap" id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const ACK_KO = {DONE:"조치완료",IN_PROGRESS:"진행중",UNABLE:"조치불가"};
+const CH_KO  = {NCST:"국정원 NCST",WEBMAIL:"웹메일",OFFICIAL_DOC:"공문"};
+
+const DEPTS = ["도로국","철도국","항공정책실","물류정책관","건설정책국","주택정책관",
+  "교통물류실","정보통신담당관","대중교통과","자동차정책관","수자원정책국","국토정보정책관",
+  "기획조정실","감사관실","운영지원과","항공안전정책관"].map((n,i)=>({id:i+1,name:n}));
+
+// ── 목 데이터 ─────────────────────────────────────────────
+const ADV = [
+  {
+    id:1, doc_no:"국정원-사이버-2026-0612", title:"Microsoft Windows LSA 원격코드실행 취약점 긴급 조치 권고",
+    source_org:"국가정보원", receive_channel:"NCST", received_at:"2026-06-15", due_at:"2026-06-22",
+    d_day:3, sla_status:"IMMINENT", max_severity:"CRITICAL", max_severity_ko:"긴급",
+    cves:[
+      {cve_id_text:"CVE-2026-21345", severity:"CRITICAL", product_name:"Microsoft Windows 11", lookup_status:"FOUND"},
+      {cve_id_text:"CVE-2026-21360", severity:"HIGH", product_name:"Windows Server 2022", lookup_status:"FOUND"},
+      {cve_id_text:"CVE-2026-21401", severity:"HIGH", product_name:"Microsoft Office", lookup_status:"FOUND"},
+    ],
+    comments:[
+      {id:101, author_name:"김관제", department:"정보통신담당관", is_admin:true, ack_status:null,
+       created_at:"2026-06-16T09:12", body:"각 부서 자산 중 Windows 11 22H2/23H2, Server 2022 대상입니다. 6/22까지 패치 후 댓글로 회신 바랍니다."},
+      {id:102, author_name:"박도로", department:"도로국", is_admin:false, ack_status:"DONE",
+       created_at:"2026-06-17T14:30", body:"해당 자산 12대 모두 6월 정기패치로 적용 완료했습니다."},
+      {id:103, author_name:"이철도", department:"철도국", is_admin:false, ack_status:"IN_PROGRESS",
+       created_at:"2026-06-18T10:05", body:"운영계 5대는 점검창구 일정상 6/21 야간작업으로 진행 예정입니다."},
+    ],
+  },
+  {
+    id:2, doc_no:"국토부-정보보호-2026-0531", title:"Apache Log4j2 관련 추가 취약점 점검 및 패치 권고(공문)",
+    source_org:"국토교통부", receive_channel:"OFFICIAL_DOC", received_at:"2026-06-10", due_at:"2026-06-30",
+    d_day:11, sla_status:"NORMAL", max_severity:"HIGH", max_severity_ko:"높음",
+    cves:[
+      {cve_id_text:"CVE-2026-44120", severity:"HIGH", product_name:"Apache Log4j2", lookup_status:"FOUND"},
+      {cve_id_text:"CVE-2026-45088", severity:"MEDIUM", product_name:"한컴오피스", lookup_status:"NOT_FOUND"},
+    ],
+    comments:[
+      {id:201, author_name:"최관제", department:"정보통신담당관", is_admin:true, ack_status:null,
+       created_at:"2026-06-11T08:40", body:"내부 WAS 로그 라이브러리 버전 확인 후 회신 부탁드립니다. 한컴오피스 건은 CVE DB 등록 대기 중입니다."},
+      {id:202, author_name:"정물류", department:"물류정책관", is_admin:false, ack_status:"UNABLE",
+       created_at:"2026-06-13T16:22", body:"해당 시스템은 외주 유지보수 계약 종료로 6월 내 패치 불가. 7월 재계약 후 조치 예정입니다."},
+    ],
+  },
+  {
+    id:3, doc_no:"국정원-사이버-2026-0588", title:"Google Chrome V8 엔진 임의코드실행 취약점 (웹메일 통보)",
+    source_org:"국가정보원", receive_channel:"WEBMAIL", received_at:"2026-06-05", due_at:"2026-06-12",
+    d_day:-7, sla_status:"OVERDUE", max_severity:"HIGH", max_severity_ko:"높음",
+    cves:[
+      {cve_id_text:"CVE-2026-30012", severity:"HIGH", product_name:"Google Chrome", lookup_status:"FOUND"},
+    ],
+    comments:[
+      {id:301, author_name:"김관제", department:"정보통신담당관", is_admin:true, ack_status:null,
+       created_at:"2026-06-06T09:00", body:"전 부서 크롬 124 미만 → 124 이상으로 업데이트 바랍니다."},
+    ],
+  },
+];
+
+// ── 유틸 ─────────────────────────────────────────────────
+const app = document.getElementById("app");
+const esc = s => (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const fmtDate = s => s? s.slice(0,10) : "—";
+const dday = n => n==null?"":(n<0?"D+"+(-n):(n===0?"D-DAY":"D-"+n));
+const sevBadge = (s,ko)=> s?`<span class="badge sev-${s}">${esc(ko||s)}</span>`:"";
+const slaBadge = s=>{const ko={OVERDUE:"기한초과",IMMINENT:"임박",NORMAL:"여유",DONE:"완료"};return s?`<span class="badge sla-${s}">${ko[s]||s}</span>`:"";};
+const getAdv = id => ADV.find(a=>a.id===id);
+let _t;
+function toast(m){const el=document.getElementById("toast");el.textContent=m;el.classList.add("on");clearTimeout(_t);_t=setTimeout(()=>el.classList.remove("on"),2200);}
+
+function route(){
+  const m = location.hash.match(/^#\/a\/(\d+)/);
+  if(m) renderDetail(parseInt(m[1],10)); else renderList();
+  window.scrollTo(0,0);
+}
+
+function renderList(){
+  app.innerHTML = `<h2 class="section">게시된 보안권고문 · ${ADV.length}건</h2>` + ADV.map(a=>`
+    <div class="card row" onclick="location.hash='#/a/${a.id}'">
+      <div class="ttl">${esc(a.title)}</div>
+      <div class="meta">
+        ${sevBadge(a.max_severity,a.max_severity_ko)} ${slaBadge(a.sla_status)}
+        <span class="chip">${dday(a.d_day)}</span>
+        <span>${esc(a.source_org)}</span>
+        <span>· ${CH_KO[a.receive_channel]}</span>
+        <span>· ${esc(a.doc_no)}</span>
+        <span>· 기한 ${fmtDate(a.due_at)}</span>
+        <span>· 💬 ${a.comments.length}</span>
+      </div>
+    </div>`).join("");
+}
+
+function renderDetail(id){
+  const a = getAdv(id);
+  if(!a){ location.hash='#/'; return; }
+  const cveRows = a.cves.map(c=>`
+    <div class="meta" style="padding:5px 0;border-top:1px solid var(--line)">
+      <b>${esc(c.cve_id_text)}</b> ${sevBadge(c.severity)}
+      <span class="muted">${esc(c.product_name||"")}</span>
+      ${c.lookup_status==="NOT_FOUND"?`<span class="chip">DB 미등록</span>`:""}
+    </div>`).join("");
+  const comments = a.comments.length ? a.comments.map(c=>`
+    <div class="cmt">
+      <span class="who">${esc(c.author_name)}</span>
+      ${c.department?`<span class="muted"> · ${esc(c.department)}</span>`:""}
+      ${c.is_admin?`<span class="chip" style="background:#e8effb;color:#2f5bd0">관리자</span>`:""}
+      ${c.ack_status?`<span class="ack ack-${c.ack_status}">${ACK_KO[c.ack_status]}</span>`:""}
+      <span class="when"> · ${fmtDate(c.created_at)} ${esc((c.created_at||"").slice(11,16))}</span>
+      <div class="body">${esc(c.body)}</div>
+    </div>`).join("") : `<div class="muted" style="font-size:12.5px;padding:8px 0">아직 댓글이 없습니다. 첫 회신을 남겨주세요.</div>`;
+  const deptOpts = DEPTS.map(d=>`<option value="${esc(d.name)}">`).join("");
+
+  app.innerHTML = `
+    <div class="back" onclick="location.hash='#/'">← 목록</div>
+    <div class="card">
+      <div class="ttl" style="font-size:17px">${esc(a.title)}</div>
+      <div class="meta" style="margin-bottom:6px">
+        ${sevBadge(a.max_severity,a.max_severity_ko)} ${slaBadge(a.sla_status)}
+        <span class="chip">${dday(a.d_day)}</span>
+        <span>${esc(a.source_org)}</span><span>· ${CH_KO[a.receive_channel]}</span>
+      </div>
+      <div class="meta">
+        <span>문서번호 ${esc(a.doc_no)}</span>
+        <span>· 접수 ${fmtDate(a.received_at)}</span>
+        <span>· 조치기한 <b>${fmtDate(a.due_at)}</b></span>
+      </div>
+    </div>
+
+    <h2 class="section">영향 취약점 (CVE)</h2>
+    <div class="card">${cveRows}</div>
+
+    <h2 class="section">댓글 · 조치 회신 (<span id="ccount">${a.comments.length}</span>)</h2>
+    <div class="card" id="clist">${comments}</div>
+
+    <h2 class="section">댓글 작성</h2>
+    <div class="card">
+      <div id="cerr"></div>
+      <div class="grid2">
+        <div><label class="f">이름</label><input id="c_name" maxlength="80" placeholder="홍길동"></div>
+        <div><label class="f">부서 (검색·선택)</label>
+          <input id="c_dept" list="deptlist" placeholder="부서명 입력 또는 선택">
+          <datalist id="deptlist">${deptOpts}</datalist>
+        </div>
+      </div>
+      <div style="margin-top:12px"><label class="f">내용</label>
+        <textarea id="c_body" placeholder="조치 결과나 질의를 남겨주세요."></textarea></div>
+      <div class="grid2" style="margin-top:12px;align-items:end">
+        <div><label class="f">조치상태 (선택 — 부서 회신으로 반영)</label>
+          <select id="c_ack">
+            <option value="">첨부 안 함 (일반 댓글)</option>
+            <option value="IN_PROGRESS">진행중</option>
+            <option value="DONE">조치완료</option>
+            <option value="UNABLE">조치불가</option>
+          </select></div>
+        <div style="text-align:right"><button class="btn" onclick="submitComment(${id})">댓글 등록</button></div>
+      </div>
+    </div>`;
+}
+
+function submitComment(id){
+  const a = getAdv(id);
+  const name = document.getElementById("c_name").value.trim();
+  const dept = document.getElementById("c_dept").value.trim();
+  const body = document.getElementById("c_body").value.trim();
+  const ack  = document.getElementById("c_ack").value || null;
+  const err  = document.getElementById("cerr"); err.innerHTML="";
+  if(!name){ err.innerHTML=`<div class="err">이름을 입력하세요.</div>`; return; }
+  if(!body){ err.innerHTML=`<div class="err">내용을 입력하세요.</div>`; return; }
+  if(ack && !DEPTS.some(d=>d.name===dept)){
+    err.innerHTML=`<div class="err">조치상태를 첨부하려면 목록의 부서를 선택해야 회신으로 반영됩니다.</div>`; return; }
+  const now = new Date().toISOString().slice(0,16);
+  a.comments.push({id:Date.now(), author_name:name, department:dept||null, is_admin:false, ack_status:ack, created_at:now, body});
+  toast(ack ? `댓글 등록 · ${ACK_KO[ack]} 회신 반영` : "댓글이 등록되었습니다");
+  renderDetail(id);
+}
+
+window.addEventListener("hashchange", route);
+route();
+</script>
+</body>
+</html>
