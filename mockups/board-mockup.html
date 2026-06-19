@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>보안권고문 게시판 — 목업</title>
+<style>
+  :root{--bg:#f4f6fa;--card:#fff;--ink:#15294a;--sub:#7a889c;--line:#e3e9f2;--brand:#2f5bd0;--brand-d:#21408f;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;font-size:14px;line-height:1.5}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:940px;margin:0 auto;padding:0 16px 64px}
+  header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+  .hd{max-width:940px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:12px}
+  .hd h1{font-size:16px;margin:0;font-weight:800;letter-spacing:-.3px}
+  .hd .sp{flex:1}
+  .hd .admin{font-size:12px;color:var(--sub);border:1px solid var(--line);padding:6px 11px;border-radius:8px}
+  .demo{background:#fff8e6;border-bottom:1px solid #f0e2b8;color:#8a6d1a;font-size:12px;text-align:center;padding:6px}
+  h2.section{font-size:13px;color:var(--sub);font-weight:700;margin:24px 2px 10px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:12px}
+  .row{cursor:pointer;transition:box-shadow .12s,border-color .12s}
+  .row:hover{border-color:#c3d2f0;box-shadow:0 3px 14px rgba(20,41,74,.07)}
+  .ttl{font-size:15px;font-weight:700;margin:0 0 6px;letter-spacing:-.2px}
+  .meta{font-size:12px;color:var(--sub);display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;line-height:1.4}
+  .sev-CRITICAL{background:#fdecec;color:#c0392b}.sev-HIGH{background:#fdf0e6;color:#d35400}
+  .sev-MEDIUM{background:#fcf6e3;color:#9a7d12}.sev-LOW{background:#eef1f5;color:#67748a}
+  .sla-OVERDUE{background:#fdecec;color:#c0392b}.sla-IMMINENT{background:#fdf0e6;color:#d35400}
+  .sla-NORMAL{background:#eaf3ee;color:#2e7d52}.sla-DONE{background:#e8effb;color:#2f5bd0}
+  .chip{background:#eef1f5;color:#5a6678;font-size:11px;padding:3px 8px;border-radius:6px}
+  .muted{color:var(--sub)}
+  .btn{background:var(--brand);color:#fff;border:none;border-radius:9px;padding:10px 16px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit}
+  .btn:hover{background:var(--brand-d)}
+  .btn-ghost{background:#fff;color:var(--sub);border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+  label.f{display:block;font-size:12px;font-weight:700;color:#4a5568;margin:0 0 5px}
+  input,textarea,select{width:100%;font-family:inherit;font-size:13.5px;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#fcfdff;outline:none}
+  input:focus,textarea:focus,select:focus{border-color:var(--brand)}
+  textarea{resize:vertical;min-height:84px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .cmt{border-top:1px solid var(--line);padding:13px 0}
+  .cmt:first-of-type{border-top:none}
+  .cmt .who{font-weight:700;font-size:13px}
+  .cmt .when{font-size:11.5px;color:var(--sub)}
+  .cmt .body{margin-top:5px;white-space:pre-wrap;word-break:break-word}
+  .empty{text-align:center;color:var(--sub);padding:48px 12px;font-size:13px}
+  .err{background:#fdecec;color:#c0392b;border:1px solid #f6cdcb;padding:10px 13px;border-radius:8px;font-size:12.5px;margin:10px 0}
+  .ack{font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px}
+  .ack-DONE{background:#e8f6ee;color:#2e7d52}.ack-IN_PROGRESS{background:#fcf6e3;color:#9a7d12}.ack-UNABLE{background:#fdecec;color:#c0392b}
+  .back{font-size:13px;color:var(--brand);font-weight:600;cursor:pointer;display:inline-block;margin:18px 0 4px}
+  .filterbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .filterbar .ck{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#4a5568;cursor:pointer;white-space:nowrap}
+  .filterbar input[type=checkbox]{width:16px;height:16px;accent-color:var(--brand);cursor:pointer}
+  .impact{font-size:12px;margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;color:var(--sub)}
+  .dchip{background:#eef2fb;color:#2f5bd0;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px}
+  .dchip.hi{background:#2f5bd0;color:#fff}
+  .prod{color:#4a5568}
+  table.assets{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.assets th{text-align:left;color:var(--sub);font-weight:700;font-size:11.5px;padding:6px 8px;border-bottom:1px solid var(--line)}
+  table.assets td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.assets tr.dh td{background:#f7f9fc;font-weight:700;color:#2f5bd0}
+  .own{font-weight:600}.ownc{color:var(--sub);font-size:11.5px}
+  .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#15294a;color:#fff;font-size:13px;padding:10px 18px;border-radius:10px;box-shadow:0 6px 24px rgba(20,41,74,.25);opacity:0;transition:opacity .2s,transform .2s;pointer-events:none}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(-4px)}
+</style>
+</head>
+<body>
+<div class="demo">목업(데모) — 백엔드 없이 동작. 댓글은 이 브라우저 세션에만 임시 저장됩니다.</div>
+<header><div class="hd">
+  <h1>🛡️ 보안권고문 게시판</h1><span class="sp"></span>
+  <a class="admin" href="#" onclick="toast('목업에서는 관리자 화면이 비활성화되어 있습니다');return false;">관리자 ↗</a>
+</div></header>
+<div class="wrap" id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const ACK_KO={DONE:"조치완료",IN_PROGRESS:"진행중",UNABLE:"조치불가"};
+const CH_KO={NCST:"국정원 NCST",WEBMAIL:"웹메일",OFFICIAL_DOC:"공문"};
+const DEPTS=["도로국","철도국","항공정책실","물류정책관","건설정책국","정보통신담당관","기획조정실",
+  "주택정책관","교통물류실","대중교통과","자동차정책관","수자원정책국"].map((n,i)=>({id:i+1,name:n}));
+const FILTER={q:"",excludeDone:true};
+let _searchT;
+
+// 자산(asset)에 부서·제품·버전·담당자·연락처. depts 의 ack 는 부서별 조치상태.
+const ADV=[
+  { id:1, doc_no:"국정원-사이버-2026-0612", title:"Microsoft Windows LSA 원격코드실행 취약점 긴급 조치 권고",
+    source_org:"국가정보원", receive_channel:"NCST", received_at:"2026-06-15", due_at:"2026-06-22",
+    d_day:3, sla_status:"IMMINENT", max_severity:"CRITICAL", max_severity_ko:"긴급", completed:false,
+    depts:[{name:"도로국",ack:"DONE"},{name:"철도국",ack:"IN_PROGRESS"},{name:"항공정책실",ack:"NONE"},{name:"정보통신담당관",ack:"NONE"}],
+    assets:[
+      {asset_no:"PC-2207", dept:"도로국", product:"Windows 11", version:"23H2", owner_name:"박도로", owner_contact:"02-123-0102", severity:"CRITICAL", cve:"CVE-2026-21345"},
+      {asset_no:"SVR-0102", dept:"도로국", product:"Windows Server 2022", version:"21H2", owner_name:"박도로", owner_contact:"02-123-0102", severity:"HIGH", cve:"CVE-2026-21360"},
+      {asset_no:"SVR-0310", dept:"철도국", product:"Windows Server 2022", version:"22H2", owner_name:"이철도", owner_contact:"02-123-0310", severity:"HIGH", cve:"CVE-2026-21360"},
+      {asset_no:"PC-5521", dept:"항공정책실", product:"Microsoft Office", version:"2021", owner_name:"정항공", owner_contact:"02-123-5521", severity:"HIGH", cve:"CVE-2026-21401"},
+      {asset_no:"PC-9001", dept:"정보통신담당관", product:"Windows 11", version:"22H2", owner_name:"김관제", owner_contact:"02-123-9001", severity:"CRITICAL", cve:"CVE-2026-21345"},
+    ],
+    cves:[
+      {cve_id_text:"CVE-2026-21345", severity:"CRITICAL", product_name:"Microsoft Windows 11", lookup_status:"FOUND"},
+      {cve_id_text:"CVE-2026-21360", severity:"HIGH", product_name:"Windows Server 2022", lookup_status:"FOUND"},
+      {cve_id_text:"CVE-2026-21401", severity:"HIGH", product_name:"Microsoft Office", lookup_status:"FOUND"},
+    ],
+    comments:[
+      {id:101, author_name:"김관제", department:"정보통신담당관", is_admin:true, ack_status:null, created_at:"2026-06-16T09:12", body:"각 부서 자산 중 Windows 11 22H2/23H2, Server 2022 대상입니다. 6/22까지 패치 후 댓글로 회신 바랍니다."},
+      {id:102, author_name:"박도로", department:"도로국", is_admin:false, ack_status:"DONE", created_at:"2026-06-17T14:30", body:"PC-2207, SVR-0102 6월 정기패치로 적용 완료했습니다."},
+      {id:103, author_name:"이철도", department:"철도국", is_admin:false, ack_status:"IN_PROGRESS", created_at:"2026-06-18T10:05", body:"SVR-0310은 점검창구 일정상 6/21 야간작업 예정입니다."},
+    ],
+  },
+  { id:2, doc_no:"국토부-정보보호-2026-0531", title:"Apache Log4j2 관련 추가 취약점 점검 및 패치 권고(공문)",
+    source_org:"국토교통부", receive_channel:"OFFICIAL_DOC", received_at:"2026-06-10", due_at:"2026-06-30",
+    d_day:11, sla_status:"NORMAL", max_severity:"HIGH", max_severity_ko:"높음", completed:false,
+    depts:[{name:"물류정책관",ack:"UNABLE"},{name:"건설정책국",ack:"DONE"},{name:"정보통신담당관",ack:"NONE"}],
+    assets:[
+      {asset_no:"WAS-1201", dept:"물류정책관", product:"Apache Tomcat(Log4j2)", version:"9.0", owner_name:"정물류", owner_contact:"02-200-1201", severity:"HIGH", cve:"CVE-2026-44120"},
+      {asset_no:"WAS-3050", dept:"건설정책국", product:"Apache Log4j2", version:"2.17", owner_name:"한건설", owner_contact:"02-200-3050", severity:"HIGH", cve:"CVE-2026-44120"},
+    ],
+    cves:[
+      {cve_id_text:"CVE-2026-44120", severity:"HIGH", product_name:"Apache Log4j2", lookup_status:"FOUND"},
+      {cve_id_text:"CVE-2026-45088", severity:"MEDIUM", product_name:"한컴오피스", lookup_status:"NOT_FOUND"},
+    ],
+    comments:[
+      {id:201, author_name:"최관제", department:"정보통신담당관", is_admin:true, ack_status:null, created_at:"2026-06-11T08:40", body:"내부 WAS 로그 라이브러리 버전 확인 후 회신 부탁드립니다."},
+      {id:202, author_name:"정물류", department:"물류정책관", is_admin:false, ack_status:"UNABLE", created_at:"2026-06-13T16:22", body:"WAS-1201은 외주 유지보수 종료로 6월 내 패치 불가. 7월 재계약 후 조치 예정."},
+    ],
+  },
+  { id:3, doc_no:"국정원-사이버-2026-0588", title:"Google Chrome V8 엔진 임의코드실행 취약점 (웹메일 통보)",
+    source_org:"국가정보원", receive_channel:"WEBMAIL", received_at:"2026-06-05", due_at:"2026-06-12",
+    d_day:-7, sla_status:"OVERDUE", max_severity:"HIGH", max_severity_ko:"높음", completed:false,
+    depts:[{name:"도로국",ack:"DONE"},{name:"철도국",ack:"DONE"},{name:"항공정책실",ack:"IN_PROGRESS"}],
+    assets:[
+      {asset_no:"PC-2207", dept:"도로국", product:"Google Chrome", version:"122", owner_name:"박도로", owner_contact:"02-123-0102", severity:"HIGH", cve:"CVE-2026-30012"},
+      {asset_no:"PC-3210", dept:"철도국", product:"Google Chrome", version:"121", owner_name:"이철도", owner_contact:"02-123-0310", severity:"HIGH", cve:"CVE-2026-30012"},
+      {asset_no:"PC-5521", dept:"항공정책실", product:"Google Chrome", version:"120", owner_name:"정항공", owner_contact:"02-123-5521", severity:"HIGH", cve:"CVE-2026-30012"},
+    ],
+    cves:[{cve_id_text:"CVE-2026-30012", severity:"HIGH", product_name:"Google Chrome", lookup_status:"FOUND"}],
+    comments:[{id:301, author_name:"김관제", department:"정보통신담당관", is_admin:true, ack_status:null, created_at:"2026-06-06T09:00", body:"전 부서 크롬 124 미만 → 124 이상으로 업데이트 바랍니다."}],
+  },
+  { id:4, doc_no:"국정원-사이버-2026-0501", title:"Fortinet FortiOS 인증 우회 취약점 (조치 완료)",
+    source_org:"국가정보원", receive_channel:"NCST", received_at:"2026-05-20", due_at:"2026-05-30",
+    d_day:-20, sla_status:"DONE", max_severity:"HIGH", max_severity_ko:"높음", completed:true,
+    depts:[{name:"정보통신담당관",ack:"DONE"},{name:"기획조정실",ack:"DONE"}],
+    assets:[
+      {asset_no:"FW-0001", dept:"정보통신담당관", product:"Fortinet FortiGate", version:"7.2", owner_name:"김관제", owner_contact:"02-123-9001", severity:"HIGH", cve:"CVE-2026-19999"},
+      {asset_no:"FW-0002", dept:"기획조정실", product:"Fortinet FortiGate", version:"7.0", owner_name:"조기획", owner_contact:"02-150-0002", severity:"HIGH", cve:"CVE-2026-19999"},
+    ],
+    cves:[{cve_id_text:"CVE-2026-19999", severity:"HIGH", product_name:"Fortinet FortiOS", lookup_status:"FOUND"}],
+    comments:[{id:401, author_name:"최관제", department:"정보통신담당관", is_admin:true, ack_status:"DONE", created_at:"2026-05-28T11:00", body:"전 대상 장비 펌웨어 업그레이드 완료. 조치 종결합니다."}],
+  },
+];
+
+const app=document.getElementById("app");
+const esc=s=>(s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const fmtDate=s=>s?s.slice(0,10):"—";
+const dday=n=>n==null?"":(n<0?"D+"+(-n):(n===0?"D-DAY":"D-"+n));
+const sevBadge=(s,ko)=>s?`<span class="badge sev-${s}">${esc(ko||s)}</span>`:"";
+const slaBadge=s=>{const ko={OVERDUE:"기한초과",IMMINENT:"임박",NORMAL:"여유",DONE:"완료"};return s?`<span class="badge sla-${s}">${ko[s]||s}</span>`:"";};
+const ackBadge=s=>s&&s!=="NONE"?`<span class="ack ack-${s}">${ACK_KO[s]}</span>`:"";
+const getAdv=id=>ADV.find(a=>a.id===id);
+let _t; function toast(m){const el=document.getElementById("toast");el.textContent=m;el.classList.add("on");clearTimeout(_t);_t=setTimeout(()=>el.classList.remove("on"),2200);}
+
+// ── 영향 집계(자산 → 부서/담당자/제품) ──
+function impactOf(a){
+  const depts={}, products=new Set();
+  (a.assets||[]).forEach(s=>{
+    const e=depts[s.dept]||(depts[s.dept]={name:s.dept,count:0,owners:new Set()});
+    e.count++; if(s.owner_name) e.owners.add(s.owner_name); products.add(s.product);
+  });
+  const list=Object.values(depts).sort((x,y)=>x.name.localeCompare(y.name))
+    .map(e=>({name:e.name,count:e.count,owners:[...e.owners]}));
+  return {depts:list, products:[...products], assetCount:(a.assets||[]).length};
+}
+function deptChips(a){
+  const ql=FILTER.q.trim().toLowerCase();
+  return impactOf(a).depts.map(d=>{
+    const hi=ql&&(d.name.toLowerCase().includes(ql)||d.owners.some(o=>o.toLowerCase().includes(ql)))?" hi":"";
+    const own=d.owners.length?" · "+d.owners.slice(0,2).join(", ")+(d.owners.length>2?` 외 ${d.owners.length-2}`:""):"";
+    return `<span class="dchip${hi}">${esc(d.name)} ${d.count}${esc(own)}</span>`;
+  }).join("");
+}
+function impactLine(a){
+  const im=impactOf(a);
+  if(!im.depts.length) return `<div class="impact">영향 자산 분석 전 <span class="muted">(관리자 매칭 대기)</span></div>`;
+  const prod=im.products.slice(0,3).map(esc).join(", ")+(im.products.length>3?` 외 ${im.products.length-3}`:"");
+  return `<div class="impact"><b style="color:#4a5568">영향 ${im.depts.length}개 부서 · 자산 ${im.assetCount}</b> ${deptChips(a)} <span class="prod">· ${prod}</span></div>`;
+}
+
+function filterBar(){
+  return `<div class="card filterbar">
+    <div style="flex:1;min-width:220px">
+      <input id="f_q" type="search" placeholder="자산번호 · 담당자명 · 부서명 · 제목 검색" value="${esc(FILTER.q)}" oninput="onSearch(this.value)">
+    </div>
+    <label class="ck"><input type="checkbox" ${FILTER.excludeDone?"checked":""} onchange="onDoneFilter(this.checked)"> 완료 제외</label>
+    ${FILTER.q||!FILTER.excludeDone?`<button class="btn-ghost" onclick="resetFilter()">초기화</button>`:""}
+  </div>`;
+}
+function onSearch(v){FILTER.q=v;clearTimeout(_searchT);_searchT=setTimeout(loadResults,180);}
+function onDoneFilter(v){FILTER.excludeDone=!!v;loadResults();}
+function resetFilter(){FILTER.q="";FILTER.excludeDone=true;renderList();}
+
+function matchesQ(a,ql){
+  if((a.title||"").toLowerCase().includes(ql)) return true;
+  if((a.doc_no||"").toLowerCase().includes(ql)) return true;
+  if((a.source_org||"").toLowerCase().includes(ql)) return true;
+  return (a.assets||[]).some(s=> s.asset_no.toLowerCase().includes(ql)
+    || (s.owner_name||"").toLowerCase().includes(ql) || (s.dept||"").toLowerCase().includes(ql));
+}
+function visibleList(){
+  let list=ADV.slice();
+  if(FILTER.excludeDone) list=list.filter(a=>!a.completed);
+  const ql=FILTER.q.trim().toLowerCase();
+  if(ql) list=list.filter(a=>matchesQ(a,ql));
+  return list;
+}
+
+function route(){const m=location.hash.match(/^#\/a\/(\d+)/);if(m)renderDetail(parseInt(m[1],10));else renderList();window.scrollTo(0,0);}
+
+function rowHtml(a){
+  return `<div class="card row" onclick="location.hash='#/a/${a.id}'">
+    <div class="ttl">${esc(a.title)}</div>
+    <div class="meta">
+      ${sevBadge(a.max_severity,a.max_severity_ko)} ${slaBadge(a.sla_status)}
+      <span class="chip">${dday(a.d_day)}</span>
+      <span>${esc(a.source_org)}</span><span>· ${CH_KO[a.receive_channel]}</span>
+      <span>· 기한 ${fmtDate(a.due_at)}</span><span>· 💬 ${a.comments.length}</span>
+    </div>
+    ${impactLine(a)}
+  </div>`;
+}
+function renderList(){
+  app.innerHTML=`<h2 class="section">게시된 보안권고문</h2>${filterBar()}<div id="results"></div>`;
+  loadResults();
+}
+function loadResults(){
+  const res=document.getElementById("results"); if(!res) return;
+  const list=visibleList();
+  const info=`<div class="muted" style="margin:2px 2px 12px;font-size:12px">${list.length}건${FILTER.q.trim()?` · "${esc(FILTER.q.trim())}" 검색 결과`:""}</div>`;
+  res.innerHTML=info+(list.length?list.map(rowHtml).join(""):`<div class="empty">조건에 맞는 권고문이 없습니다.</div>`);
+}
+
+function renderDetail(id){
+  const a=getAdv(id); if(!a){location.hash='#/';return;}
+  // 영향 자산·담당자 — 부서별 그룹(검색어 일치 부서 우선·강조)
+  const ql=FILTER.q.trim().toLowerCase();
+  const groups={}; (a.assets||[]).forEach(s=>{(groups[s.dept]=groups[s.dept]||[]).push(s);});
+  let gk=Object.keys(groups).sort();
+  if(ql) gk.sort((x,y)=>{const xm=x.toLowerCase().includes(ql),ym=y.toLowerCase().includes(ql);return xm===ym?x.localeCompare(y):(xm?-1:1);});
+  const assetsSection=gk.length?`<table class="assets">
+    <tr><th>부서 / 자산</th><th>제품 · 버전</th><th>담당자</th><th>심각도</th></tr>
+    ${gk.map(g=>{const rs=groups[g];const owners=[...new Set(rs.map(s=>s.owner_name).filter(Boolean))];
+      const hi=ql&&g.toLowerCase().includes(ql)?' style="background:#eef4ff"':'';
+      return `<tr class="dh"${hi}><td colspan="4">${esc(g)} · ${rs.length}건${owners.length?` · 담당 ${esc(owners.slice(0,3).join(", "))}`:""}</td></tr>`
+        +rs.map(s=>`<tr>
+          <td>${esc(s.asset_no)}</td>
+          <td>${esc(s.product)} · ${esc(s.version)}</td>
+          <td><span class="own">${esc(s.owner_name||"-")}</span><div class="ownc">${esc(s.owner_contact||"")}</div></td>
+          <td>${sevBadge(s.severity)} <span class="ownc">${esc(s.cve||"")}</span></td></tr>`).join("");
+    }).join("")}</table>`:`<div class="muted" style="font-size:12.5px">영향 자산 매칭 결과가 없습니다.</div>`;
+
+  const cveRows=a.cves.map(c=>`<div class="meta" style="padding:5px 0;border-top:1px solid var(--line)">
+    <b>${esc(c.cve_id_text)}</b> ${sevBadge(c.severity)} <span class="muted">${esc(c.product_name||"")}</span>
+    ${c.lookup_status==="NOT_FOUND"?`<span class="chip">DB 미등록</span>`:""}</div>`).join("");
+
+  const comments=a.comments.length?a.comments.map(c=>`<div class="cmt">
+    <span class="who">${esc(c.author_name)}</span>${c.department?`<span class="muted"> · ${esc(c.department)}</span>`:""}
+    ${c.is_admin?`<span class="chip" style="background:#e8effb;color:#2f5bd0">관리자</span>`:""}
+    ${c.ack_status?ackBadge(c.ack_status):""}
+    <span class="when"> · ${fmtDate(c.created_at)} ${esc((c.created_at||"").slice(11,16))}</span>
+    <div class="body">${esc(c.body)}</div></div>`).join(""):`<div class="muted" style="font-size:12.5px;padding:8px 0">아직 댓글이 없습니다.</div>`;
+
+  const deptOpts=DEPTS.map(d=>`<option value="${esc(d.name)}">`).join("");
+  app.innerHTML=`
+    <div class="back" onclick="location.hash='#/'">← 목록</div>
+    <div class="card">
+      <div class="ttl" style="font-size:17px">${esc(a.title)}</div>
+      <div class="meta" style="margin-bottom:6px">
+        ${sevBadge(a.max_severity,a.max_severity_ko)} ${slaBadge(a.sla_status)}
+        <span class="chip">${dday(a.d_day)}</span><span>${esc(a.source_org)}</span><span>· ${CH_KO[a.receive_channel]}</span>
+      </div>
+      <div class="meta"><span>문서번호 ${esc(a.doc_no)}</span><span>· 접수 ${fmtDate(a.received_at)}</span><span>· 조치기한 <b>${fmtDate(a.due_at)}</b></span></div>
+      ${impactLine(a)}
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-ghost" onclick="toast('데모: 실 시스템에서는 업로드한 원본 PDF가 새 탭/인라인으로 열립니다')">📄 원문 PDF 새 탭으로</button>
+        <button class="btn-ghost" onclick="toast('데모: 실 시스템에서는 여기에 PDF가 인라인으로 표시됩니다')">📄 여기서 보기 / 닫기</button>
+      </div>
+    </div>
+
+    <h2 class="section">영향 부서 · 자산 · 담당자</h2>
+    <div class="card">${assetsSection}</div>
+
+    <h2 class="section">영향 취약점 (CVE)</h2>
+    <div class="card">${cveRows}</div>
+
+    <h2 class="section">댓글 · 조치 회신 (<span id="ccount">${a.comments.length}</span>)</h2>
+    <div class="card" id="clist">${comments}</div>
+
+    <h2 class="section">댓글 작성</h2>
+    <div class="card">
+      <div id="cerr"></div>
+      <div class="grid2">
+        <div><label class="f">이름</label><input id="c_name" maxlength="80" placeholder="홍길동"></div>
+        <div><label class="f">부서 (검색·선택)</label><input id="c_dept" list="deptlist" placeholder="부서명 입력 또는 선택"><datalist id="deptlist">${deptOpts}</datalist></div>
+      </div>
+      <div style="margin-top:12px"><label class="f">내용</label><textarea id="c_body" placeholder="조치 결과나 질의를 남겨주세요."></textarea></div>
+      <div class="grid2" style="margin-top:12px;align-items:end">
+        <div><label class="f">조치상태 (선택 — 부서 회신으로 반영)</label>
+          <select id="c_ack"><option value="">첨부 안 함 (일반 댓글)</option><option value="IN_PROGRESS">진행중</option><option value="DONE">조치완료</option><option value="UNABLE">조치불가</option></select></div>
+        <div style="text-align:right"><button class="btn" onclick="submitComment(${id})">댓글 등록</button></div>
+      </div>
+    </div>`;
+}
+
+function submitComment(id){
+  const a=getAdv(id);
+  const name=document.getElementById("c_name").value.trim();
+  const dept=document.getElementById("c_dept").value.trim();
+  const body=document.getElementById("c_body").value.trim();
+  const ack=document.getElementById("c_ack").value||null;
+  const err=document.getElementById("cerr"); err.innerHTML="";
+  if(!name){err.innerHTML=`<div class="err">이름을 입력하세요.</div>`;return;}
+  if(!body){err.innerHTML=`<div class="err">내용을 입력하세요.</div>`;return;}
+  if(ack&&!DEPTS.some(d=>d.name===dept)){err.innerHTML=`<div class="err">조치상태를 첨부하려면 목록의 부서를 선택해야 회신으로 반영됩니다.</div>`;return;}
+  a.comments.push({id:Date.now(),author_name:name,department:dept||null,is_admin:false,ack_status:ack,created_at:new Date().toISOString().slice(0,16),body});
+  if(ack){const d=a.depts.find(x=>x.name===dept); if(d) d.ack=ack;}  // 부서 ack 동기화(데모)
+  toast(ack?`댓글 등록 · ${ACK_KO[ack]} 회신 반영`:"댓글이 등록되었습니다");
+  renderDetail(id);
+}
+
+window.addEventListener("hashchange",route);
+route();
+</script>
+</body>
+</html>

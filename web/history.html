@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>발송이력 · 조치관리</title>
+<style>
+  :root{--bg:#f4f6fa;--card:#fff;--ink:#15294a;--sub:#7a889c;--line:#e3e9f2;--brand:#2f5bd0;--brand-d:#21408f}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;font-size:13.5px;line-height:1.5}
+  a{color:inherit;text-decoration:none}
+  .top{background:var(--card);border-bottom:1px solid var(--line);padding:11px 18px;display:flex;gap:10px;
+    align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  .top h1{font-size:15px;margin:0;font-weight:800;letter-spacing:-.3px}
+  .sp{flex:1}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{border:none;background:#fff;padding:7px 14px;font-size:12.5px;font-weight:700;color:var(--sub);cursor:pointer;font-family:inherit}
+  .seg button.on{background:var(--brand);color:#fff}
+  input,select,textarea{font-family:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:8px;
+    padding:8px 10px;background:#fcfdff;outline:none;color:var(--ink)}
+  input:focus,select:focus,textarea:focus{border-color:var(--brand)}
+  .lnk{font-size:12px;color:var(--sub);border:1px solid var(--line);padding:6px 11px;border-radius:8px}
+  .lnk:hover{color:var(--brand);border-color:#c3d2f0}
+  .wrap{display:grid;grid-template-columns:390px 1fr;height:calc(100vh - 56px)}
+  .list{overflow:auto;border-right:1px solid var(--line);background:#fbfcfe}
+  .detail{overflow:auto;padding:20px 24px}
+  .li{padding:13px 16px;border-bottom:1px solid var(--line);cursor:pointer}
+  .li:hover{background:#f0f4fb}.li.on{background:#e8effb;box-shadow:inset 3px 0 0 var(--brand)}
+  .li .t{font-weight:700;margin-bottom:5px;font-size:13px;letter-spacing:-.2px}
+  .li .m{color:var(--sub);font-size:11.5px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .bar{height:7px;border-radius:99px;background:#edf0f5;overflow:hidden;display:flex;margin-top:8px}
+  .bar i{height:100%}
+  .b-DONE{background:#2e9e5b}.b-IN_PROGRESS{background:#e0a82e}.b-UNABLE{background:#c0392b}.b-NONE{background:#cfd6e0}
+  .badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;display:inline-block}
+  .s-DONE{background:#e7f6ee;color:#2e7d52}.s-IN_PROGRESS{background:#fcf4e0;color:#9a7d12}
+  .s-UNABLE{background:#fdecec;color:#c0392b}.s-NONE{background:#eef1f5;color:#67748a}
+  .sev-CRITICAL{background:#fdecec;color:#c0392b}.sev-HIGH{background:#fdf0e6;color:#d35400}
+  .sev-MEDIUM{background:#fcf6e3;color:#9a7d12}.sev-LOW{background:#eef1f5;color:#67748a}
+  .sla-OVERDUE{background:#fdecec;color:#c0392b}.sla-IMMINENT{background:#fdf0e6;color:#d35400}
+  .sla-NORMAL{background:#eaf3ee;color:#2e7d52}.sla-DONE{background:#e8effb;color:#2f5bd0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+  h2{font-size:12.5px;color:var(--sub);margin:18px 2px 9px;font-weight:700}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:middle}
+  th{color:var(--sub);font-size:11px;font-weight:700}
+  tr:last-child td{border-bottom:none}
+  .ev{font-size:11px;color:var(--brand);background:#eef2fb;padding:3px 8px;border-radius:6px;cursor:pointer;display:inline-block}
+  .ev:hover{background:#dfe8fb}
+  .pill{font-size:11px;background:#eef1f5;color:#5a6678;padding:2px 8px;border-radius:6px;display:inline-block}
+  .btn{background:var(--brand);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit}
+  .btn:hover{background:var(--brand-d)}.btn:disabled{opacity:.5;cursor:default}
+  .ghost{background:#fff;border:1px solid var(--line);color:#5a6678;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+  .ghost:hover{border-color:#c3d2f0;color:var(--brand)}
+  .ackpick{font-size:11.5px;padding:4px 6px;border-radius:7px}
+  .empty{text-align:center;color:var(--sub);padding:60px 16px;font-size:13px}
+  .err{background:#fdecec;color:#c0392b;border:1px solid #f6cdcb;padding:10px 13px;border-radius:8px;font-size:12.5px;margin:10px 0}
+  .ok{background:#e7f6ee;color:#2e7d52;border:1px solid #bfe6cd;padding:9px 13px;border-radius:8px;font-size:12.5px;margin:10px 0}
+  .muted{color:var(--sub)}
+  textarea{width:100%;resize:vertical;min-height:78px}
+  .toast{position:fixed;right:18px;bottom:18px;background:#15294a;color:#fff;padding:11px 16px;border-radius:9px;
+    font-size:12.5px;box-shadow:0 6px 24px rgba(20,41,74,.25);opacity:0;transform:translateY(8px);transition:.2s;z-index:30}
+  .toast.show{opacity:1;transform:none}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>📨 발송이력 · 조치관리</h1>
+  <div class="seg" id="seg">
+    <button class="on" onclick="setView('adv')">권고문별</button>
+    <button onclick="setView('dept')">부서별</button>
+  </div>
+  <input id="q" placeholder="검색: 권고문 · 부서 · 담당자 · 문서번호" oninput="onSearch()" style="width:236px">
+  <select id="fst" onchange="render()">
+    <option value="">상태 전체</option>
+    <option value="NONE">미회신</option>
+    <option value="IN_PROGRESS">진행중</option>
+    <option value="DONE">조치완료</option>
+    <option value="UNABLE">조치불가</option>
+  </select>
+  <select id="sort" onchange="render()">
+    <option value="due">정렬: 기한임박</option>
+    <option value="prog">정렬: 미완료많은순</option>
+    <option value="sev">정렬: 심각도</option>
+  </select>
+  <span class="sp"></span>
+  <span class="pill" id="count"></span>
+  <a class="lnk" href="/board">게시판 ↗</a>
+  <a class="lnk" href="/admin">관리자 ↗</a>
+</div>
+<div class="wrap">
+  <div class="list" id="list"><div class="empty">불러오는 중…</div></div>
+  <div class="detail" id="detail"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const API = "/api/v1";
+const KO = {DONE:"조치완료",IN_PROGRESS:"진행중",UNABLE:"조치불가",NONE:"미회신"};
+const CH = {NCST:"국정원 NCST",WEBMAIL:"웹메일",OFFICIAL_DOC:"공문"};
+const SEV_KO = {CRITICAL:"긴급",HIGH:"높음",MEDIUM:"중간",LOW:"낮음"};
+const SLA_KO = {OVERDUE:"기한초과",IMMINENT:"임박",NORMAL:"여유",DONE:"완료"};
+const SEV_RANK = {CRITICAL:4,HIGH:3,MEDIUM:2,LOW:1};
+
+let ADVS = [];        // /history/advisories 응답
+let TEMPLATES = [];   // 발송 문구 프리셋
+let VIEW = "adv";
+let SEL = null;       // 선택된 advisory id
+let SELDEPT = null;   // 부서별 뷰 선택 부서명
+let _searchT;
+
+const esc = s => (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const fmtDate = s => s ? s.slice(0,10) : "—";
+const dday = n => n==null ? "" : (n<0 ? "기한+"+(-n) : (n===0 ? "D-DAY" : "D-"+n));
+
+async function api(path, opts){
+  const r = await fetch(API+path, opts);
+  if(!r.ok){ let m="요청 실패 ("+r.status+")"; try{const j=await r.json(); if(j.detail) m=typeof j.detail==="string"?j.detail:JSON.stringify(j.detail);}catch(e){} throw new Error(m); }
+  return r.status===204 ? null : r.json();
+}
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2200); }
+function barHtml(a){
+  const t = a.dept_total||0; if(!t) return `<div class="bar"></div>`;
+  const seg = (s,n) => n ? `<i class="b-${s}" style="width:${n/t*100}%"></i>` : "";
+  return `<div class="bar">${seg("DONE",a.done)}${seg("IN_PROGRESS",a.in_progress)}${seg("UNABLE",a.unable)}${seg("NONE",a.none)}</div>`;
+}
+
+async function boot(){
+  try{
+    const [h, t] = await Promise.all([ api("/history/advisories"), api("/message-templates") ]);
+    ADVS = h.items; TEMPLATES = t.items;
+    if(ADVS.length && SEL==null) SEL = ADVS[0].id;
+    render();
+  }catch(e){ document.getElementById("list").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+
+function setView(v){
+  VIEW = v;
+  document.querySelectorAll("#seg button").forEach((b,i)=>b.classList.toggle("on",(v==="adv")===(i===0)));
+  render();
+}
+window.onSearch = function(){ clearTimeout(_searchT); _searchT = setTimeout(render, 180); };
+
+function curFilter(){
+  return { q:document.getElementById("q").value.trim().toLowerCase(), st:document.getElementById("fst").value,
+           sort:document.getElementById("sort").value };
+}
+
+// ── 부서별 집계(권고문 롤업에서 파생) ──
+function deptRows(){
+  const m = {};
+  ADVS.forEach(a => (a.departments||[]).forEach(d => {
+    const k = d.department || "(부서 미지정)";
+    (m[k] = m[k] || {dept:k, items:[]}).items.push({a, d});
+  }));
+  return Object.values(m).sort((x,y)=>x.dept.localeCompare(y.dept,"ko"));
+}
+
+function render(){
+  const {q, st, sort} = curFilter();
+  const list = document.getElementById("list");
+  if(VIEW === "adv"){
+    let rows = ADVS.filter(a => {
+      const hay = [a.title,a.doc_no,a.source_org,(a.departments||[]).map(d=>(d.department||"")+" "+(d.owner||"")).join(" ")].join(" ").toLowerCase();
+      const okq = !q || hay.includes(q);
+      const oks = !st || (a.departments||[]).some(d => d.ack_status===st);
+      return okq && oks;
+    });
+    rows.sort((x,y)=>{
+      if(sort==="sev") return (SEV_RANK[y.max_severity]||0)-(SEV_RANK[x.max_severity]||0);
+      if(sort==="prog") return ((y.dept_total-y.done)-(x.dept_total-x.done)) || (x.d_day??1e9)-(y.d_day??1e9);
+      return (x.d_day??1e9)-(y.d_day??1e9);  // due
+    });
+    document.getElementById("count").textContent = rows.length+"건";
+    if(SEL==null || !rows.some(a=>a.id===SEL)) SEL = rows.length ? rows[0].id : null;
+    list.innerHTML = rows.length ? rows.map(a=>`
+      <div class="li ${a.id===SEL?'on':''}" onclick="SEL=${a.id};render()">
+        <div class="t">${esc(a.title||a.doc_no||"제목 없음")}</div>
+        <div class="m">
+          ${a.max_severity?`<span class="badge sev-${a.max_severity}">${SEV_KO[a.max_severity]||a.max_severity}</span>`:""}
+          <span>${esc(a.doc_no||"")}</span>
+          ${a.d_day!=null?`<span>· ${dday(a.d_day)}</span>`:""}
+        </div>
+        ${barHtml(a)}
+        <div class="m" style="margin-top:6px">완료 ${a.done}/${a.dept_total} · ${a.done_rate}%${a.none?` · 미회신 ${a.none}`:""}</div>
+      </div>`).join("") : `<div class="empty">${q||st?"조건에 맞는 발송 이력이 없습니다.":"발송된 권고문이 없습니다."}</div>`;
+    renderAdvDetail(rows.find(a=>a.id===SEL));
+  } else {
+    let rows = deptRows().filter(r=>{
+      const okq = !q || (r.dept+" "+r.items.map(it=>it.d.owner||"").join(" ")).toLowerCase().includes(q);
+      const oks = !st || r.items.some(it=>it.d.ack_status===st);
+      return okq && oks;
+    });
+    document.getElementById("count").textContent = rows.length+"개 부서";
+    if(SELDEPT==null || !rows.some(r=>r.dept===SELDEPT)) SELDEPT = rows.length ? rows[0].dept : null;
+    list.innerHTML = rows.length ? rows.map(r=>{
+      const open = r.items.filter(it=>it.d.ack_status!=="DONE" && it.d.ack_status!=="UNABLE").length;
+      return `<div class="li ${r.dept===SELDEPT?'on':''}" onclick="SELDEPT='${esc(r.dept)}';render()">
+        <div class="t">${esc(r.dept)}</div>
+        <div class="m"><span>담당 권고문 ${r.items.length}</span><span>· 미완료 <b style="color:#c0392b">${open}</b></span></div>
+      </div>`;}).join("") : `<div class="empty">조건에 맞는 부서가 없습니다.</div>`;
+    renderDeptDetail(rows.find(r=>r.dept===SELDEPT));
+  }
+}
+
+function ackPicker(d){
+  return `<select class="ackpick s-${d.ack_status}" onchange="changeAck(${d.notification_id},this.value,this)">
+    ${["NONE","IN_PROGRESS","DONE","UNABLE"].map(s=>`<option value="${s}" ${s===d.ack_status?"selected":""}>${KO[s]}</option>`).join("")}
+  </select>`;
+}
+function evCell(d, kind){
+  // kind: 'notif' → 발송이력 증빙(GET /notifications/{id}/evidence)
+  const view = d.has_evidence ? `<a class="ev" href="${API}/notifications/${d.notification_id}/evidence" target="_blank" rel="noopener">📎 ${esc(d.evidence||"증빙")}</a>` : `<span class="pill">없음</span>`;
+  const up = `<label class="ghost" style="margin-left:6px">⬆ 첨부<input type="file" style="display:none" onchange="uploadEvidence(${d.notification_id},this)"></label>`;
+  return view + up;
+}
+
+function presetBox(advId){
+  const opts = TEMPLATES.map(t=>`<option value="${t.id}">${esc(t.title)}</option>`).join("");
+  return `<h2>발송 문구 프리셋 · 미회신 부서 재발송</h2>
+   <div class="card">
+     <div id="pmsg"></div>
+     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+       <select id="pre_sel" style="flex:1;min-width:180px" onchange="applyPreset()">
+         <option value="">— 프리셋 선택 —</option>${opts}
+       </select>
+       <button class="ghost" onclick="savePreset()">＋ 현재 문구를 프리셋 저장</button>
+       <button class="ghost" onclick="deletePreset()">🗑 선택 프리셋 삭제</button>
+     </div>
+     <textarea id="pre_body" placeholder="[보안권고문] {제목}&#10;조치기한 {기한}까지 보안 업데이트 적용 후 게시판 댓글로 회신 바랍니다.&#10;&#10;치환: {제목} {문서번호} {기한} {부서}"></textarea>
+     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+       <span class="muted" style="font-size:11.5px">미회신·진행중 부서로만 발송됩니다(완료/불가 제외).</span>
+       <button class="btn" id="resend" onclick="resend(${advId})">미회신 부서 재발송</button>
+     </div>
+   </div>`;
+}
+
+function renderAdvDetail(a){
+  const el = document.getElementById("detail");
+  if(!a){ el.innerHTML = `<div class="empty">왼쪽에서 권고문을 선택하세요.</div>`; return; }
+  el.innerHTML = `
+    <div class="card">
+      <div style="font-size:16px;font-weight:800;letter-spacing:-.3px">${esc(a.title||a.doc_no||"제목 없음")}</div>
+      <div class="m muted" style="margin-top:7px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        ${a.max_severity?`<span class="badge sev-${a.max_severity}">${SEV_KO[a.max_severity]||a.max_severity}</span>`:""}
+        <span class="badge sla-${a.sla_status}">${SLA_KO[a.sla_status]||a.sla_status}</span>
+        ${a.doc_no?`<span>${esc(a.doc_no)}</span>`:""}
+        ${a.source_org?`<span>· ${esc(a.source_org)}</span>`:""}
+        ${a.receive_channel?`<span>· ${CH[a.receive_channel]||a.receive_channel}</span>`:""}
+        <span>· 기한 ${fmtDate(a.due_at)} ${a.d_day!=null?`(${dday(a.d_day)})`:""}</span>
+        <a class="ev" href="${API}/advisories/${a.id}/file" target="_blank" rel="noopener">📄 원문 PDF</a>
+        ${a.board_published?`<a class="ev" href="/board#/a/${a.id}" target="_blank" rel="noopener">💬 게시판</a>`:`<span class="pill">게시판 미게시</span>`}
+      </div>
+      <div style="margin-top:13px;font-weight:700">조치 현황 — 완료 ${a.done}/${a.dept_total} (${a.done_rate}%) · 회신 ${a.responded_rate}%</div>
+      ${barHtml(a)}
+      <div class="m" style="margin-top:8px;gap:12px">
+        <span><b class="muted">●</b> 완료 ${a.done}</span><span>진행중 ${a.in_progress}</span>
+        <span>불가 ${a.unable}</span><span>미회신 ${a.none}</span>
+      </div>
+    </div>
+    <h2>부서별 조치 상태 (게시판 댓글 ↔ 발송이력 동기화)</h2>
+    <div class="card" style="padding:6px 10px">
+      <table>
+        <tr><th>부서</th><th>담당자</th><th>상태(변경 가능)</th><th>증빙</th><th>발송일</th><th>리마인드</th></tr>
+        ${a.departments.map(d=>`<tr>
+          <td><b>${esc(d.department||"-")}</b>${d.asset_count?`<div class="muted" style="font-size:11px">자산 ${d.asset_count}</div>`:""}</td>
+          <td>${esc(d.owner||"-")}</td>
+          <td>${ackPicker(d)}${d.ack_note?`<div class="muted" style="font-size:11px;margin-top:3px">${esc(d.ack_note)}</div>`:""}</td>
+          <td>${evCell(d)}</td>
+          <td class="muted">${fmtDate(d.sent_at)}</td>
+          <td class="muted">${d.reminder_count?`${d.reminder_count}회`:"—"}</td>
+        </tr>`).join("")}
+      </table>
+    </div>
+    ${presetBox(a.id)}`;
+}
+
+function renderDeptDetail(r){
+  const el = document.getElementById("detail");
+  if(!r){ el.innerHTML = `<div class="empty">왼쪽에서 부서를 선택하세요.</div>`; return; }
+  const open = r.items.filter(it=>it.d.ack_status!=="DONE" && it.d.ack_status!=="UNABLE").length;
+  el.innerHTML = `
+    <div class="card">
+      <div style="font-size:16px;font-weight:800">${esc(r.dept)}</div>
+      <div class="m muted" style="margin-top:7px">담당 권고문 ${r.items.length}건 · 미완료 <b style="color:#c0392b">${open}</b></div>
+    </div>
+    <h2>이 부서의 권고문별 조치</h2>
+    <div class="card" style="padding:6px 10px">
+      <table>
+        <tr><th>권고문</th><th>기한</th><th>상태(변경 가능)</th><th>증빙</th><th>발송일</th></tr>
+        ${r.items.sort((x,y)=>(x.a.d_day??1e9)-(y.a.d_day??1e9)).map(it=>`<tr>
+          <td><b>${esc(it.a.title||it.a.doc_no||"-")}</b><div class="muted" style="font-size:11px">${esc(it.a.doc_no||"")} ${it.a.d_day!=null?"· "+dday(it.a.d_day):""}</div></td>
+          <td class="muted">${fmtDate(it.a.due_at)}</td>
+          <td>${ackPicker(it.d)}</td>
+          <td>${evCell(it.d)}</td>
+          <td class="muted">${fmtDate(it.d.sent_at)}</td>
+        </tr>`).join("")}
+      </table>
+    </div>`;
+}
+
+// ── 액션: 조치상태 변경 / 증빙 업로드 / 재발송 / 프리셋 ──
+window.changeAck = async function(nid, status, selEl){
+  let note = null, by = null;
+  if(status === "UNABLE"){
+    note = prompt("조치불가 사유를 입력하세요(필수):", "");
+    if(note==null || !note.trim()){ render(); return; }  // 취소 → 되돌림
+  }
+  if(status === "DONE" || status === "IN_PROGRESS"){
+    by = prompt("회신 담당자(선택, 비워도 됨):", "") || null;
+  }
+  if(selEl) selEl.disabled = true;
+  try{
+    await api(`/notifications/${nid}/ack`, {method:"PATCH",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ack_status:status, note, by})});
+    toast("조치 상태를 반영했습니다.");
+    await boot();
+  }catch(e){ alert(e.message); render(); }
+};
+
+window.uploadEvidence = async function(nid, inp){
+  const f = inp.files && inp.files[0]; if(!f) return;
+  const fd = new FormData(); fd.append("file", f);
+  try{
+    await api(`/notifications/${nid}/evidence`, {method:"POST", body:fd});
+    toast("증빙을 첨부했습니다.");
+    await boot();
+  }catch(e){ alert(e.message); }
+};
+
+window.applyPreset = function(){
+  const id = document.getElementById("pre_sel").value;
+  const t = TEMPLATES.find(x=>String(x.id)===String(id));
+  if(t) document.getElementById("pre_body").value = t.body;
+};
+window.savePreset = async function(){
+  const body = document.getElementById("pre_body").value.trim();
+  if(!body){ pmsg(`<div class="err">저장할 문구를 입력하세요.</div>`); return; }
+  const title = prompt("프리셋 이름:", body.split("\n")[0].slice(0,40));
+  if(title==null || !title.trim()) return;
+  try{
+    await api("/message-templates", {method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({title:title.trim(), body})});
+    TEMPLATES = (await api("/message-templates")).items;
+    pmsg(`<div class="ok">프리셋을 저장했습니다.</div>`); render();
+  }catch(e){ pmsg(`<div class="err">${esc(e.message)}</div>`); }
+};
+window.deletePreset = async function(){
+  const id = document.getElementById("pre_sel").value;
+  if(!id){ pmsg(`<div class="err">삭제할 프리셋을 선택하세요.</div>`); return; }
+  const t = TEMPLATES.find(x=>String(x.id)===String(id));
+  if(!confirm(`프리셋 "${t?t.title:id}" 을(를) 삭제할까요?`)) return;
+  try{
+    await api(`/message-templates/${id}`, {method:"DELETE"});
+    TEMPLATES = (await api("/message-templates")).items;
+    pmsg(`<div class="ok">프리셋을 삭제했습니다.</div>`); render();
+  }catch(e){ pmsg(`<div class="err">${esc(e.message)}</div>`); }
+};
+function pmsg(html){ const el=document.getElementById("pmsg"); if(el){ el.innerHTML=html; setTimeout(()=>{if(el)el.innerHTML="";},2600);} }
+
+window.resend = async function(advId){
+  const a = ADVS.find(x=>x.id===advId); if(!a) return;
+  const open = a.departments.filter(d=>d.ack_status==="NONE"||d.ack_status==="IN_PROGRESS");
+  if(!open.length){ pmsg(`<div class="ok">미회신·진행중 부서가 없습니다. 재발송 대상이 없습니다.</div>`); return; }
+  let msg = document.getElementById("pre_body").value.trim();
+  msg = msg.replace(/\{제목\}/g,a.title||"").replace(/\{문서번호\}/g,a.doc_no||"")
+           .replace(/\{기한\}/g,fmtDate(a.due_at)).replace(/\{부서\}/g,"");
+  if(!confirm(`미회신·진행중 ${open.length}개 부서로 재발송합니다.`)) return;
+  const btn = document.getElementById("resend"); btn.disabled = true; btn.textContent="발송 중…";
+  try{
+    const r = await api(`/advisories/${advId}/remind`, {method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({message: msg || null})});
+    pmsg(`<div class="ok">${r.reminded}개 부서에 재발송했습니다.</div>`);
+    toast(`${r.reminded}개 부서 재발송 완료`);
+    await boot();
+  }catch(e){ pmsg(`<div class="err">${esc(e.message)}</div>`); btn.disabled=false; btn.textContent="미회신 부서 재발송"; }
+};
+
+boot();
+</script>
+</body>
+</html>

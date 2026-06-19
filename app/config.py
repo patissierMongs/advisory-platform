@@ -26,18 +26,6 @@ class Settings:
     # 파일 업로드 제약 (§7 비기능)
     MAX_UPLOAD_MB: int = int(os.environ.get("ADVISORY_MAX_UPLOAD_MB", "30"))
 
-    # 로컬 LLM (§4.2) — Ollama 기반(포터블). 비활성/장애 시 정규식만으로 추출(폴백).
-    # 폐쇄망 기본값은 비활성: ADVISORY_LLM_ENABLED=true 로 켠다.
-    LLM_ENABLED: bool = os.environ.get("ADVISORY_LLM_ENABLED", "false").lower() == "true"
-    LLM_PROVIDER: str = os.environ.get("ADVISORY_LLM_PROVIDER", "ollama")  # ollama | none
-    # 로컬 또는 중앙 Ollama 엔드포인트(포터블 — 망 구성에 맞춰 교체).
-    OLLAMA_URL: str = os.environ.get("ADVISORY_OLLAMA_URL", "http://127.0.0.1:11434")
-    LLM_MODEL: str = os.environ.get("ADVISORY_LLM_MODEL", "qwen3:8b")
-    LLM_TIMEOUT_SEC: float = float(os.environ.get("ADVISORY_LLM_TIMEOUT_SEC", "30"))
-    # 로컬 LLM CPU 사용 제한 — 추론 스레드 수(기본: 논리코어의 30%). Ollama num_thread 로 전달.
-    LLM_NUM_THREAD: int = int(os.environ.get(
-        "ADVISORY_LLM_NUM_THREAD", str(max(1, round((os.cpu_count() or 4) * 0.3)))))
-
     # 알림 채널 (§4.7) — 폐쇄망 기본은 WEB_UI + 파일 로그. 메신저/메일은 게이트웨이 확정 시 활성.
     MESSENGER_ENABLED: bool = os.environ.get("ADVISORY_MESSENGER_ENABLED", "false").lower() == "true"
     MAIL_ENABLED: bool = os.environ.get("ADVISORY_MAIL_ENABLED", "false").lower() == "true"

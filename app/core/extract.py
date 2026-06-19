@@ -1,16 +1,16 @@
-"""PDF 텍스트 추출 + CVE 코드 추출 (명세서 §4.1–4.2).
+"""PDF 텍스트 추출 + CVE 코드 추출 (명세서 §4.1).
 
-전략: 1차 정규식(결정적·고속) → 2차 로컬 LLM 보완(선택, 폐쇄망 기본 비활성).
-LLM 장애/비활성 시에도 정규식 결과로 진행 가능해야 한다(폴백).
+전략: 정규식(결정적·고속)으로 CVE 식별자를 추출한다. 표준형 외에 띄어쓰기·구분자
+변형('CVE 2026 21345', 'CVE_2026_21345')도 정규화해 함께 잡는다.
 """
 from __future__ import annotations
 
 import hashlib
 import re
 
-from ..config import settings
-
-CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.IGNORECASE)
+# 표준형(하이픈) 및 변형(공백/언더스코어 구분자, PDF 표 추출 시 다중 공백) 모두 수용.
+# group(1)=연도, group(2)=일련번호 → 'CVE-YYYY-NNNN' 표준형으로 정규화.
+CVE_RE = re.compile(r"CVE[\s\-_]*(\d{4})[\s\-_]+(\d{4,7})", re.IGNORECASE)
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -45,7 +45,7 @@ def _regex_candidates(text: str) -> list[dict]:
     seen: set[str] = set()
     out: list[dict] = []
     for m in CVE_RE.finditer(text or ""):
-        code = m.group(0).upper()
+        code = f"CVE-{m.group(1)}-{m.group(2)}"
         if code in seen:
             continue
         seen.add(code)
@@ -56,24 +56,6 @@ def _regex_candidates(text: str) -> list[dict]:
     return out
 
 
-def _llm_augment(text: str) -> list[dict]:
-    """로컬 LLM(Ollama) 보완 추출. 비활성/실패 시 빈 리스트(정규식 폴백)."""
-    if not settings.LLM_ENABLED:
-        return []
-    from . import llm  # 지연 임포트
-
-    codes = llm.extract_cves(text)
-    if not codes:
-        return []
-    return [{"cve_id_text": c, "source_snippet": "(LLM 보완)", "confidence": 0.85} for c in codes]
-
-
 def extract_cve_codes(text: str) -> list[dict]:
-    """본문에서 CVE 코드 목록 추출(정규식 + 선택적 LLM). 중복 제거, 순서 보존."""
-    results = _regex_candidates(text)
-    seen = {r["cve_id_text"] for r in results}
-    for extra in _llm_augment(text):
-        if extra["cve_id_text"] not in seen:
-            seen.add(extra["cve_id_text"])
-            results.append(extra)
-    return results
+    """본문에서 CVE 코드 목록 추출(정규식). 중복 제거, 순서 보존."""
+    return _regex_candidates(text)

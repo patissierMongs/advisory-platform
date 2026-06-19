@@ -4,7 +4,16 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from . import enums
-from .models import Advisory, AdvisoryCve, Asset, Cve, Match, Notification
+from .models import (
+    Advisory, AdvisoryComment, AdvisoryCve, Asset, Cve, Match, MessageTemplate, Notification,
+)
+
+_SEV_RANK = {
+    enums.Severity.CRITICAL: 4,
+    enums.Severity.HIGH: 3,
+    enums.Severity.MEDIUM: 2,
+    enums.Severity.LOW: 1,
+}
 
 
 def _d(v: date | datetime | None) -> str | None:
@@ -65,6 +74,89 @@ def advisory_brief(a: Advisory, *, match_count: int | None = None) -> dict:
         "not_found": not_found,
         "match_count": match_count,
         "board_post_id": a.board_post_id,
+        "board_published": a.board_published_at is not None,
+        "board_published_at": _d(a.board_published_at),
+    }
+
+
+def _max_severity(a: Advisory) -> str | None:
+    sevs = [ac.cve.severity for ac in a.cves if ac.cve]
+    if not sevs:
+        return None
+    top = max(sevs, key=lambda s: _SEV_RANK.get(s, 0))
+    return top.value
+
+
+def _impact(a: Advisory) -> dict:
+    """권고문의 영향 집계 — 매칭(MATCHED)된 자산 기준 부서·담당자·제품."""
+    depts: dict[int, dict] = {}
+    products: dict[str, int] = {}
+    asset_total = 0
+    for m in a.matches:
+        if m.status != enums.MatchStatus.MATCHED:
+            continue
+        asset = m.asset
+        if asset is None:
+            continue
+        asset_total += 1
+        d = asset.department
+        if d is not None:
+            e = depts.setdefault(d.id, {"id": d.id, "name": d.name, "asset_ids": set(), "owners": set()})
+            e["asset_ids"].add(asset.id)
+            if asset.owner_name:
+                e["owners"].add(asset.owner_name)
+        prod = asset.product_raw or asset.product_key
+        if prod:
+            products[prod] = products.get(prod, 0) + 1
+    dept_list = sorted(
+        ({"id": e["id"], "name": e["name"], "asset_count": len(e["asset_ids"]),
+          "owners": sorted(e["owners"])} for e in depts.values()),
+        key=lambda x: x["name"],
+    )
+    return {
+        "affected_departments": dept_list,
+        "affected_dept_count": len(dept_list),
+        "affected_products": sorted(products.keys()),
+        "affected_asset_count": asset_total,
+    }
+
+
+def board_advisory_item(a: Advisory, *, comment_count: int | None = None) -> dict:
+    """내부 게시판 목록/상세용 요약 — 사내 누구나 보는 공개 뷰."""
+    brief = advisory_brief(a)
+    brief["max_severity"] = _max_severity(a)
+    brief["max_severity_ko"] = (
+        enums.SEVERITY_KO.get(enums.Severity(brief["max_severity"]))
+        if brief["max_severity"] else None
+    )
+    brief["comment_count"] = comment_count if comment_count is not None else len(a.comments)
+    brief.update(_impact(a))
+    return brief
+
+
+def comment_item(c: AdvisoryComment) -> dict:
+    return {
+        "id": c.id,
+        "advisory_id": c.advisory_id,
+        "author_name": c.author_name,
+        "department_id": c.author_department_id,
+        "department": c.author_department_name or (c.department.name if c.department else None),
+        "body": c.body,
+        "ack_status": c.ack_status.value if c.ack_status else None,
+        "ack_status_ko": enums.ACK_KO.get(c.ack_status) if c.ack_status else None,
+        "is_admin": c.is_admin,
+        "evidence": c.evidence_name,
+        "has_evidence": c.evidence_path is not None,
+        "created_at": _d(c.created_at),
+    }
+
+
+def message_template_item(t: MessageTemplate) -> dict:
+    return {
+        "id": t.id,
+        "title": t.title,
+        "body": t.body,
+        "created_at": _d(t.created_at),
     }
 
 
@@ -118,6 +210,8 @@ def match_item(m: Match) -> dict:
         "department_id": a.department_id,
         "department": a.department.name if a.department else None,
         "owner_name": a.owner_name,
+        "owner_team": a.owner_team,
+        "owner_contact": a.owner_contact,
         "product": a.product_raw or a.product_key,
         "version": a.version_raw or a.version_norm,
         "product_ver": f"{a.product_raw or a.product_key} · {a.version_raw or a.version_norm or ''}".strip(" ·"),

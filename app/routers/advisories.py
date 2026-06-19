@@ -86,11 +86,11 @@ async def upload_advisory(
 def extract_cves(advisory_id: int, request: Request, db: Session = Depends(get_db)):
     """CVE 추출을 비동기로 시작(즉시 반환). 진행상태는 보드가 GET /advisories 로 폴링.
 
-    extract_phase: queued → regex → llm(활성 시) → done | failed. 실패/경고는 error_message.
+    extract_phase: queued → regex → done | failed. 실패/경고는 error_message.
     """
     adv = _get(db, advisory_id)
     # 중복 디스패치 방지: 이미 진행 중이면 재제출하지 않음(동시 추출 → uq_advisory_cve 충돌·오실패 방지).
-    if adv.extract_phase in ("queued", "regex", "llm"):
+    if adv.extract_phase in ("queued", "regex"):
         return {"advisory_id": advisory_id, "status": adv.status.value,
                 "extract_phase": adv.extract_phase, "already_running": True}
     adv.status = enums.AdvisoryStatus.EXTRACTING
@@ -117,25 +117,7 @@ def _run_extract(advisory_id: int) -> None:
         db.commit()
 
         results = extract._regex_candidates(text)
-        seen = {r["cve_id_text"] for r in results}
         warning = None
-
-        if settings.LLM_ENABLED:
-            adv.extract_phase = "llm"
-            db.commit()
-            from ..core import llm
-            if not llm.is_available():
-                warning = "LLM(Ollama) 미연결 — 정규식 결과로 진행"
-            else:
-                codes = llm.extract_cves(text)
-                if codes is None:
-                    warning = "LLM 보완 분석 실패 — 정규식 결과로 진행"
-                else:
-                    for code in codes:
-                        if code not in seen:
-                            seen.add(code)
-                            results.append({"cve_id_text": code, "source_snippet": "(LLM 보완)",
-                                            "confidence": 0.85})
 
         # 재처리 대비: 기존 추출 CVE 와 연결된 매칭을 함께 정리(FK 고립 방지) 후 재적재.
         for ac in list(adv.cves):
@@ -204,7 +186,7 @@ def list_cves(advisory_id: int, db: Session = Depends(get_db)):
 
 @router.post("/advisories/{advisory_id}/cves", status_code=201)
 def add_cve(advisory_id: int, body: CveAddRequest, request: Request, db: Session = Depends(get_db)):
-    """추출 CVE 수동 추가(§★★★) — LLM/정규식이 놓친 코드 보정. 게이트 재평가."""
+    """추출 CVE 수동 추가(§★★★) — 정규식이 놓친 코드 보정. 게이트 재평가."""
     adv = _get(db, advisory_id)
     m = extract.CVE_RE.search(body.cve_id.replace(" ", "-"))
     if not m:

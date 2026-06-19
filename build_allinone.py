@@ -1,7 +1,7 @@
 """All-in-one (Python 포함) 번들 생성 — 타깃에 설치 없이 압축만 풀고 start.bat.
 
 구성: Windows 임베디드 Python 3.12 + 의존성 사전설치(runtime/site) + 앱 + web + 샘플.
-타깃 요건: Windows x64. (Python 불필요. 외부망 0. LLM은 선택.)
+타깃 요건: Windows x64. (Python 불필요. 외부망 0.)
 
 Usage: py -3.12 build_allinone.py
 Output: ../advisory-platform_allinone.zip

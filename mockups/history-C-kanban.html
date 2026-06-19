@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>발송이력·조치관리 — C. 현황 보드(칸반)</title>
+<style>
+  :root{--bg:#f4f6fa;--card:#fff;--ink:#15294a;--sub:#7a889c;--line:#e3e9f2;--brand:#2f5bd0}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Pretendard","Malgun Gothic",system-ui,sans-serif;font-size:13.5px}
+  .top{background:var(--card);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  .top h1{font-size:15px;margin:0;font-weight:800}.sp{flex:1}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{border:none;background:#fff;padding:7px 14px;font-size:12.5px;font-weight:700;color:var(--sub);cursor:pointer;font-family:inherit}
+  .seg button.on{background:var(--brand);color:#fff}
+  input,select{font-family:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fcfdff;outline:none;color:var(--ink)}
+  .board{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:16px;align-items:start}
+  .col{background:#eef1f6;border-radius:12px;padding:10px;min-height:200px}
+  .col h3{margin:2px 4px 10px;font-size:12.5px;display:flex;align-items:center;gap:7px}
+  .col h3 .n{background:#fff;border-radius:99px;padding:1px 9px;font-size:11.5px;color:var(--sub)}
+  .dot{width:9px;height:9px;border-radius:99px;display:inline-block}
+  .d-NONE{background:#9aa7b8}.d-IN_PROGRESS{background:#e0a82e}.d-DONE{background:#2e9e5b}.d-UNABLE{background:#c0392b}
+  .k{background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:9px;box-shadow:0 1px 3px rgba(20,41,74,.04)}
+  .k .t{font-weight:700;font-size:12.5px;margin-bottom:5px;line-height:1.35}
+  .k .m{color:var(--sub);font-size:11px;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+  .badge{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:99px}
+  .sev-CRITICAL{background:#fdecec;color:#c0392b}.sev-HIGH{background:#fdf0e6;color:#d35400}
+  .ev{font-size:10.5px;color:var(--brand);background:#eef2fb;padding:1px 6px;border-radius:5px}
+  .pill{font-size:11px;background:#eef1f5;color:#5a6678;padding:2px 8px;border-radius:6px}
+  .move{font-size:10.5px;color:var(--sub);border:1px solid var(--line);background:#fff;border-radius:6px;padding:1px 6px;cursor:pointer}
+  .demo{background:#fff8e6;color:#8a6d1a;font-size:11.5px;text-align:center;padding:5px}
+</style></head><body>
+<div class="demo">레이아웃 목업 C — 조치현황 보드(칸반). 상태별 열로 한눈에. 카드의 상태변경(▸) 버튼이 곧 조치상태 변경 → 게시판·발송이력 동기화</div>
+<div class="top">
+  <h1>📨 조치현황 보드</h1>
+  <div class="seg" id="seg"><button class="on" onclick="setView('pair')">건별(권고문×부서)</button><button onclick="setView('dept')">부서 묶음</button></div>
+  <input id="q" placeholder="검색: 권고문·부서·담당자" oninput="render()" style="width:240px">
+  <select id="fsev" onchange="render()"><option value="">심각도 전체</option><option value="CRITICAL">긴급</option><option value="HIGH">높음</option></select>
+  <span class="sp"></span><span class="pill">미완료 우선 정렬</span>
+</div>
+<div class="board" id="board"></div>
+<script>
+const KO={DONE:"완료",IN_PROGRESS:"진행중",UNABLE:"불가",NONE:"미회신"};
+const COLS=["NONE","IN_PROGRESS","DONE","UNABLE"];
+const CH={NCST:"국정원 NCST",WEBMAIL:"웹메일",OFFICIAL_DOC:"공문"};
+const ADVS=[
+ {id:1,doc:"국정원-사이버-2026-0612",title:"Windows LSA 원격코드실행 긴급 조치",org:"국가정보원",ch:"NCST",sev:"CRITICAL",due:"2026-06-22",
+  depts:[{dept:"도로국",owner:"박도로",status:"DONE",ev:"패치완료_도로국.png"},{dept:"철도국",owner:"이철도",status:"IN_PROGRESS",ev:null},{dept:"항공정책실",owner:"정항공",status:"NONE",ev:null},{dept:"정보통신담당관",owner:"김관제",status:"DONE",ev:"점검스크린샷.png"}]},
+ {id:2,doc:"국토부-정보보호-2026-0531",title:"Apache Log4j2 추가 취약점 패치",org:"국토교통부",ch:"OFFICIAL_DOC",sev:"HIGH",due:"2026-06-30",
+  depts:[{dept:"물류정책관",owner:"정물류",status:"UNABLE",ev:null},{dept:"건설정책국",owner:"한건설",status:"DONE",ev:"조치결과.pdf"},{dept:"정보통신담당관",owner:"김관제",status:"NONE",ev:null}]},
+ {id:3,doc:"국정원-사이버-2026-0588",title:"Google Chrome V8 임의코드실행",org:"국가정보원",ch:"WEBMAIL",sev:"HIGH",due:"2026-06-12",
+  depts:[{dept:"도로국",owner:"박도로",status:"DONE",ev:"chrome_update.png"},{dept:"철도국",owner:"이철도",status:"DONE",ev:null},{dept:"항공정책실",owner:"정항공",status:"IN_PROGRESS",ev:null}]},
+];
+let VIEW="pair";
+const esc=s=>(s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+function setView(v){VIEW=v;document.querySelectorAll("#seg button").forEach((b,i)=>b.classList.toggle("on",(v==="pair")===(i===0)));render();}
+function pairs(){const out=[];ADVS.forEach(a=>a.depts.forEach(d=>out.push({a,d})));return out;}
+function move(adv,dept,dir){const a=ADVS.find(x=>x.id===adv);const d=a.depts.find(x=>x.dept===dept);let i=COLS.indexOf(d.status)+dir;i=Math.max(0,Math.min(COLS.length-1,i));d.status=COLS[i];render();}
+function render(){
+  const q=document.getElementById("q").value.trim().toLowerCase();const sev=document.getElementById("fsev").value;
+  let ps=pairs().filter(p=>{const hay=(p.a.title+p.a.doc+p.d.dept+p.d.owner).toLowerCase();return (!q||hay.includes(q))&&(!sev||p.a.sev===sev);});
+  const board=document.getElementById("board");
+  board.innerHTML=COLS.map(st=>{
+    const items=ps.filter(p=>p.d.status===st);
+    const cards=items.map(p=>`<div class="k">
+      <div class="t">${esc(p.d.dept)} <span class="pill">${esc(p.d.owner)}</span></div>
+      <div class="m"><span class="badge sev-${p.a.sev}">${p.a.sev==='CRITICAL'?'긴급':'높음'}</span><span>${esc(p.a.title)}</span></div>
+      <div class="m" style="margin-top:6px">기한 ${p.a.due} ${p.d.ev?`<span class="ev">📎 ${esc(p.d.ev)}</span>`:''}
+        <span class="sp" style="flex:1"></span>
+        <button class="move" onclick="move(${p.a.id},'${esc(p.d.dept)}',-1)">◂</button>
+        <button class="move" onclick="move(${p.a.id},'${esc(p.d.dept)}',1)">▸</button></div></div>`).join("")||`<div style="color:var(--sub);font-size:11.5px;padding:10px 6px">없음</div>`;
+    return `<div class="col"><h3><span class="dot d-${st}"></span>${KO[st]}<span class="n">${items.length}</span></h3>${cards}</div>`;
+  }).join("");
+}
+render();
+</script></body></html>

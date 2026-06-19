@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>보안권고문 게시판</title>
+<style>
+  :root{
+    --bg:#f4f6fa; --card:#fff; --ink:#15294a; --sub:#7a889c; --line:#e3e9f2;
+    --brand:#2f5bd0; --brand-d:#21408f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;font-size:14px;line-height:1.5}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:920px;margin:0 auto;padding:0 16px 64px}
+  header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+  .hd{max-width:920px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:12px}
+  .hd h1{font-size:16px;margin:0;font-weight:800;letter-spacing:-.3px}
+  .hd .sp{flex:1}
+  .hd .admin{font-size:12px;color:var(--sub);border:1px solid var(--line);padding:6px 11px;border-radius:8px}
+  .hd .admin:hover{color:var(--brand);border-color:#c3d2f0}
+  h2.section{font-size:13px;color:var(--sub);font-weight:700;margin:24px 2px 10px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:12px}
+  .row{cursor:pointer;transition:box-shadow .12s,border-color .12s}
+  .row:hover{border-color:#c3d2f0;box-shadow:0 3px 14px rgba(20,41,74,.07)}
+  .ttl{font-size:15px;font-weight:700;margin:0 0 6px;letter-spacing:-.2px}
+  .meta{font-size:12px;color:var(--sub);display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;line-height:1.4}
+  .sev-CRITICAL{background:#fdecec;color:#c0392b}.sev-HIGH{background:#fdf0e6;color:#d35400}
+  .sev-MEDIUM{background:#fcf6e3;color:#9a7d12}.sev-LOW{background:#eef1f5;color:#67748a}
+  .sla-OVERDUE{background:#fdecec;color:#c0392b}.sla-IMMINENT{background:#fdf0e6;color:#d35400}
+  .sla-NORMAL{background:#eaf3ee;color:#2e7d52}.sla-DONE{background:#e8effb;color:#2f5bd0}
+  .chip{background:#eef1f5;color:#5a6678;font-size:11px;padding:3px 8px;border-radius:6px}
+  .muted{color:var(--sub)}
+  .btn{background:var(--brand);color:#fff;border:none;border-radius:9px;padding:10px 16px;font-size:13.5px;
+    font-weight:700;cursor:pointer;font-family:inherit}
+  .btn:hover{background:var(--brand-d)} .btn:disabled{opacity:.5;cursor:default}
+  .btn-ghost{background:#fff;color:var(--sub);border:1px solid var(--line);padding:7px 13px;border-radius:8px;
+    font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+  label.f{display:block;font-size:12px;font-weight:700;color:#4a5568;margin:0 0 5px}
+  input,textarea,select{width:100%;font-family:inherit;font-size:13.5px;color:var(--ink);
+    border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#fcfdff;outline:none}
+  input:focus,textarea:focus,select:focus{border-color:var(--brand)}
+  textarea{resize:vertical;min-height:84px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .cmt{border-top:1px solid var(--line);padding:13px 0}
+  .cmt:first-of-type{border-top:none}
+  .cmt .who{font-weight:700;font-size:13px}
+  .cmt .when{font-size:11.5px;color:var(--sub)}
+  .cmt .body{margin-top:5px;white-space:pre-wrap;word-break:break-word}
+  .empty{text-align:center;color:var(--sub);padding:48px 12px;font-size:13px}
+  .err{background:#fdecec;color:#c0392b;border:1px solid #f6cdcb;padding:10px 13px;border-radius:8px;font-size:12.5px;margin:10px 0}
+  .ack{font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px}
+  .ack-DONE{background:#e8f6ee;color:#2e7d52}.ack-IN_PROGRESS{background:#fcf6e3;color:#9a7d12}
+  .ack-UNABLE{background:#fdecec;color:#c0392b}
+  .back{font-size:13px;color:var(--brand);font-weight:600;cursor:pointer;display:inline-block;margin:18px 0 4px}
+  .filterbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .filterbar .ck{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#4a5568;cursor:pointer;white-space:nowrap}
+  .filterbar input[type=checkbox]{width:16px;height:16px;accent-color:var(--brand);cursor:pointer}
+  .impact{font-size:12px;margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;color:var(--sub)}
+  .dchip{background:#eef2fb;color:#2f5bd0;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px}
+  .dchip.hi{background:#2f5bd0;color:#fff}
+  .impact .prod{color:#4a5568}
+  table.assets{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.assets th{text-align:left;color:var(--sub);font-weight:700;font-size:11.5px;padding:6px 8px;border-bottom:1px solid var(--line)}
+  table.assets td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.assets tr.dh td{background:#f7f9fc;font-weight:700;color:#2f5bd0}
+  .own{font-weight:600}.ownc{color:var(--sub);font-size:11.5px}
+</style>
+</head>
+<body>
+<header>
+  <div class="hd">
+    <h1>🛡️ 보안권고문 게시판</h1>
+    <span class="sp"></span>
+    <a class="admin" href="/admin">관리자 ↗</a>
+  </div>
+</header>
+<div class="wrap" id="app"><div class="empty">불러오는 중…</div></div>
+
+<script>
+const API = "/api/v1/board";
+const app = document.getElementById("app");
+let DEPTS = [];
+const FILTER = { q: "", excludeDone: true };  // 기본: 완료 제외 ON
+let _searchT;
+
+async function loadDepts(){
+  if(DEPTS.length) return;
+  try{ DEPTS = (await api("/departments")).items; }catch(e){}
+}
+
+const esc = s => (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const ACK_KO = {DONE:"조치완료",IN_PROGRESS:"진행중",UNABLE:"조치불가",NONE:"미회신"};
+const CH_KO = {NCST:"국정원 NCST",WEBMAIL:"웹메일",OFFICIAL_DOC:"공문"};
+
+async function api(path, opts){
+  const r = await fetch(API+path, opts);
+  if(!r.ok){ let m="요청 실패 ("+r.status+")"; try{const j=await r.json(); if(j.detail) m=typeof j.detail==="string"?j.detail:JSON.stringify(j.detail);}catch(e){} throw new Error(m); }
+  return r.status===204?null:r.json();
+}
+function fmtDate(s){ if(!s) return "—"; return s.slice(0,10); }
+function dday(n){ if(n==null) return ""; if(n<0) return "D+"+(-n); if(n===0) return "D-DAY"; return "D-"+n; }
+function sevBadge(s,ko){ return s?`<span class="badge sev-${s}">${esc(ko||s)}</span>`:""; }
+function slaBadge(s){ const ko={OVERDUE:"기한초과",IMMINENT:"임박",NORMAL:"여유",DONE:"완료"}; return s?`<span class="badge sla-${s}">${ko[s]||s}</span>`:""; }
+
+function route(){
+  const h = location.hash;
+  const m = h.match(/^#\/a\/(\d+)/);
+  if(m) renderDetail(parseInt(m[1],10)); else renderList();
+}
+
+function filterBar(){
+  return `<div class="card filterbar">
+    <div style="flex:1;min-width:220px">
+      <input id="f_q" type="search" placeholder="자산번호 · 담당자명 · 부서명 · 제목 검색" value="${esc(FILTER.q)}" oninput="onSearch(this.value)">
+    </div>
+    <label class="ck"><input type="checkbox" ${FILTER.excludeDone?"checked":""} onchange="onDoneFilter(this.checked)"> 완료 제외</label>
+    ${FILTER.q||!FILTER.excludeDone?`<button class="btn-ghost" onclick="resetFilter()">초기화</button>`:""}
+  </div>`;
+}
+function deptChips(a){
+  const ql = FILTER.q.trim().toLowerCase();
+  return (a.affected_departments||[]).map(d=>{
+    const owns = d.owners||[];
+    const hi = ql && (d.name.toLowerCase().includes(ql) || owns.some(o=>o.toLowerCase().includes(ql))) ? " hi" : "";
+    const own = owns.length ? " · "+owns.slice(0,2).join(", ")+(owns.length>2?` 외 ${owns.length-2}`:"") : "";
+    return `<span class="dchip${hi}">${esc(d.name)} ${d.asset_count}${esc(own)}</span>`;
+  }).join("");
+}
+function productSummary(a){
+  const p = a.affected_products||[];
+  if(!p.length) return "";
+  const shown = p.slice(0,3).map(esc).join(", ");
+  return `<span class="prod">· ${shown}${p.length>3?` 외 ${p.length-3}`:""}</span>`;
+}
+function impactLine(a){
+  if(!a.affected_dept_count) return `<div class="impact">영향 자산 분석 전 <span class="muted">(관리자 매칭 대기)</span></div>`;
+  return `<div class="impact"><b style="color:#4a5568">영향 ${a.affected_dept_count}개 부서 · 자산 ${a.affected_asset_count}</b> ${deptChips(a)} ${productSummary(a)}</div>`;
+}
+
+window.onSearch = function(v){ FILTER.q = v; clearTimeout(_searchT); _searchT = setTimeout(loadResults, 220); };
+window.onDoneFilter = function(v){ FILTER.excludeDone = !!v; loadResults(); };
+window.resetFilter = function(){ FILTER.q=""; FILTER.excludeDone=true; renderList(); };
+
+function rowHtml(a){
+  return `<div class="card row" onclick="location.hash='#/a/${a.id}'">
+    <div class="ttl">${esc(a.title||a.doc_no||"제목 없음")}</div>
+    <div class="meta">
+      ${sevBadge(a.max_severity,a.max_severity_ko)}
+      ${slaBadge(a.sla_status)}
+      ${a.d_day!=null?`<span class="chip">${dday(a.d_day)}</span>`:""}
+      ${a.source_org?`<span>${esc(a.source_org)}</span>`:""}
+      ${a.receive_channel?`<span>· ${CH_KO[a.receive_channel]||a.receive_channel}</span>`:""}
+      <span>· 기한 ${fmtDate(a.due_at)}</span>
+      <span>· 💬 ${a.comment_count}</span>
+    </div>
+    ${impactLine(a)}
+  </div>`;
+}
+
+async function renderList(){
+  await loadDepts();
+  app.innerHTML = `<h2 class="section">게시된 보안권고문</h2>${filterBar()}<div id="results"><div class="empty">불러오는 중…</div></div>`;
+  await loadResults();
+}
+
+async function loadResults(){
+  const res = document.getElementById("results");
+  if(!res) return;
+  const qs = new URLSearchParams();
+  if(FILTER.q.trim()) qs.set("q", FILTER.q.trim());
+  qs.set("exclude_done", FILTER.excludeDone);
+  try{
+    const {items} = await api("/advisories?"+qs.toString());
+    const info = `<div class="muted" style="margin:2px 2px 12px;font-size:12px">${items.length}건${FILTER.q.trim()?` · "${esc(FILTER.q.trim())}" 검색 결과`:""}</div>`;
+    res.innerHTML = info + (items.length ? items.map(rowHtml).join("")
+      : `<div class="empty">${FILTER.q.trim()||FILTER.excludeDone?"조건에 맞는 권고문이 없습니다.":"게시된 보안권고문이 없습니다."}</div>`);
+  }catch(e){ res.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+
+async function renderDetail(id){
+  app.innerHTML = `<div class="empty">불러오는 중…</div>`;
+  try{
+    if(!DEPTS.length){ try{ DEPTS = (await api("/departments")).items; }catch(e){} }
+    const d = await api("/advisories/"+id);
+    const a = d.advisory;
+    const cveRows = d.cves.length ? d.cves.map(c=>`
+      <div class="meta" style="padding:5px 0;border-top:1px solid var(--line)">
+        <b>${esc(c.cve_id_text)}</b>
+        ${c.severity?sevBadge(c.severity):""}
+        <span class="muted">${esc(c.product_name||"")}</span>
+        ${c.lookup_status==="NOT_FOUND"?`<span class="chip">DB 미등록</span>`:""}
+      </div>`).join("") : `<div class="muted" style="font-size:12.5px">추출된 CVE 없음</div>`;
+
+    // 영향 자산·담당자 — 부서별 그룹. 검색어와 일치하는 부서를 맨 위로/강조.
+    const ql = FILTER.q.trim().toLowerCase();
+    const groups = {};
+    (d.matches||[]).forEach(m=>{ const k=m.department||"(부서 미지정)"; (groups[k]=groups[k]||[]).push(m); });
+    let gkeys = Object.keys(groups).sort();
+    if(ql) gkeys.sort((a,b)=>{ const am=a.toLowerCase().includes(ql), bm=b.toLowerCase().includes(ql); return am===bm?a.localeCompare(b):(am?-1:1); });
+    const assetsSection = gkeys.length ? `<table class="assets">
+      <tr><th>부서 / 자산</th><th>제품 · 버전</th><th>담당자</th><th>심각도</th></tr>
+      ${gkeys.map(g=>{
+        const rows = groups[g];
+        const owners = [...new Set(rows.map(m=>m.owner_name).filter(Boolean))];
+        const hi = ql && g.toLowerCase().includes(ql) ? ' style="background:#eef4ff"' : '';
+        return `<tr class="dh"${hi}><td colspan="4">${esc(g)} · ${rows.length}건${owners.length?` · 담당 ${esc(owners.slice(0,3).join(", "))}`:""}</td></tr>`
+          + rows.map(m=>`<tr>
+              <td>${esc(m.asset_no||"")}${m.ip?`<div class="ownc">${esc(m.ip)}</div>`:""}</td>
+              <td>${esc(m.product_ver||m.product||"")}</td>
+              <td><span class="own">${esc(m.owner_name||"-")}</span>${m.owner_contact?`<div class="ownc">${esc(m.owner_contact)}</div>`:""}${m.owner_team?`<div class="ownc">${esc(m.owner_team)}</div>`:""}</td>
+              <td>${sevBadge(m.severity)} <span class="ownc">${esc(m.cve||"")}</span></td>
+            </tr>`).join("");
+      }).join("")}
+    </table>` : `<div class="muted" style="font-size:12.5px">영향 자산 매칭 결과가 없습니다(관리자 매칭 전이거나 해당 자산 없음).</div>`;
+
+    const comments = d.comments.length ? d.comments.map(c=>`
+      <div class="cmt">
+        <span class="who">${esc(c.author_name)}</span>
+        ${c.department?`<span class="muted"> · ${esc(c.department)}</span>`:""}
+        ${c.is_admin?`<span class="chip" style="background:#e8effb;color:#2f5bd0">관리자</span>`:""}
+        ${c.ack_status?`<span class="ack ack-${c.ack_status}">${ACK_KO[c.ack_status]||c.ack_status}</span>`:""}
+        <span class="when"> · ${fmtDate(c.created_at)} ${esc((c.created_at||"").slice(11,16))}</span>
+        <div class="body">${esc(c.body)}</div>
+      </div>`).join("") : `<div class="muted" style="font-size:12.5px;padding:8px 0">아직 댓글이 없습니다. 첫 회신을 남겨주세요.</div>`;
+
+    const deptOpts = DEPTS.map(x=>`<option value="${esc(x.name)}">`).join("");
+
+    app.innerHTML = `
+      <div class="back" onclick="location.hash='#/'">← 목록</div>
+      <div class="card">
+        <div class="ttl" style="font-size:17px">${esc(a.title||a.doc_no||"제목 없음")}</div>
+        <div class="meta" style="margin-bottom:6px">
+          ${sevBadge(a.max_severity,a.max_severity_ko)} ${slaBadge(a.sla_status)}
+          ${a.d_day!=null?`<span class="chip">${dday(a.d_day)}</span>`:""}
+          ${a.source_org?`<span>${esc(a.source_org)}</span>`:""}
+          ${a.receive_channel?`<span>· ${CH_KO[a.receive_channel]||a.receive_channel}</span>`:""}
+        </div>
+        <div class="meta">
+          ${a.doc_no?`<span>문서번호 ${esc(a.doc_no)}</span>`:""}
+          <span>· 접수 ${fmtDate(a.received_at)}</span>
+          <span>· 조치기한 <b>${fmtDate(a.due_at)}</b></span>
+        </div>
+        ${impactLine(a)}
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <a class="btn-ghost" href="${API}/advisories/${id}/file" target="_blank" rel="noopener">📄 원문 PDF 새 탭으로</a>
+          <button class="btn-ghost" onclick="togglePdf(${id})">📄 여기서 보기 / 닫기</button>
+        </div>
+        <div id="pdfbox"></div>
+      </div>
+
+      <h2 class="section">영향 부서 · 자산 · 담당자</h2>
+      <div class="card">${assetsSection}</div>
+
+      <h2 class="section">영향 취약점 (CVE)</h2>
+      <div class="card">${cveRows}</div>
+
+      <h2 class="section">댓글 · 조치 회신 (${d.comments.length})</h2>
+      <div class="card">${comments}</div>
+
+      <h2 class="section">댓글 작성</h2>
+      <div class="card">
+        <div id="cerr"></div>
+        <div class="grid2">
+          <div><label class="f">이름</label><input id="c_name" maxlength="80" placeholder="홍길동"></div>
+          <div><label class="f">부서 (검색·선택)</label>
+            <input id="c_dept" list="deptlist" placeholder="부서명 입력 또는 선택">
+            <datalist id="deptlist">${deptOpts}</datalist>
+          </div>
+        </div>
+        <div style="margin-top:12px"><label class="f">내용</label>
+          <textarea id="c_body" placeholder="조치 결과나 질의를 남겨주세요."></textarea></div>
+        <div class="grid2" style="margin-top:12px;align-items:end">
+          <div><label class="f">조치상태 (선택 — 부서 회신으로 반영)</label>
+            <select id="c_ack">
+              <option value="">첨부 안 함 (일반 댓글)</option>
+              <option value="IN_PROGRESS">진행중</option>
+              <option value="DONE">조치완료</option>
+              <option value="UNABLE">조치불가</option>
+            </select></div>
+          <div style="text-align:right"><button class="btn" id="c_submit" onclick="submitComment(${id})">댓글 등록</button></div>
+        </div>
+      </div>`;
+  }catch(e){ app.innerHTML = `<div class="back" onclick="location.hash='#/'">← 목록</div><div class="err">${esc(e.message)}</div>`; }
+}
+
+async function submitComment(id){
+  const name = document.getElementById("c_name").value.trim();
+  const deptName = document.getElementById("c_dept").value.trim();
+  const body = document.getElementById("c_body").value.trim();
+  const ack = document.getElementById("c_ack").value;
+  const errEl = document.getElementById("cerr");
+  errEl.innerHTML = "";
+  if(!name){ errEl.innerHTML = `<div class="err">이름을 입력하세요.</div>`; return; }
+  if(!body){ errEl.innerHTML = `<div class="err">내용을 입력하세요.</div>`; return; }
+  const matched = DEPTS.find(d=>d.name===deptName);
+  if(ack && !matched){ errEl.innerHTML = `<div class="err">조치상태를 첨부하려면 목록의 부서를 선택해야 회신으로 반영됩니다.</div>`; return; }
+  const payload = { author_name:name, body, ack_status:ack||null };
+  if(matched) payload.department_id = matched.id; else if(deptName) payload.department_name = deptName;
+  const btn = document.getElementById("c_submit"); btn.disabled = true; btn.textContent = "등록 중…";
+  try{
+    await api("/advisories/"+id+"/comments", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    renderDetail(id);
+  }catch(e){ errEl.innerHTML = `<div class="err">${esc(e.message)}</div>`; btn.disabled=false; btn.textContent="댓글 등록"; }
+}
+
+window.togglePdf = function(id){
+  const box = document.getElementById("pdfbox");
+  if(!box) return;
+  if(box.dataset.open){ box.innerHTML=""; box.dataset.open=""; return; }
+  box.innerHTML = `<iframe src="${API}/advisories/${id}/file" title="원문 PDF"
+    style="width:100%;height:620px;border:1px solid var(--line);border-radius:10px;margin-top:10px;background:#fff"></iframe>`;
+  box.dataset.open = "1";
+};
+
+window.addEventListener("hashchange", route);
+route();
+</script>
+</body>
+</html>
