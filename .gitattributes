@@ -1,0 +1,5 @@
+# Windows batch launchers must keep CRLF endings, or cmd.exe misparses them.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+# Shell scripts must keep LF endings.
+*.sh text eol=lf
