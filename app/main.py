@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import WEB_DIR, settings
 from .db import SessionLocal, init_db
 from .routers import (
-    advisories, assets, audit, board, cve_feeds, cves, dashboard, departments, matches,
+    advisories, assets, audit, board, cve_feeds, cves, dashboard, departments, history, matches,
     notifications, remediation,
 )
 
@@ -89,7 +89,7 @@ app.add_middleware(
 )
 
 for r in (advisories, cve_feeds, cves, assets, matches, notifications, departments, dashboard,
-          remediation, audit, board):
+          remediation, audit, board, history):
     app.include_router(r.router)
 
 
@@ -117,3 +117,9 @@ def board_page():
 @app.get("/admin")
 def admin_page():
     return RedirectResponse(url="/ui/app.dc.html")
+
+
+@app.get("/admin/history")
+def admin_history_page():
+    # 발송이력·조치관리 콘솔(마스터-디테일). 기존 관리자 SPA 와 분리된 독립 페이지.
+    return RedirectResponse(url="/ui/history.html")

@@ -55,6 +55,7 @@ _ADDED_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "asset": [("owner_team", "VARCHAR(120)"), ("owner_contact", "VARCHAR(120)")],
     "advisory": [("extract_phase", "VARCHAR(20)"), ("error_message", "TEXT"),
                  ("board_published_at", "DATETIME")],
+    "advisory_comment": [("evidence_path", "TEXT"), ("evidence_name", "VARCHAR(200)")],
 }
 
 

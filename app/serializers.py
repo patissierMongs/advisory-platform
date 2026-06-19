@@ -4,7 +4,9 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from . import enums
-from .models import Advisory, AdvisoryComment, AdvisoryCve, Asset, Cve, Match, Notification
+from .models import (
+    Advisory, AdvisoryComment, AdvisoryCve, Asset, Cve, Match, MessageTemplate, Notification,
+)
 
 _SEV_RANK = {
     enums.Severity.CRITICAL: 4,
@@ -143,7 +145,18 @@ def comment_item(c: AdvisoryComment) -> dict:
         "ack_status": c.ack_status.value if c.ack_status else None,
         "ack_status_ko": enums.ACK_KO.get(c.ack_status) if c.ack_status else None,
         "is_admin": c.is_admin,
+        "evidence": c.evidence_name,
+        "has_evidence": c.evidence_path is not None,
         "created_at": _d(c.created_at),
+    }
+
+
+def message_template_item(t: MessageTemplate) -> dict:
+    return {
+        "id": t.id,
+        "title": t.title,
+        "body": t.body,
+        "created_at": _d(t.created_at),
     }
 
 

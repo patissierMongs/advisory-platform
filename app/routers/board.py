@@ -10,18 +10,23 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import enums, serializers
 from ..audit import record
+from ..config import DATA_DIR, settings
+from ..core.files import safe_filename
 from ..db import get_db
 from ..models import Advisory, AdvisoryComment, Asset, Department, Match, Notification
 from ..schemas import CommentIn
 
 router = APIRouter(prefix="/api/v1/board", tags=["board"])
+
+EVIDENCE_DIR = DATA_DIR / "evidence"
+EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _published(db: Session, advisory_id: int) -> Advisory:
@@ -224,6 +229,55 @@ def add_comment(advisory_id: int, body: CommentIn, request: Request, db: Session
     db.commit()
     db.refresh(comment)
     return {"comment": serializers.comment_item(comment), "ack_synced_notification": ack_synced}
+
+
+@router.post("/comments/{comment_id}/evidence", status_code=201)
+async def upload_comment_evidence(comment_id: int, request: Request,
+                                  file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """댓글 증빙 첨부(무인증). 조치상태 회신 댓글이면 해당 부서 발송이력 ack 증빙으로 동기화."""
+    c = db.get(AdvisoryComment, comment_id)
+    if not c:
+        raise HTTPException(404, "댓글 없음")
+    content = await file.read()
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(413, f"파일 크기 초과(최대 {settings.MAX_UPLOAD_MB}MB)")
+    path = EVIDENCE_DIR / f"comment{comment_id}_{safe_filename(file.filename)}"
+    path.write_bytes(content)
+    c.evidence_path = str(path)
+    c.evidence_name = file.filename
+
+    # 조치상태 회신 + 부서 식별 가능 → (이 권고문, 부서) 최신 발송이력 증빙으로 동기화.
+    synced = None
+    if c.ack_status is not None and c.author_department_id is not None:
+        n = db.scalar(
+            select(Notification)
+            .where(Notification.advisory_id == c.advisory_id,
+                   Notification.department_id == c.author_department_id)
+            .order_by(Notification.id.desc())
+        )
+        if n is not None:
+            n.ack_evidence_path = str(path)
+            n.ack_evidence_name = file.filename
+            synced = n.id
+
+    record(db, action="BOARD_COMMENT_EVIDENCE", actor_id=None, entity_type="advisory",
+           entity_id=c.advisory_id, detail={"comment_id": comment_id, "file": file.filename,
+                                            "ack_synced_notification": synced}, request=request)
+    db.commit()
+    db.refresh(c)
+    return {"comment": serializers.comment_item(c), "ack_synced_notification": synced}
+
+
+@router.get("/comments/{comment_id}/evidence")
+def get_comment_evidence(comment_id: int, db: Session = Depends(get_db)):
+    """댓글 증빙 파일 열람(inline). 첨부 없으면 404."""
+    import os
+
+    c = db.get(AdvisoryComment, comment_id)
+    if not c or not c.evidence_path or not os.path.exists(c.evidence_path):
+        raise HTTPException(404, "증빙 파일이 없습니다")
+    return FileResponse(c.evidence_path, filename=c.evidence_name or "evidence",
+                        headers={"Content-Disposition": f"inline; filename=\"{c.evidence_name or 'evidence'}\""})
 
 
 @router.delete("/comments/{comment_id}", status_code=204)

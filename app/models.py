@@ -197,9 +197,23 @@ class AdvisoryComment(TimestampMixin, Base):
     # 선택 조치상태(첨부 시 부서 ack 동기화). 미첨부면 None = 일반 댓글.
     ack_status: Mapped[enums.AckStatus | None] = mapped_column(_enum(enums.AckStatus))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # 관리자 작성 표식
+    # 증빙 첨부(조치 결과 스크린샷·문서 등). 조치상태 회신 시 발송이력 ack 증빙으로 동기화.
+    evidence_path: Mapped[str | None] = mapped_column(Text)
+    evidence_name: Mapped[str | None] = mapped_column(String(200))
 
     advisory: Mapped["Advisory"] = relationship(back_populates="comments")
     department: Mapped["Department | None"] = relationship()
+
+
+class MessageTemplate(TimestampMixin, Base):
+    """발송 문구 프리셋 — 관리자가 자주 쓰는 안내 문구를 저장/재사용(추가·삭제).
+
+    발송이력·조치관리 화면에서 미회신 부서 재발송 시 본문 템플릿으로 사용한다.
+    본문에는 {제목}·{문서번호}·{기한}·{부서} 플레이스홀더를 쓸 수 있다(치환은 화면에서).
+    """
+    __tablename__ = "message_template"
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class Match(TimestampMixin, Base):

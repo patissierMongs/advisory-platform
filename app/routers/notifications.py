@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -179,3 +180,16 @@ async def upload_evidence(notification_id: int, request: Request,
            entity_id=n.id, detail={"file": file.filename}, request=request)
     db.commit()
     return notification_item(n)
+
+
+@router.get("/notifications/{notification_id}/evidence")
+def get_evidence(notification_id: int, db: Session = Depends(get_db)):
+    """조치 증빙 파일 열람(inline). 첨부 없으면 404."""
+    import os
+
+    n = db.get(Notification, notification_id)
+    if not n or not n.ack_evidence_path or not os.path.exists(n.ack_evidence_path):
+        raise HTTPException(404, "증빙 파일이 없습니다")
+    return FileResponse(n.ack_evidence_path, filename=n.ack_evidence_name or "evidence",
+                        headers={"Content-Disposition":
+                                 f"inline; filename=\"{n.ack_evidence_name or 'evidence'}\""})
