@@ -1,7 +1,7 @@
 # 인터넷망(Internet, 망분리·별도 스캔서버) 프리셋 — T3도 못 버틴다 가정 → 초저강도.
 # 안전 최우선: T2 유지, 1~2 호스트 직렬, 최소 스크립트. -O 없음, version-all 없음.
 @{
-    DiscoveryArgs = @('-PE','-PS80,443,22,3389','-PA80','-T2','--max-rate','100')
+    DiscoveryArgs = @('-PE','-PS80,443,22,3389,8080,8443','-PA80','-T2','--max-rate','100')
     ResolveDns    = $false  # 망분리 서버는 DNS 없을 수 있음 → PTR 미사용
 
     TcpTiming     = @('-T2','--max-rate','200','--scan-delay','20ms','--max-retries','2','--max-hostgroup','2','--host-timeout','45m')

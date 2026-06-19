@@ -2,7 +2,7 @@
 # 안전장치: -O 없음, --version-all 없음, 취약 포트는 -sV/배너 프로브 제외.
 @{
     # 더 밀고 싶으면 --max-rate / --max-hostgroup 숫자만 올리세요(-T/-O/version-all 금지).
-    DiscoveryArgs = @('-PE','-PP','-PS22,80,135,443,445,3389','-PA80','-PU161,137','-T4','--max-rate','500')
+    DiscoveryArgs = @('-PE','-PP','-PS22,80,135,443,445,3389,8080,8443','-PA80','-PU161,137','-T4','--max-rate','500')
     ResolveDns    = $true   # 업무망: PTR 호스트명을 식별 단서로 수집
 
     TcpTiming     = @('-T4','--max-rate','2000','--max-retries','2','--max-hostgroup','32','--host-timeout','30m')

@@ -33,7 +33,8 @@ param(
     [string]$OutRoot = (Join-Path $PSScriptRoot 'out'),
     # 산출물: nmap XML 이 정본(콘솔 투입·아카이브). 아래는 부가 옵션.
     [switch]$Csv,         # 사람 배포용 report.csv 도 함께 생성(기본 off)
-    [switch]$DeepBanner   # 정체불명 포트에 ncat 수동 배너 보조(기본 off; banner NSE 로 대부분 XML 에 이미 수집)
+    [switch]$DeepBanner,  # 정체불명 포트에 ncat 수동 배너 보조(기본 off; banner NSE 로 대부분 XML 에 이미 수집)
+    [int]$TopPorts = 0    # >0 이면 TCP 전체(-p-) 대신 --top-ports N (빠른 스캔, 인터넷망 등)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -125,7 +126,8 @@ Write-Log "생존 호스트: $($liveHosts.Count)"
 # ── Stage 2 : 포트맵(상태만, 버전/스크립트 없음) ─────────────────────────────
 $tcpXml = Join-Path $RunDir '2_ports_tcp.xml'
 $udpXml = Join-Path $RunDir '2_ports_udp.xml'
-Invoke-Nmap (@('-sS','-p-','-Pn','-n','--open','--reason') + $P.TcpTiming + @('--stats-every','1m','-iL',$liveFile,'-oX',$tcpXml)) 'stage2-tcp'
+$tcpPortArg = if ($TopPorts -gt 0) { @('--top-ports', "$TopPorts") } else { @('-p-') }
+Invoke-Nmap (@('-sS') + $tcpPortArg + @('-Pn','-n','--open','--reason') + $P.TcpTiming + @('--stats-every','1m','-iL',$liveFile,'-oX',$tcpXml)) 'stage2-tcp'
 Invoke-Nmap (@('-sU','-p',$P.UdpPorts,'-Pn','-n','--open','--reason') + $P.UdpTiming + @('--stats-every','1m','-iL',$liveFile,'-oX',$udpXml)) 'stage2-udp'
 
 # 호스트별 열린 포트 취합
