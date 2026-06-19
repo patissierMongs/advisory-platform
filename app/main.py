@@ -31,10 +31,10 @@ async def lifespan(app: FastAPI):
 
 
 def _load_bundled_cve_feeds() -> None:
-    """동봉된 CVE 피드(samples/cve_feeds/*)를 최초 1회 cve 테이블에 적재 — 폐쇄망 즉시 사용.
+    """동봉된 CVE 피드(samples/cve_feeds/*: .json/.json.gz/.csv/.csv.gz)를 최초 1회 적재.
 
     소스: NVD(Public Domain) · CISA KEV(Public Domain) · KISA. 멱등(표식 파일로 1회만).
-    대량 적재 시 SQLite 변수 한계(999) 회피를 위해 배치 단위로 upsert·커밋한다.
+    1.6GB급 NVD(.gz 포함)도 스트리밍으로 상수 메모리 적재(저사양 PC 안전).
     """
     from .config import BASE_DIR, DATA_DIR
     from .core import feeds
@@ -43,20 +43,25 @@ def _load_bundled_cve_feeds() -> None:
     sentinel = DATA_DIR / ".cve_feeds_loaded"
     if not feed_dir.exists() or sentinel.exists():
         return
-    total_added = 0
+    patterns = ("*.json", "*.json.gz", "*.csv", "*.csv.gz")
+    files = sorted({p for pat in patterns for p in feed_dir.glob(pat)})
+    total = 0
     with SessionLocal() as db:
-        for f in sorted(feed_dir.glob("*.json")):
+        for f in files:
+            size_mb = f.stat().st_size / 1e6
+            big = " - 대용량, 수 분 소요" if size_mb > 50 else ""
+            print(f"[cve-feeds] 적재 중: {f.name} ({size_mb:.0f}MB{big}) ...", flush=True)
             try:
-                records = feeds.parse_feed(f.name, f.read_bytes())
-            except Exception:  # noqa: BLE001 — 깨진 피드 한 건이 부팅을 막지 않게
+                added, _ = feeds.apply_stream(
+                    db, feeds.iter_records_from_path(str(f), f.name), None)
+            except Exception as e:  # noqa: BLE001 — 깨진 피드 한 건이 부팅을 막지 않게
+                print(f"[cve-feeds] 적재 실패 {f.name}: {e}", flush=True)
                 continue
-            for i in range(0, len(records), 500):  # SQLite IN 한계(999) 회피
-                added, _ = feeds.apply_records(db, records[i:i + 500], None)
-                total_added += added
-                db.commit()
-    sentinel.write_text(str(total_added), encoding="utf-8")
-    if total_added:
-        print(f"[cve-feeds] 동봉 CVE 피드 적재 완료: {total_added}건", flush=True)
+            total += added
+            print(f"[cve-feeds]   {f.name}: 신규 +{added} (누적 {total})", flush=True)
+    sentinel.write_text(str(total), encoding="utf-8")
+    if total:
+        print(f"[cve-feeds] 동봉 CVE 피드 적재 완료: {total}건", flush=True)
 
 
 def _reconcile_stuck_extractions() -> None:
