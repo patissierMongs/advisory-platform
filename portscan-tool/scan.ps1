@@ -287,7 +287,7 @@ if ($prev -and (Test-Path (Join-Path $prev.FullName 'openports.csv'))) {
 }
 
 $unkN = @($records | Where-Object { $_.Identified -ne 'Y' }).Count
-Write-Log "=== 완료 : 포트 $($records.Count)건, 미식별/판독필요 $unkN건 ==="
+Write-Log "=== 완료 : 포트 $($records.Count)건, 미식별/판독필요 ${unkN}건 ==="
 Write-Log "정본(XML) 폴더: $RunDir"
 Write-Host ""
 Write-Host "완료 → $RunDir  (이 폴더(XML)를 콘솔에 투입)" -ForegroundColor Green
