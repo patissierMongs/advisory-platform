@@ -77,3 +77,17 @@ class CommentIn(BaseModel):
     body: str = Field(min_length=1)
     ack_status: AckStatus | None = None       # 선택: 조치상태 첨부 → 부서 ack 동기화
     is_admin: bool = False
+
+
+class AssetAckIn(BaseModel):
+    """게시판 자산별 조치 회신(무인증) — 담당자가 본인 자산을 체크해 개별/일괄 처리.
+
+    부서는 드롭다운 선택(id) 권장. match_ids 의 자산이 선택 부서와 다르면 서버가 409 로 거부
+    (다른 부서 자산 오처리 방지). note 는 선택(조치불가 사유 등).
+    """
+    author_name: str = Field(min_length=1, max_length=80)
+    department_id: int | None = None
+    department_name: str | None = None
+    ack_status: AckStatus
+    match_ids: list[int] = Field(min_length=1)
+    note: str | None = None

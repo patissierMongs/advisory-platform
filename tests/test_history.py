@@ -83,16 +83,17 @@ def test_comment_evidence_syncs_to_notification(client, hist_ids):
     assert d["ack_status"] == "DONE"
 
 
-def test_board_shows_progress_and_comment_evidence(client, hist_ids):
+def test_board_hides_comment_evidence_and_progress_is_asset_based(client, hist_ids):
+    """공개 게시판: 진행률은 자산 단위, 댓글 증빙은 숨김(관리자 페이지 전용)."""
     aid, did, nid = hist_ids
     client.post(f"/api/v1/advisories/{aid}/board")
 
-    # 게시판 목록에 진행현황(발송 대상 부서 ack 집계) 노출.
+    # 매칭(자산)이 없는 권고문 → 목록 진행률은 None(자산 기준).
     row = next(a for a in client.get("/api/v1/board/advisories?exclude_done=false").json()["items"]
                if a["id"] == aid)
-    assert row["progress"]["total"] == 1 and row["progress"]["done"] == 0
+    assert row["progress"] is None
 
-    # 댓글 + 증빙 → 상세 progress 가 완료로, 부서별 증빙 표시.
+    # 조치완료 회신 댓글 + 증빙 업로드(담당자가 증빙 첨부).
     cid = client.post(f"/api/v1/board/advisories/{aid}/comments",
                       json={"author_name": "박담당", "body": "조치했습니다",
                             "department_id": did, "ack_status": "DONE"}).json()["comment"]["id"]
@@ -100,8 +101,12 @@ def test_board_shows_progress_and_comment_evidence(client, hist_ids):
                 files={"file": ("ev.png", b"x", "image/png")})
 
     detail = client.get(f"/api/v1/board/advisories/{aid}").json()
-    assert detail["progress"]["done"] == 1 and detail["progress"]["done_rate"] == 100
-    dep = detail["progress"]["departments"][0]
-    assert dep["ack_status"] == "DONE" and dep["has_evidence"] is True
-    # 댓글에도 증빙 표식.
-    assert any(c["id"] == cid and c["has_evidence"] for c in detail["comments"])
+    # 상세 진행률은 자산 기준(매칭 0건 → total 0), 부서별 표/증빙은 게시판에서 제거.
+    assert detail["progress"]["total"] == 0
+    assert "departments" not in detail["progress"]
+    # 댓글 증빙은 공개 게시판에서 숨김.
+    assert all(c["has_evidence"] is False for c in detail["comments"])
+    # 단, 관리자 측(발송이력 롤업)에서는 동기화된 증빙이 그대로 보인다.
+    d = next(a for a in client.get("/api/v1/history/advisories").json()["items"]
+             if a["id"] == aid)["departments"][0]
+    assert d["has_evidence"] is True and d["ack_status"] == "DONE"

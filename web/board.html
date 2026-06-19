@@ -79,6 +79,17 @@
   table.assets td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
   table.assets tr.dh td{background:#f7f9fc;font-weight:700;color:#2f5bd0}
   .own{font-weight:600}.ownc{color:var(--sub);font-size:11.5px}
+  table.assets tr.hi-row td{background:#eef4ff}
+  table.assets td.ck,table.assets th.ck{width:34px;text-align:center}
+  table.assets input[type=checkbox]{width:15px;height:15px;accent-color:var(--brand);cursor:pointer}
+  .ackbar{display:flex;gap:8px;align-items:end;flex-wrap:wrap;background:#f7f9fc;border:1px solid var(--line);
+    border-radius:10px;padding:11px 12px;margin-bottom:12px}
+  .ackbar .fld{display:flex;flex-direction:column;gap:4px}
+  .ackbar .fld label{font-size:11px;font-weight:700;color:#4a5568}
+  .ackbar input,.ackbar select{padding:7px 9px;font-size:12.5px}
+  .ackbar .nm{width:110px}.ackbar .dp{width:150px}.ackbar .st{width:110px}
+  .acknote{font-size:11.5px;color:var(--sub);margin-top:2px}
+  .ack-NONE{background:#eef1f5;color:#67748a}
 </style>
 </head>
 <body>
@@ -109,7 +120,7 @@ const CH_KO = {NCST:"국정원 NCST",WEBMAIL:"웹메일",OFFICIAL_DOC:"공문"};
 
 async function api(path, opts){
   const r = await fetch(API+path, opts);
-  if(!r.ok){ let m="요청 실패 ("+r.status+")"; try{const j=await r.json(); if(j.detail) m=typeof j.detail==="string"?j.detail:JSON.stringify(j.detail);}catch(e){} throw new Error(m); }
+  if(!r.ok){ let m="요청 실패 ("+r.status+")"; try{const j=await r.json(); if(j.detail) m=typeof j.detail==="string"?j.detail:(j.detail.message||JSON.stringify(j.detail));}catch(e){} throw new Error(m); }
   return r.status===204?null:r.json();
 }
 function fmtDate(s){ if(!s) return "—"; return s.slice(0,10); }
@@ -157,8 +168,8 @@ function progBar(p){
   return `<div class="pbar">${seg("DONE",p.done)}${seg("IN_PROGRESS",p.in_progress)}${seg("UNABLE",p.unable)}${seg("NONE",p.none)}</div>`;
 }
 function progLine(p){
-  if(!p||!p.total) return `<div class="impact muted">조치 진행현황: 담당 부서 발송 전</div>`;
-  return `<div class="impact"><b style="color:#4a5568">조치 완료 ${p.done}/${p.total} 부서 (${p.done_rate}%)</b>
+  if(!p||!p.total) return `<div class="impact muted">조치 진행현황: 영향 자산 매칭 전</div>`;
+  return `<div class="impact"><b style="color:#4a5568">조치 완료 ${p.done}/${p.total} 자산 (${p.done_rate}%)</b>
     ${p.in_progress?`<span class="chip">진행중 ${p.in_progress}</span>`:""}
     ${p.unable?`<span class="chip">불가 ${p.unable}</span>`:""}
     ${p.none?`<span class="chip">미회신 ${p.none}</span>`:""}</div>${progBar(p)}`;
@@ -209,7 +220,8 @@ async function renderDetail(id){
   app.innerHTML = `<div class="empty">불러오는 중…</div>`;
   try{
     if(!DEPTS.length){ try{ DEPTS = (await api("/departments")).items; }catch(e){} }
-    const d = await api("/advisories/"+id);
+    const ql0 = FILTER.q.trim();
+    const d = await api("/advisories/"+id+(ql0?("?q="+encodeURIComponent(ql0)):""));
     const a = d.advisory;
     const cveRows = d.cves.length ? d.cves.map(c=>`
       <div class="meta" style="padding:5px 0;border-top:1px solid var(--line)">
@@ -219,24 +231,45 @@ async function renderDetail(id){
         ${c.lookup_status==="NOT_FOUND"?`<span class="chip">DB 미등록</span>`:""}
       </div>`).join("") : `<div class="muted" style="font-size:12.5px">추출된 CVE 없음</div>`;
 
-    // 영향 자산·담당자 — 부서별 그룹. 검색어와 일치하는 부서를 맨 위로/강조.
+    // 영향 자산·담당자 — 부서별 그룹. 검색어와 일치하는 부서/자산을 맨 위로/강조.
+    // 각 자산에 체크박스 → 담당자가 본인 자산을 개별/일괄 '조치 회신'(자산 단위).
     const ql = FILTER.q.trim().toLowerCase();
     const groups = {};
     (d.matches||[]).forEach(m=>{ const k=m.department||"(부서 미지정)"; (groups[k]=groups[k]||[]).push(m); });
     let gkeys = Object.keys(groups).sort();
     if(ql) gkeys.sort((a,b)=>{ const am=a.toLowerCase().includes(ql), bm=b.toLowerCase().includes(ql); return am===bm?a.localeCompare(b):(am?-1:1); });
-    const assetsSection = gkeys.length ? `<table class="assets">
-      <tr><th>부서 / 자산</th><th>제품 · 버전</th><th>담당자</th><th>심각도</th></tr>
+    const rowHit = m => ql && ((m.asset_no||"").toLowerCase().includes(ql)
+      || (m.owner_name||"").toLowerCase().includes(ql) || (m.department||"").toLowerCase().includes(ql));
+    const ackBadge = m => `<span class="ack ack-${m.ack_status||'NONE'}" style="margin:0">${ACK_KO[m.ack_status]||"미회신"}</span>`
+      + (m.ack_by?`<div class="ownc">${esc(m.ack_by)}</div>`:"");
+    const assetsSection = gkeys.length ? `
+      <div class="ackbar">
+        <div class="fld"><label>이름</label><input class="nm" id="ack_name" maxlength="80" placeholder="홍길동"></div>
+        <div class="fld"><label>부서 (선택)</label><input class="dp" id="ack_dept" list="deptlist" placeholder="부서 선택"></div>
+        <div class="fld"><label>조치상태</label>
+          <select class="st" id="ack_status">
+            <option value="DONE">조치완료</option>
+            <option value="IN_PROGRESS">진행중</option>
+            <option value="UNABLE">조치불가</option>
+          </select></div>
+        <button class="btn" id="ack_submit" onclick="submitAssetAck(${id})">선택 자산 조치 회신</button>
+      </div>
+      <div id="ackerr"></div>
+      <div class="acknote">체크박스로 <b>본인 부서 자산</b>을 골라 개별 또는 일괄 처리하세요. 다른 부서 자산이 섞이면 경고가 표시됩니다.</div>
+      <table class="assets" style="margin-top:8px">
+      <tr><th class="ck"><input type="checkbox" id="ack_all" onclick="toggleAllAck(this)"></th><th>부서 / 자산</th><th>제품 · 버전</th><th>담당자</th><th>심각도</th><th>조치상태</th></tr>
       ${gkeys.map(g=>{
         const rows = groups[g];
         const owners = [...new Set(rows.map(m=>m.owner_name).filter(Boolean))];
-        const hi = ql && g.toLowerCase().includes(ql) ? ' style="background:#eef4ff"' : '';
-        return `<tr class="dh"${hi}><td colspan="4">${esc(g)} · ${rows.length}건${owners.length?` · 담당 ${esc(owners.slice(0,3).join(", "))}`:""}</td></tr>`
-          + rows.map(m=>`<tr>
+        const dhi = ql && g.toLowerCase().includes(ql) ? ' style="background:#dfe9ff"' : '';
+        return `<tr class="dh"${dhi}><td colspan="6">${esc(g)} · ${rows.length}건${owners.length?` · 담당 ${esc(owners.slice(0,3).join(", "))}`:""}</td></tr>`
+          + rows.map(m=>`<tr class="${rowHit(m)?'hi-row':''}">
+              <td class="ck"><input type="checkbox" class="ackchk" data-match-id="${m.id}" data-dept-id="${m.department_id==null?'':m.department_id}" data-dept-name="${esc(m.department||'')}" data-asset-no="${esc(m.asset_no||'')}"></td>
               <td>${esc(m.asset_no||"")}${m.ip?`<div class="ownc">${esc(m.ip)}</div>`:""}</td>
               <td>${esc(m.product_ver||m.product||"")}</td>
               <td><span class="own">${esc(m.owner_name||"-")}</span>${m.owner_contact?`<div class="ownc">${esc(m.owner_contact)}</div>`:""}${m.owner_team?`<div class="ownc">${esc(m.owner_team)}</div>`:""}</td>
               <td>${sevBadge(m.severity)} <span class="ownc">${esc(m.cve||"")}</span></td>
+              <td>${ackBadge(m)}</td>
             </tr>`).join("");
       }).join("")}
     </table>` : `<div class="muted" style="font-size:12.5px">영향 자산 매칭 결과가 없습니다(관리자 매칭 전이거나 해당 자산 없음).</div>`;
@@ -252,20 +285,12 @@ async function renderDetail(id){
         ${c.has_evidence?`<a class="evlink" href="${API}/comments/${c.id}/evidence" target="_blank" rel="noopener">📎 ${esc(c.evidence||"증빙 파일")}</a>`:""}
       </div>`).join("") : `<div class="muted" style="font-size:12.5px;padding:8px 0">아직 댓글이 없습니다. 첫 회신을 남겨주세요.</div>`;
 
-    // 조치 진행 현황(발송 대상 부서 ack 집계 + 부서별 상태/증빙).
+    // 조치 진행 현황 — 자산 단위 집계(아래 영향 자산 표에서 담당자가 직접 처리).
     const pg = d.progress || {total:0};
     const progSection = pg.total ? `
       ${progLine(pg)}
-      <table class="prog" style="margin-top:12px">
-        <tr><th>부서</th><th>상태</th><th>회신자</th><th>증빙</th></tr>
-        ${(pg.departments||[]).map(x=>`<tr>
-          <td><b>${esc(x.department||"-")}</b></td>
-          <td><span class="ack ack-${x.ack_status}" style="margin:0">${ACK_KO[x.ack_status]||x.ack_status}</span></td>
-          <td class="muted">${esc(x.ack_by||"-")}</td>
-          <td>${x.has_evidence?`<a class="evlink" href="/api/v1/notifications/${x.notification_id}/evidence" target="_blank" rel="noopener">📎 ${esc(x.evidence||"증빙")}</a>`:`<span class="muted">없음</span>`}</td>
-        </tr>`).join("")}
-      </table>`
-      : `<div class="muted" style="font-size:12.5px">아직 담당 부서로 발송되지 않았습니다(관리자 발송 대기).</div>`;
+      <div class="acknote" style="margin-top:8px">자산별 조치는 아래 <b>영향 부서 · 자산</b> 표에서 체크 후 처리합니다.</div>`
+      : `<div class="muted" style="font-size:12.5px">영향 자산이 없습니다(관리자 매칭 전이거나 해당 자산 없음).</div>`;
 
     const deptOpts = DEPTS.map(x=>`<option value="${esc(x.name)}">`).join("");
 
@@ -364,6 +389,35 @@ window.onFilePick = function(inp){
   const f = inp.files && inp.files[0];
   const lbl = document.getElementById("c_fname");
   if(lbl) lbl.textContent = f ? "📎 "+f.name : "📎 파일 선택";
+};
+
+window.toggleAllAck = function(box){
+  document.querySelectorAll(".ackchk").forEach(c=>{ c.checked = box.checked; });
+};
+// 자산별 조치 회신 — 체크한 자산을 개별/일괄 처리. 선택 부서와 다른 부서 자산이 섞이면 경고.
+window.submitAssetAck = async function(id){
+  const name = (document.getElementById("ack_name").value||"").trim();
+  const deptName = (document.getElementById("ack_dept").value||"").trim();
+  const status = document.getElementById("ack_status").value;
+  const err = document.getElementById("ackerr"); err.innerHTML = "";
+  const checked = [...document.querySelectorAll(".ackchk:checked")];
+  if(!name){ err.innerHTML = `<div class="err">이름을 입력하세요.</div>`; return; }
+  if(!checked.length){ err.innerHTML = `<div class="err">처리할 자산을 한 개 이상 선택하세요.</div>`; return; }
+  const matched = DEPTS.find(d=>d.name===deptName);
+  if(!matched){ err.innerHTML = `<div class="err">부서를 목록에서 선택해야 조치 회신으로 반영됩니다.</div>`; return; }
+  const wrong = checked.filter(c=> String(c.dataset.deptId)!==String(matched.id));
+  if(wrong.length){
+    const names = [...new Set(wrong.map(c=>c.dataset.assetNo||c.closest("tr").children[1].textContent.trim()))].join(", ");
+    err.innerHTML = `<div class="err">선택한 부서(${esc(deptName)})와 <b>다른 부서 자산</b>이 포함되어 있습니다: ${esc(names)}. 본인 부서 자산만 선택하세요.</div>`;
+    return;
+  }
+  const match_ids = checked.map(c=>parseInt(c.dataset.matchId,10));
+  const btn = document.getElementById("ack_submit"); btn.disabled = true; const ot = btn.textContent; btn.textContent = "처리 중…";
+  try{
+    await api("/advisories/"+id+"/asset-ack", {method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({author_name:name, department_id:matched.id, ack_status:status, match_ids})});
+    renderDetail(id);
+  }catch(e){ err.innerHTML = `<div class="err">${esc(e.message)}</div>`; btn.disabled=false; btn.textContent=ot; }
 };
 
 window.togglePdf = function(id){

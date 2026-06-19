@@ -21,7 +21,7 @@ from ..config import DATA_DIR, settings
 from ..core.files import safe_filename
 from ..db import get_db
 from ..models import Advisory, AdvisoryComment, Asset, Department, Match, Notification
-from ..schemas import CommentIn
+from ..schemas import AssetAckIn, CommentIn
 
 router = APIRouter(prefix="/api/v1/board", tags=["board"])
 
@@ -91,49 +91,42 @@ def _matches_query(a: Advisory, ql: str) -> bool:
 _ACK_KEY = {"NONE": "none", "IN_PROGRESS": "in_progress", "DONE": "done", "UNABLE": "unable"}
 
 
-def _progress_map(db: Session, advisory_ids: list[int]) -> dict[int, dict]:
-    """게시글별 조치 진행현황(발송 대상 부서 ack 집계). 목록용 일괄 조회.
+def _asset_counts(matches) -> dict:
+    """매칭(자산) 리스트 → 자산 단위 조치 진행 집계. 게시판 진행률의 권위 소스."""
+    counts = {"total": 0, "done": 0, "in_progress": 0, "unable": 0, "none": 0}
+    for m in matches:
+        counts["total"] += 1
+        counts[_ACK_KEY[m.ack_status.value]] += 1
+    counts["done_rate"] = round(counts["done"] / counts["total"] * 100) if counts["total"] else 0
+    return counts
 
-    발송이력(Notification)의 ack 가 권위 소스 — 게시판 댓글 회신이 여기로 동기화된다.
-    """
+
+def _asset_progress_map(db: Session, advisory_ids: list[int]) -> dict[int, dict]:
+    """게시글별 자산 단위 조치 진행현황 — 목록용 일괄 조회(MATCHED 자산 기준)."""
     if not advisory_ids:
         return {}
     rows = db.scalars(
-        select(Notification).where(Notification.advisory_id.in_(advisory_ids))
+        select(Match).where(Match.advisory_id.in_(advisory_ids),
+                            Match.status == enums.MatchStatus.MATCHED)
     ).all()
-    out: dict[int, dict] = {}
-    for n in rows:
-        e = out.setdefault(n.advisory_id, {"total": 0, "done": 0, "in_progress": 0,
-                                           "unable": 0, "none": 0})
-        e["total"] += 1
-        e[_ACK_KEY[n.ack_status.value]] += 1
-    for e in out.values():
-        e["done_rate"] = round(e["done"] / e["total"] * 100) if e["total"] else 0
-    return out
+    grouped: dict[int, list] = {}
+    for m in rows:
+        grouped.setdefault(m.advisory_id, []).append(m)
+    return {aid: _asset_counts(ms) for aid, ms in grouped.items()}
 
 
-def _progress_detail(db: Session, advisory_id: int) -> dict:
-    """게시글 상세 진행현황 — 집계 + 부서별 상태/증빙(읽기용)."""
-    rows = db.scalars(
-        select(Notification).where(Notification.advisory_id == advisory_id)
-        .order_by(Notification.id)
-    ).all()
-    counts = {"total": len(rows), "done": 0, "in_progress": 0, "unable": 0, "none": 0}
-    depts = []
-    for n in rows:
-        counts[_ACK_KEY[n.ack_status.value]] += 1
-        depts.append({
-            "notification_id": n.id,
-            "department": n.department.name if n.department else None,
-            "ack_status": n.ack_status.value,
-            "ack_status_ko": enums.ACK_KO.get(n.ack_status, n.ack_status.value),
-            "ack_by": n.ack_by,
-            "evidence": n.ack_evidence_name,
-            "has_evidence": n.ack_evidence_path is not None,
-        })
-    counts["done_rate"] = round(counts["done"] / counts["total"] * 100) if counts["total"] else 0
-    counts["departments"] = depts
-    return counts
+def _asset_hit(m, ql: str) -> bool:
+    """자유검색어가 이 매칭의 자산(번호·담당자·부서명) 중 하나라도 일치하는가."""
+    a = m.asset
+    if a is None:
+        return False
+    if a.asset_no and ql in a.asset_no.lower():
+        return True
+    if a.owner_name and ql in a.owner_name.lower():
+        return True
+    if a.department is not None and ql in a.department.name.lower():
+        return True
+    return False
 
 
 @router.get("/advisories")
@@ -177,7 +170,7 @@ def board_list(
             .group_by(AdvisoryComment.advisory_id)
         ).all()
     )
-    prog = _progress_map(db, [a.id for a in advs])
+    prog = _asset_progress_map(db, [a.id for a in advs])
     items = []
     for a in advs:
         item = serializers.board_advisory_item(a, comment_count=counts.get(a.id, 0))
@@ -202,9 +195,22 @@ def board_file(advisory_id: int, db: Session = Depends(get_db)):
                         headers={"Content-Disposition": "inline"})
 
 
+def _public_comment(c) -> dict:
+    """공개 게시판용 댓글 — 증빙 첨부는 노출하지 않는다(관리자 페이지에서만 열람)."""
+    item = serializers.comment_item(c)
+    item["evidence"] = None
+    item["has_evidence"] = False
+    return item
+
+
 @router.get("/advisories/{advisory_id}")
-def board_detail(advisory_id: int, db: Session = Depends(get_db)):
-    """게시판 상세 — 권고문 요약 + 영향 CVE 요약 + 댓글 스레드."""
+def board_detail(advisory_id: int, q: str | None = None, db: Session = Depends(get_db)):
+    """게시판 상세 — 권고문 요약 + 영향 CVE + 자산별 조치 + 댓글 스레드.
+
+    q(선택): 게시판 검색어를 그대로 전달하면, 검색 대상(부서·담당자·자산)만 남기고
+    다른 부서/다른 사람의 자산·댓글·진행현황은 숨긴다(본인 관련 정보만 노출).
+    단, 검색어가 제목/문서번호에 걸린 '주제 검색'이면 전체를 그대로 보여준다.
+    """
     adv = _published(db, advisory_id)
     cves = [
         {
@@ -215,21 +221,47 @@ def board_detail(advisory_id: int, db: Session = Depends(get_db)):
         }
         for ac in adv.cves
     ]
-    matches = [serializers.match_item(m) for m in adv.matches
-               if m.status == enums.MatchStatus.MATCHED]
+    matched = [m for m in adv.matches if m.status == enums.MatchStatus.MATCHED]
+
+    ql = q.strip().lower() if q and q.strip() else None
+    title_hit = bool(ql and any(ql in (v or "").lower()
+                                for v in (adv.title, adv.doc_no, adv.source_org)))
+    scoped = False
+    if ql and not title_hit:
+        hits = [m for m in matched if _asset_hit(m, ql)]
+        if hits:                       # 인물/부서/자산 검색 → 본인 관련만 노출
+            matched = hits
+            scoped = True
+
+    comments = []
+    for c in adv.comments:
+        if scoped and not (
+            c.is_admin
+            or (c.author_name and ql in c.author_name.lower())
+            or (c.author_department_name and ql in c.author_department_name.lower())
+        ):
+            continue
+        comments.append(_public_comment(c))
+
+    advisory_item = serializers.board_advisory_item(adv, comment_count=len(comments))
+    if scoped:   # 상단 영향 요약도 검색 대상(본인 부서)만 반영 — 타부서 노출 차단.
+        advisory_item.update(serializers.impact_from_matches(matched))
+
     return {
-        "advisory": serializers.board_advisory_item(adv, comment_count=len(adv.comments)),
+        "advisory": advisory_item,
         "cves": cves,
-        "matches": matches,
-        "progress": _progress_detail(db, adv.id),
-        "comments": [serializers.comment_item(c) for c in adv.comments],
+        "matches": [serializers.match_item(m) for m in matched],
+        "progress": _asset_counts(matched),
+        "comments": comments,
+        "scoped": scoped,
+        "q": q,
     }
 
 
 @router.get("/advisories/{advisory_id}/comments")
 def board_comments(advisory_id: int, db: Session = Depends(get_db)):
     adv = _published(db, advisory_id)
-    return {"items": [serializers.comment_item(c) for c in adv.comments]}
+    return {"items": [_public_comment(c) for c in adv.comments]}
 
 
 @router.post("/advisories/{advisory_id}/comments", status_code=201)
@@ -280,6 +312,87 @@ def add_comment(advisory_id: int, body: CommentIn, request: Request, db: Session
     db.commit()
     db.refresh(comment)
     return {"comment": serializers.comment_item(comment), "ack_synced_notification": ack_synced}
+
+
+@router.post("/advisories/{advisory_id}/asset-ack")
+def asset_ack(advisory_id: int, body: AssetAckIn, request: Request, db: Session = Depends(get_db)):
+    """게시판 자산별 조치 회신(무인증) — 담당자가 본인 자산을 체크해 개별/일괄 처리.
+
+    안전장치: 선택 부서(department_id)와 다른 부서의 자산이 섞이면 409(DEPT_MISMATCH)로 거부
+    → 다른 부서 자산을 실수로 처리하는 것을 막는다. 부서 전체 자산이 DONE 이 되면 해당 부서
+    최신 발송이력(Notification) ack 도 DONE 으로 동기화(관리자 발송이력과 일치 유지).
+    """
+    adv = _published(db, advisory_id)
+
+    dept = None
+    dept_name = (body.department_name or "").strip() or None
+    if body.department_id is not None:
+        dept = db.get(Department, body.department_id)
+        if not dept:
+            raise HTTPException(404, "부서 없음")
+        dept_name = dept.name
+
+    rows = db.scalars(
+        select(Match).where(Match.id.in_(body.match_ids), Match.advisory_id == adv.id,
+                            Match.status == enums.MatchStatus.MATCHED)
+    ).all()
+    found = {m.id for m in rows}
+    missing = [i for i in body.match_ids if i not in found]
+    if missing:
+        raise HTTPException(404, f"대상 자산을 찾을 수 없습니다(match {missing}).")
+
+    # 부서 불일치 방지 — 본인 부서 자산만 처리 가능.
+    if dept is not None:
+        mismatch = sorted({m.asset.asset_no or str(m.id) for m in rows
+                           if m.asset.department_id != dept.id})
+        if mismatch:
+            raise HTTPException(409, detail={
+                "code": "DEPT_MISMATCH",
+                "message": (f"선택한 부서({dept_name})와 다른 부서의 자산이 포함되어 있습니다: "
+                            f"{', '.join(mismatch)}. 본인 부서 자산만 선택하세요."),
+            })
+
+    now = datetime.now(timezone.utc)
+    note = (body.note or "").strip() or None
+    for m in rows:
+        m.ack_status = body.ack_status
+        m.ack_by = body.author_name.strip()
+        m.ack_note = note
+        m.ack_at = now
+
+    # 발송이력 브리지 — 해당 부서 전체 자산이 DONE 이면 부서 발송 ack 도 DONE 동기화.
+    synced = None
+    if dept is not None:
+        dept_matches = db.scalars(
+            select(Match).join(Asset, Match.asset_id == Asset.id)
+            .where(Match.advisory_id == adv.id, Match.status == enums.MatchStatus.MATCHED,
+                   Asset.department_id == dept.id)
+        ).all()
+        if dept_matches and all(m.ack_status == enums.AckStatus.DONE for m in dept_matches):
+            n = db.scalar(
+                select(Notification)
+                .where(Notification.advisory_id == adv.id, Notification.department_id == dept.id)
+                .order_by(Notification.id.desc())
+            )
+            if n is not None:
+                n.ack_status = enums.AckStatus.DONE
+                n.status = enums.NotificationStatus.ACKED
+                n.ack_by = body.author_name.strip()
+                n.ack_updated_at = now
+                synced = n.id
+
+    record(db, action="BOARD_ASSET_ACK", actor_id=None, entity_type="advisory",
+           entity_id=adv.id, detail={"author": body.author_name, "dept": dept_name,
+                                     "ack": body.ack_status.value, "match_ids": sorted(found),
+                                     "ack_synced_notification": synced}, request=request)
+    db.commit()
+
+    allm = db.scalars(
+        select(Match).where(Match.advisory_id == adv.id,
+                            Match.status == enums.MatchStatus.MATCHED)
+    ).all()
+    return {"updated": len(rows), "ack_synced_notification": synced,
+            "progress": _asset_counts(allm)}
 
 
 @router.post("/comments/{comment_id}/evidence", status_code=201)
