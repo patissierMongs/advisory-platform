@@ -98,6 +98,64 @@ def test_unpublish_hides_but_keeps_comments(client, fixture_ids):
     assert cnt == 1
 
 
+def test_department_filter_and_exclude_done(client):
+    """부서별 필터 + 완료 제외(기본) 동작."""
+    from sqlalchemy import delete
+    with SessionLocal() as db:
+        a_pub = Advisory(doc_no="FLT-PUB", title="공개 권고문", status=enums.AdvisoryStatus.MATCHED)
+        a_done = Advisory(doc_no="FLT-DONE", title="완료 권고문", status=enums.AdvisoryStatus.COMPLETED)
+        dA = Department(name="필터부서A", is_active=True)
+        dB = Department(name="필터부서B", is_active=True)
+        dC = Department(name="필터부서C", is_active=True)
+        db.add_all([a_pub, a_done, dA, dB, dC])
+        db.commit()
+        ids = dict(pub=a_pub.id, done=a_done.id, A=dA.id, B=dB.id, C=dC.id)
+        # 둘 다 게시판 공개
+        for aid in (ids["pub"], ids["done"]):
+            db.get(Advisory, aid).board_published_at = __import__("datetime").datetime.now()
+        # pub: A=미회신, B=조치완료 / done: A=미회신
+        db.add_all([
+            Notification(advisory_id=ids["pub"], department_id=ids["A"], channels=[], asset_ids=[],
+                         status=enums.NotificationStatus.SENT, ack_status=enums.AckStatus.NONE),
+            Notification(advisory_id=ids["pub"], department_id=ids["B"], channels=[], asset_ids=[],
+                         status=enums.NotificationStatus.ACKED, ack_status=enums.AckStatus.DONE),
+            Notification(advisory_id=ids["done"], department_id=ids["A"], channels=[], asset_ids=[],
+                         status=enums.NotificationStatus.SENT, ack_status=enums.AckStatus.NONE),
+        ])
+        db.commit()
+
+    def board(**q):
+        from urllib.parse import urlencode
+        return {a["doc_no"]: a for a in client.get("/api/v1/board/advisories?"+urlencode(q)).json()["items"]}
+
+    try:
+        # 기본(부서 미지정, 완료 제외 ON): COMPLETED 권고문 제외
+        b = board(exclude_done=True)
+        assert "FLT-PUB" in b and "FLT-DONE" not in b
+        # 완료 제외 OFF: 둘 다 보임
+        b = board(exclude_done=False)
+        assert "FLT-PUB" in b and "FLT-DONE" in b
+
+        # 부서 A: 두 권고문 모두 관련. 완료 제외 ON이어도 A는 미회신이라 둘 다 남음
+        b = board(department_id=ids["A"], exclude_done=True)
+        assert "FLT-PUB" in b and "FLT-DONE" in b
+        assert b["FLT-PUB"]["dept_ack_status"] == "NONE"
+
+        # 부서 B: pub 만 관련, 그리고 B는 조치완료 → 완료 제외 ON이면 사라짐
+        assert board(department_id=ids["B"], exclude_done=True) == {}
+        b = board(department_id=ids["B"], exclude_done=False)
+        assert "FLT-PUB" in b and b["FLT-PUB"]["dept_ack_status"] == "DONE"
+
+        # 부서 C: 관련 권고문 없음
+        assert board(department_id=ids["C"], exclude_done=False) == {}
+    finally:
+        with SessionLocal() as db:
+            db.execute(delete(Notification).where(Notification.advisory_id.in_([ids["pub"], ids["done"]])))
+            db.execute(delete(Advisory).where(Advisory.id.in_([ids["pub"], ids["done"]])))
+            db.execute(delete(Department).where(Department.id.in_([ids["A"], ids["B"], ids["C"]])))
+            db.commit()
+
+
 def test_delete_comment(client, fixture_ids):
     aid, _ = fixture_ids
     client.post(f"/api/v1/advisories/{aid}/board")

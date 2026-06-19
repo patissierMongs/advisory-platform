@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from .. import enums, serializers
 from ..audit import record
 from ..db import get_db
-from ..models import Advisory, AdvisoryComment, Department, Notification
+from ..models import Advisory, AdvisoryComment, Asset, Department, Match, Notification
 from ..schemas import CommentIn
 
 router = APIRouter(prefix="/api/v1/board", tags=["board"])
@@ -39,22 +39,75 @@ def board_departments(db: Session = Depends(get_db)):
     return {"items": [{"id": d.id, "name": d.name} for d in rows]}
 
 
+def _dept_ack_map(db: Session, department_id: int) -> dict[int, "enums.AckStatus"]:
+    """부서별 (권고문 → 최신 발송 ack 상태) 맵. id 오름차순이라 마지막이 최신."""
+    out: dict[int, enums.AckStatus] = {}
+    for n in db.scalars(
+        select(Notification)
+        .where(Notification.department_id == department_id)
+        .order_by(Notification.id)
+    ).all():
+        out[n.advisory_id] = n.ack_status
+    return out
+
+
+def _relevant_advisory_ids(db: Session, department_id: int) -> set[int]:
+    """해당 부서가 대상인 권고문 = 발송 내역 OR 자산 매칭이 있는 권고문."""
+    notif = set(db.scalars(
+        select(Notification.advisory_id).where(Notification.department_id == department_id)
+    ).all())
+    matched = set(db.scalars(
+        select(Match.advisory_id)
+        .join(Asset, Match.asset_id == Asset.id)
+        .where(Asset.department_id == department_id, Match.status == enums.MatchStatus.MATCHED)
+    ).all())
+    return notif | matched
+
+
 @router.get("/advisories")
-def board_list(db: Session = Depends(get_db)):
-    """게시판 목록 — 공개된 권고문을 최근 게시순으로. 댓글 수 포함."""
+def board_list(
+    department_id: int | None = None,
+    exclude_done: bool = True,
+    db: Session = Depends(get_db),
+):
+    """게시판 목록 — 공개된 권고문을 최근 게시순으로. 댓글 수 포함.
+
+    필터(선택):
+      · department_id — 해당 부서 대상 권고문만(발송 OR 자산 매칭).
+      · exclude_done — 완료 제외(기본 True). 부서 지정 시 그 부서가 '조치완료'한 건 제외,
+        미지정 시 권고문 상태가 COMPLETED 인 건 제외.
+    """
     advs = db.scalars(
         select(Advisory)
         .where(Advisory.board_published_at.is_not(None))
         .order_by(Advisory.board_published_at.desc())
     ).all()
+
+    dept_ack: dict[int, enums.AckStatus] = {}
+    if department_id is not None:
+        relevant = _relevant_advisory_ids(db, department_id)
+        advs = [a for a in advs if a.id in relevant]
+        dept_ack = _dept_ack_map(db, department_id)
+        if exclude_done:
+            advs = [a for a in advs if dept_ack.get(a.id) != enums.AckStatus.DONE]
+    elif exclude_done:
+        advs = [a for a in advs if a.status != enums.AdvisoryStatus.COMPLETED]
+
     counts = dict(
         db.execute(
             select(AdvisoryComment.advisory_id, func.count(AdvisoryComment.id))
             .group_by(AdvisoryComment.advisory_id)
         ).all()
     )
-    return {"items": [serializers.board_advisory_item(a, comment_count=counts.get(a.id, 0))
-                      for a in advs]}
+    items = []
+    for a in advs:
+        item = serializers.board_advisory_item(a, comment_count=counts.get(a.id, 0))
+        if department_id is not None:
+            ack = dept_ack.get(a.id)
+            item["dept_ack_status"] = ack.value if ack else None
+            item["dept_ack_status_ko"] = enums.ACK_KO.get(ack) if ack else None
+        items.append(item)
+    return {"items": items, "department_id": department_id, "exclude_done": exclude_done}
 
 
 @router.get("/advisories/{advisory_id}")

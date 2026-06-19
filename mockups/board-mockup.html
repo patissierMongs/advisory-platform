@@ -54,6 +54,10 @@
   .ack-DONE{background:#e8f6ee;color:#2e7d52}.ack-IN_PROGRESS{background:#fcf6e3;color:#9a7d12}
   .ack-UNABLE{background:#fdecec;color:#c0392b}
   .back{font-size:13px;color:var(--brand);font-weight:600;cursor:pointer;display:inline-block;margin:18px 0 4px}
+  .filterbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .filterbar .ck{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#4a5568;cursor:pointer;white-space:nowrap}
+  .filterbar input[type=checkbox]{width:16px;height:16px;accent-color:var(--brand);cursor:pointer}
+  .btn-ghost{background:#fff;color:var(--sub);border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
   .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#15294a;color:#fff;
     font-size:13px;padding:10px 18px;border-radius:10px;box-shadow:0 6px 24px rgba(20,41,74,.25);opacity:0;
     transition:opacity .2s,transform .2s;pointer-events:none}
@@ -79,13 +83,15 @@ const CH_KO  = {NCST:"국정원 NCST",WEBMAIL:"웹메일",OFFICIAL_DOC:"공문"}
 const DEPTS = ["도로국","철도국","항공정책실","물류정책관","건설정책국","주택정책관",
   "교통물류실","정보통신담당관","대중교통과","자동차정책관","수자원정책국","국토정보정책관",
   "기획조정실","감사관실","운영지원과","항공안전정책관"].map((n,i)=>({id:i+1,name:n}));
+const FILTER = { deptName:"", excludeDone:true };  // 기본: 완료 제외 ON
 
 // ── 목 데이터 ─────────────────────────────────────────────
 const ADV = [
   {
     id:1, doc_no:"국정원-사이버-2026-0612", title:"Microsoft Windows LSA 원격코드실행 취약점 긴급 조치 권고",
     source_org:"국가정보원", receive_channel:"NCST", received_at:"2026-06-15", due_at:"2026-06-22",
-    d_day:3, sla_status:"IMMINENT", max_severity:"CRITICAL", max_severity_ko:"긴급",
+    d_day:3, sla_status:"IMMINENT", max_severity:"CRITICAL", max_severity_ko:"긴급", completed:false,
+    depts:[{name:"도로국",ack:"DONE"},{name:"철도국",ack:"IN_PROGRESS"},{name:"항공정책실",ack:"NONE"},{name:"정보통신담당관",ack:"NONE"}],
     cves:[
       {cve_id_text:"CVE-2026-21345", severity:"CRITICAL", product_name:"Microsoft Windows 11", lookup_status:"FOUND"},
       {cve_id_text:"CVE-2026-21360", severity:"HIGH", product_name:"Windows Server 2022", lookup_status:"FOUND"},
@@ -103,7 +109,8 @@ const ADV = [
   {
     id:2, doc_no:"국토부-정보보호-2026-0531", title:"Apache Log4j2 관련 추가 취약점 점검 및 패치 권고(공문)",
     source_org:"국토교통부", receive_channel:"OFFICIAL_DOC", received_at:"2026-06-10", due_at:"2026-06-30",
-    d_day:11, sla_status:"NORMAL", max_severity:"HIGH", max_severity_ko:"높음",
+    d_day:11, sla_status:"NORMAL", max_severity:"HIGH", max_severity_ko:"높음", completed:false,
+    depts:[{name:"물류정책관",ack:"UNABLE"},{name:"건설정책국",ack:"DONE"},{name:"정보통신담당관",ack:"NONE"}],
     cves:[
       {cve_id_text:"CVE-2026-44120", severity:"HIGH", product_name:"Apache Log4j2", lookup_status:"FOUND"},
       {cve_id_text:"CVE-2026-45088", severity:"MEDIUM", product_name:"한컴오피스", lookup_status:"NOT_FOUND"},
@@ -118,13 +125,27 @@ const ADV = [
   {
     id:3, doc_no:"국정원-사이버-2026-0588", title:"Google Chrome V8 엔진 임의코드실행 취약점 (웹메일 통보)",
     source_org:"국가정보원", receive_channel:"WEBMAIL", received_at:"2026-06-05", due_at:"2026-06-12",
-    d_day:-7, sla_status:"OVERDUE", max_severity:"HIGH", max_severity_ko:"높음",
+    d_day:-7, sla_status:"OVERDUE", max_severity:"HIGH", max_severity_ko:"높음", completed:false,
+    depts:[{name:"도로국",ack:"DONE"},{name:"철도국",ack:"DONE"},{name:"항공정책실",ack:"IN_PROGRESS"}],
     cves:[
       {cve_id_text:"CVE-2026-30012", severity:"HIGH", product_name:"Google Chrome", lookup_status:"FOUND"},
     ],
     comments:[
       {id:301, author_name:"김관제", department:"정보통신담당관", is_admin:true, ack_status:null,
        created_at:"2026-06-06T09:00", body:"전 부서 크롬 124 미만 → 124 이상으로 업데이트 바랍니다."},
+    ],
+  },
+  {
+    id:4, doc_no:"국정원-사이버-2026-0501", title:"Fortinet FortiOS 인증 우회 취약점 (조치 완료)",
+    source_org:"국가정보원", receive_channel:"NCST", received_at:"2026-05-20", due_at:"2026-05-30",
+    d_day:-20, sla_status:"DONE", max_severity:"HIGH", max_severity_ko:"높음", completed:true,
+    depts:[{name:"정보통신담당관",ack:"DONE"},{name:"기획조정실",ack:"DONE"}],
+    cves:[
+      {cve_id_text:"CVE-2026-19999", severity:"HIGH", product_name:"Fortinet FortiOS", lookup_status:"FOUND"},
+    ],
+    comments:[
+      {id:401, author_name:"최관제", department:"정보통신담당관", is_admin:true, ack_status:"DONE",
+       created_at:"2026-05-28T11:00", body:"전 대상 장비 펌웨어 업그레이드 완료. 조치 종결합니다."},
     ],
   },
 ];
@@ -146,20 +167,57 @@ function route(){
   window.scrollTo(0,0);
 }
 
+const ackBadge = (s)=> s&&s!=="NONE"?`<span class="ack ack-${s}">${ACK_KO[s]}</span>`:"";
+
+function filterBar(){
+  const opts = DEPTS.map(d=>`<option value="${esc(d.name)}">`).join("");
+  return `<div class="card filterbar">
+    <div style="flex:1;min-width:200px">
+      <input id="f_dept" list="fdeptlist" placeholder="부서로 필터 (비우면 전체)" value="${esc(FILTER.deptName)}"
+             onchange="onDeptFilter(this.value)">
+      <datalist id="fdeptlist">${opts}</datalist>
+    </div>
+    <label class="ck"><input type="checkbox" ${FILTER.excludeDone?"checked":""} onchange="onDoneFilter(this.checked)"> 완료 제외</label>
+    ${FILTER.deptName||!FILTER.excludeDone?`<button class="btn-ghost" onclick="resetFilter()">초기화</button>`:""}
+  </div>`;
+}
+function onDeptFilter(name){ const d=DEPTS.find(x=>x.name===(name||"").trim()); FILTER.deptName=d?d.name:""; renderList(); }
+function onDoneFilter(v){ FILTER.excludeDone=!!v; renderList(); }
+function resetFilter(){ FILTER.deptName=""; FILTER.excludeDone=true; renderList(); }
+
+function visibleList(){
+  let list = ADV.slice();
+  if(FILTER.deptName){
+    list = list.filter(a => a.depts.some(d=>d.name===FILTER.deptName));
+    if(FILTER.excludeDone)
+      list = list.filter(a => { const d=a.depts.find(x=>x.name===FILTER.deptName); return !d || d.ack!=="DONE"; });
+  } else if(FILTER.excludeDone){
+    list = list.filter(a => !a.completed);
+  }
+  return list;
+}
+
 function renderList(){
-  app.innerHTML = `<h2 class="section">게시된 보안권고문 · ${ADV.length}건</h2>` + ADV.map(a=>`
+  const list = visibleList();
+  const head = `<h2 class="section">게시된 보안권고문 · ${list.length}건${FILTER.deptName?` <span class="muted">· ${esc(FILTER.deptName)}</span>`:""}</h2>`;
+  const rows = list.length ? list.map(a=>{
+    const dack = FILTER.deptName ? (a.depts.find(x=>x.name===FILTER.deptName)||{}).ack : null;
+    return `
     <div class="card row" onclick="location.hash='#/a/${a.id}'">
       <div class="ttl">${esc(a.title)}</div>
       <div class="meta">
         ${sevBadge(a.max_severity,a.max_severity_ko)} ${slaBadge(a.sla_status)}
         <span class="chip">${dday(a.d_day)}</span>
+        ${FILTER.deptName?ackBadge(dack):""}
         <span>${esc(a.source_org)}</span>
         <span>· ${CH_KO[a.receive_channel]}</span>
         <span>· ${esc(a.doc_no)}</span>
         <span>· 기한 ${fmtDate(a.due_at)}</span>
         <span>· 💬 ${a.comments.length}</span>
       </div>
-    </div>`).join("");
+    </div>`;}).join("")
+    : `<div class="empty">조건에 맞는 권고문이 없습니다.</div>`;
+  app.innerHTML = head + filterBar() + rows;
 }
 
 function renderDetail(id){

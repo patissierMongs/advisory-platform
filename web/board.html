@@ -55,6 +55,9 @@
   .ack-DONE{background:#e8f6ee;color:#2e7d52}.ack-IN_PROGRESS{background:#fcf6e3;color:#9a7d12}
   .ack-UNABLE{background:#fdecec;color:#c0392b}
   .back{font-size:13px;color:var(--brand);font-weight:600;cursor:pointer;display:inline-block;margin:18px 0 4px}
+  .filterbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .filterbar .ck{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#4a5568;cursor:pointer;white-space:nowrap}
+  .filterbar input[type=checkbox]{width:16px;height:16px;accent-color:var(--brand);cursor:pointer}
 </style>
 </head>
 <body>
@@ -71,6 +74,12 @@
 const API = "/api/v1/board";
 const app = document.getElementById("app");
 let DEPTS = [];
+const FILTER = { deptId: null, deptName: "", excludeDone: true };  // 기본: 완료 제외 ON
+
+async function loadDepts(){
+  if(DEPTS.length) return;
+  try{ DEPTS = (await api("/departments")).items; }catch(e){}
+}
 
 const esc = s => (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
 const ACK_KO = {DONE:"조치완료",IN_PROGRESS:"진행중",UNABLE:"조치불가",NONE:"미회신"};
@@ -92,27 +101,59 @@ function route(){
   if(m) renderDetail(parseInt(m[1],10)); else renderList();
 }
 
+function filterBar(){
+  const opts = DEPTS.map(d=>`<option value="${esc(d.name)}">`).join("");
+  return `<div class="card filterbar">
+    <div style="flex:1;min-width:200px">
+      <input id="f_dept" list="fdeptlist" placeholder="부서로 필터 (비우면 전체)" value="${esc(FILTER.deptName)}"
+             onchange="onDeptFilter(this.value)">
+      <datalist id="fdeptlist">${opts}</datalist>
+    </div>
+    <label class="ck"><input type="checkbox" id="f_done" ${FILTER.excludeDone?"checked":""}
+      onchange="onDoneFilter(this.checked)"> 완료 제외</label>
+    ${FILTER.deptId||!FILTER.excludeDone?`<button class="btn-ghost" onclick="resetFilter()">초기화</button>`:""}
+  </div>`;
+}
+function ackBadge(s,ko){ return s?`<span class="ack ack-${s}">${esc(ko||s)}</span>`:""; }
+
+window.onDeptFilter = function(name){
+  const d = DEPTS.find(x=>x.name===(name||"").trim());
+  FILTER.deptName = d ? d.name : "";
+  FILTER.deptId = d ? d.id : null;
+  renderList();
+};
+window.onDoneFilter = function(v){ FILTER.excludeDone = !!v; renderList(); };
+window.resetFilter = function(){ FILTER.deptId=null; FILTER.deptName=""; FILTER.excludeDone=true; renderList(); };
+
 async function renderList(){
-  app.innerHTML = `<div class="empty">불러오는 중…</div>`;
+  await loadDepts();
+  app.innerHTML = `<h2 class="section">게시된 보안권고문</h2>${filterBar()}<div class="empty">불러오는 중…</div>`;
+  const qs = new URLSearchParams();
+  if(FILTER.deptId) qs.set("department_id", FILTER.deptId);
+  qs.set("exclude_done", FILTER.excludeDone);
   try{
-    const {items} = await api("/advisories");
-    if(!items.length){ app.innerHTML = `<div class="empty">게시된 보안권고문이 없습니다.</div>`; return; }
-    app.innerHTML = `<h2 class="section">게시된 보안권고문 · ${items.length}건</h2>` + items.map(a=>`
+    const {items} = await api("/advisories?"+qs.toString());
+    const head = `<h2 class="section">게시된 보안권고문 · ${items.length}건${FILTER.deptId?` <span class="muted">· ${esc(FILTER.deptName)}</span>`:""}</h2>`;
+    const body = items.length ? items.map(a=>`
       <div class="card row" onclick="location.hash='#/a/${a.id}'">
         <div class="ttl">${esc(a.title||a.doc_no||"제목 없음")}</div>
         <div class="meta">
           ${sevBadge(a.max_severity,a.max_severity_ko)}
           ${slaBadge(a.sla_status)}
           ${a.d_day!=null?`<span class="chip">${dday(a.d_day)}</span>`:""}
+          ${FILTER.deptId?ackBadge(a.dept_ack_status,a.dept_ack_status_ko):""}
           ${a.source_org?`<span>${esc(a.source_org)}</span>`:""}
           ${a.receive_channel?`<span>· ${CH_KO[a.receive_channel]||a.receive_channel}</span>`:""}
           ${a.doc_no?`<span>· ${esc(a.doc_no)}</span>`:""}
           <span>· 기한 ${fmtDate(a.due_at)}</span>
           <span>· 💬 ${a.comment_count}</span>
         </div>
-      </div>`).join("");
-  }catch(e){ app.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+      </div>`).join("")
+      : `<div class="empty">${FILTER.deptId||FILTER.excludeDone?"조건에 맞는 권고문이 없습니다.":"게시된 보안권고문이 없습니다."}</div>`;
+    app.innerHTML = head + filterBar() + body;
+  }catch(e){ app.innerHTML = head_err(e); }
 }
+function head_err(e){ return `<h2 class="section">게시된 보안권고문</h2>${filterBar()}<div class="err">${esc(e.message)}</div>`; }
 
 async function renderDetail(id){
   app.innerHTML = `<div class="empty">불러오는 중…</div>`;
