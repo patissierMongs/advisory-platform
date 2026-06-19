@@ -88,6 +88,54 @@ def _matches_query(a: Advisory, ql: str) -> bool:
     return False
 
 
+_ACK_KEY = {"NONE": "none", "IN_PROGRESS": "in_progress", "DONE": "done", "UNABLE": "unable"}
+
+
+def _progress_map(db: Session, advisory_ids: list[int]) -> dict[int, dict]:
+    """게시글별 조치 진행현황(발송 대상 부서 ack 집계). 목록용 일괄 조회.
+
+    발송이력(Notification)의 ack 가 권위 소스 — 게시판 댓글 회신이 여기로 동기화된다.
+    """
+    if not advisory_ids:
+        return {}
+    rows = db.scalars(
+        select(Notification).where(Notification.advisory_id.in_(advisory_ids))
+    ).all()
+    out: dict[int, dict] = {}
+    for n in rows:
+        e = out.setdefault(n.advisory_id, {"total": 0, "done": 0, "in_progress": 0,
+                                           "unable": 0, "none": 0})
+        e["total"] += 1
+        e[_ACK_KEY[n.ack_status.value]] += 1
+    for e in out.values():
+        e["done_rate"] = round(e["done"] / e["total"] * 100) if e["total"] else 0
+    return out
+
+
+def _progress_detail(db: Session, advisory_id: int) -> dict:
+    """게시글 상세 진행현황 — 집계 + 부서별 상태/증빙(읽기용)."""
+    rows = db.scalars(
+        select(Notification).where(Notification.advisory_id == advisory_id)
+        .order_by(Notification.id)
+    ).all()
+    counts = {"total": len(rows), "done": 0, "in_progress": 0, "unable": 0, "none": 0}
+    depts = []
+    for n in rows:
+        counts[_ACK_KEY[n.ack_status.value]] += 1
+        depts.append({
+            "notification_id": n.id,
+            "department": n.department.name if n.department else None,
+            "ack_status": n.ack_status.value,
+            "ack_status_ko": enums.ACK_KO.get(n.ack_status, n.ack_status.value),
+            "ack_by": n.ack_by,
+            "evidence": n.ack_evidence_name,
+            "has_evidence": n.ack_evidence_path is not None,
+        })
+    counts["done_rate"] = round(counts["done"] / counts["total"] * 100) if counts["total"] else 0
+    counts["departments"] = depts
+    return counts
+
+
 @router.get("/advisories")
 def board_list(
     q: str | None = None,
@@ -129,9 +177,11 @@ def board_list(
             .group_by(AdvisoryComment.advisory_id)
         ).all()
     )
+    prog = _progress_map(db, [a.id for a in advs])
     items = []
     for a in advs:
         item = serializers.board_advisory_item(a, comment_count=counts.get(a.id, 0))
+        item["progress"] = prog.get(a.id)
         if department_id is not None:
             ack = dept_ack.get(a.id)
             item["dept_ack_status"] = ack.value if ack else None
@@ -171,6 +221,7 @@ def board_detail(advisory_id: int, db: Session = Depends(get_db)):
         "advisory": serializers.board_advisory_item(adv, comment_count=len(adv.comments)),
         "cves": cves,
         "matches": matches,
+        "progress": _progress_detail(db, adv.id),
         "comments": [serializers.comment_item(c) for c in adv.comments],
     }
 

@@ -81,3 +81,27 @@ def test_comment_evidence_syncs_to_notification(client, hist_ids):
     d = next(a for a in items if a["id"] == aid)["departments"][0]
     assert d["has_evidence"] is True and d["evidence"] == "patch.png"
     assert d["ack_status"] == "DONE"
+
+
+def test_board_shows_progress_and_comment_evidence(client, hist_ids):
+    aid, did, nid = hist_ids
+    client.post(f"/api/v1/advisories/{aid}/board")
+
+    # 게시판 목록에 진행현황(발송 대상 부서 ack 집계) 노출.
+    row = next(a for a in client.get("/api/v1/board/advisories?exclude_done=false").json()["items"]
+               if a["id"] == aid)
+    assert row["progress"]["total"] == 1 and row["progress"]["done"] == 0
+
+    # 댓글 + 증빙 → 상세 progress 가 완료로, 부서별 증빙 표시.
+    cid = client.post(f"/api/v1/board/advisories/{aid}/comments",
+                      json={"author_name": "박담당", "body": "조치했습니다",
+                            "department_id": did, "ack_status": "DONE"}).json()["comment"]["id"]
+    client.post(f"/api/v1/board/comments/{cid}/evidence",
+                files={"file": ("ev.png", b"x", "image/png")})
+
+    detail = client.get(f"/api/v1/board/advisories/{aid}").json()
+    assert detail["progress"]["done"] == 1 and detail["progress"]["done_rate"] == 100
+    dep = detail["progress"]["departments"][0]
+    assert dep["ack_status"] == "DONE" and dep["has_evidence"] is True
+    # 댓글에도 증빙 표식.
+    assert any(c["id"] == cid and c["has_evidence"] for c in detail["comments"])

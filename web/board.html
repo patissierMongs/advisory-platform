@@ -54,6 +54,18 @@
   .ack{font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px}
   .ack-DONE{background:#e8f6ee;color:#2e7d52}.ack-IN_PROGRESS{background:#fcf6e3;color:#9a7d12}
   .ack-UNABLE{background:#fdecec;color:#c0392b}
+  .pbar{height:7px;border-radius:99px;background:#edf0f5;overflow:hidden;display:flex;margin-top:8px}
+  .pbar i{height:100%}
+  .p-DONE{background:#2e9e5b}.p-IN_PROGRESS{background:#e0a82e}.p-UNABLE{background:#c0392b}.p-NONE{background:#cfd6e0}
+  .prog-leg{font-size:11.5px;color:var(--sub);display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
+  .evlink{font-size:11.5px;color:var(--brand);background:#eef2fb;padding:2px 8px;border-radius:6px;display:inline-block;margin-top:5px}
+  .evlink:hover{background:#dfe8fb}
+  .filebtn{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--sub);border:1px dashed #c3cee0;
+    padding:9px 12px;border-radius:8px;cursor:pointer;background:#fcfdff}
+  .filebtn:hover{border-color:var(--brand);color:var(--brand)}
+  table.prog{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.prog th{text-align:left;color:var(--sub);font-weight:700;font-size:11.5px;padding:6px 8px;border-bottom:1px solid var(--line)}
+  table.prog td{padding:7px 8px;border-bottom:1px solid var(--line)}
   .back{font-size:13px;color:var(--brand);font-weight:600;cursor:pointer;display:inline-block;margin:18px 0 4px}
   .filterbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
   .filterbar .ck{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#4a5568;cursor:pointer;white-space:nowrap}
@@ -139,6 +151,18 @@ function impactLine(a){
   if(!a.affected_dept_count) return `<div class="impact">영향 자산 분석 전 <span class="muted">(관리자 매칭 대기)</span></div>`;
   return `<div class="impact"><b style="color:#4a5568">영향 ${a.affected_dept_count}개 부서 · 자산 ${a.affected_asset_count}</b> ${deptChips(a)} ${productSummary(a)}</div>`;
 }
+function progBar(p){
+  if(!p||!p.total) return "";
+  const seg=(s,n)=> n?`<i class="p-${s}" style="width:${n/p.total*100}%"></i>`:"";
+  return `<div class="pbar">${seg("DONE",p.done)}${seg("IN_PROGRESS",p.in_progress)}${seg("UNABLE",p.unable)}${seg("NONE",p.none)}</div>`;
+}
+function progLine(p){
+  if(!p||!p.total) return `<div class="impact muted">조치 진행현황: 담당 부서 발송 전</div>`;
+  return `<div class="impact"><b style="color:#4a5568">조치 완료 ${p.done}/${p.total} 부서 (${p.done_rate}%)</b>
+    ${p.in_progress?`<span class="chip">진행중 ${p.in_progress}</span>`:""}
+    ${p.unable?`<span class="chip">불가 ${p.unable}</span>`:""}
+    ${p.none?`<span class="chip">미회신 ${p.none}</span>`:""}</div>${progBar(p)}`;
+}
 
 window.onSearch = function(v){ FILTER.q = v; clearTimeout(_searchT); _searchT = setTimeout(loadResults, 220); };
 window.onDoneFilter = function(v){ FILTER.excludeDone = !!v; loadResults(); };
@@ -157,6 +181,7 @@ function rowHtml(a){
       <span>· 💬 ${a.comment_count}</span>
     </div>
     ${impactLine(a)}
+    ${progLine(a.progress)}
   </div>`;
 }
 
@@ -224,7 +249,23 @@ async function renderDetail(id){
         ${c.ack_status?`<span class="ack ack-${c.ack_status}">${ACK_KO[c.ack_status]||c.ack_status}</span>`:""}
         <span class="when"> · ${fmtDate(c.created_at)} ${esc((c.created_at||"").slice(11,16))}</span>
         <div class="body">${esc(c.body)}</div>
+        ${c.has_evidence?`<a class="evlink" href="${API}/comments/${c.id}/evidence" target="_blank" rel="noopener">📎 ${esc(c.evidence||"증빙 파일")}</a>`:""}
       </div>`).join("") : `<div class="muted" style="font-size:12.5px;padding:8px 0">아직 댓글이 없습니다. 첫 회신을 남겨주세요.</div>`;
+
+    // 조치 진행 현황(발송 대상 부서 ack 집계 + 부서별 상태/증빙).
+    const pg = d.progress || {total:0};
+    const progSection = pg.total ? `
+      ${progLine(pg)}
+      <table class="prog" style="margin-top:12px">
+        <tr><th>부서</th><th>상태</th><th>회신자</th><th>증빙</th></tr>
+        ${(pg.departments||[]).map(x=>`<tr>
+          <td><b>${esc(x.department||"-")}</b></td>
+          <td><span class="ack ack-${x.ack_status}" style="margin:0">${ACK_KO[x.ack_status]||x.ack_status}</span></td>
+          <td class="muted">${esc(x.ack_by||"-")}</td>
+          <td>${x.has_evidence?`<a class="evlink" href="/api/v1/notifications/${x.notification_id}/evidence" target="_blank" rel="noopener">📎 ${esc(x.evidence||"증빙")}</a>`:`<span class="muted">없음</span>`}</td>
+        </tr>`).join("")}
+      </table>`
+      : `<div class="muted" style="font-size:12.5px">아직 담당 부서로 발송되지 않았습니다(관리자 발송 대기).</div>`;
 
     const deptOpts = DEPTS.map(x=>`<option value="${esc(x.name)}">`).join("");
 
@@ -250,6 +291,9 @@ async function renderDetail(id){
         </div>
         <div id="pdfbox"></div>
       </div>
+
+      <h2 class="section">조치 진행 현황</h2>
+      <div class="card">${progSection}</div>
 
       <h2 class="section">영향 부서 · 자산 · 담당자</h2>
       <div class="card">${assetsSection}</div>
@@ -280,8 +324,12 @@ async function renderDetail(id){
               <option value="DONE">조치완료</option>
               <option value="UNABLE">조치불가</option>
             </select></div>
-          <div style="text-align:right"><button class="btn" id="c_submit" onclick="submitComment(${id})">댓글 등록</button></div>
+          <div><label class="f">증빙 파일 (선택 — 패치 결과 캡처 등)</label>
+            <label class="filebtn"><span id="c_fname">📎 파일 선택</span>
+              <input id="c_file" type="file" style="display:none" onchange="onFilePick(this)"></label>
+          </div>
         </div>
+        <div style="text-align:right;margin-top:12px"><button class="btn" id="c_submit" onclick="submitComment(${id})">댓글 등록</button></div>
       </div>`;
   }catch(e){ app.innerHTML = `<div class="back" onclick="location.hash='#/'">← 목록</div><div class="err">${esc(e.message)}</div>`; }
 }
@@ -299,12 +347,24 @@ async function submitComment(id){
   if(ack && !matched){ errEl.innerHTML = `<div class="err">조치상태를 첨부하려면 목록의 부서를 선택해야 회신으로 반영됩니다.</div>`; return; }
   const payload = { author_name:name, body, ack_status:ack||null };
   if(matched) payload.department_id = matched.id; else if(deptName) payload.department_name = deptName;
+  const fileInput = document.getElementById("c_file");
+  const file = fileInput && fileInput.files && fileInput.files[0];
   const btn = document.getElementById("c_submit"); btn.disabled = true; btn.textContent = "등록 중…";
   try{
-    await api("/advisories/"+id+"/comments", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const res = await api("/advisories/"+id+"/comments", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    if(file){
+      btn.textContent = "증빙 업로드 중…";
+      const fd = new FormData(); fd.append("file", file);
+      await api("/comments/"+res.comment.id+"/evidence", {method:"POST", body:fd});
+    }
     renderDetail(id);
   }catch(e){ errEl.innerHTML = `<div class="err">${esc(e.message)}</div>`; btn.disabled=false; btn.textContent="댓글 등록"; }
 }
+window.onFilePick = function(inp){
+  const f = inp.files && inp.files[0];
+  const lbl = document.getElementById("c_fname");
+  if(lbl) lbl.textContent = f ? "📎 "+f.name : "📎 파일 선택";
+};
 
 window.togglePdf = function(id){
   const box = document.getElementById("pdfbox");
