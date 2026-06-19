@@ -227,6 +227,13 @@ class Match(TimestampMixin, Base):
     )
     excluded_by: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"))
     excluded_reason: Mapped[str | None] = mapped_column(String(200))
+    # ── 자산별 조치 회신(게시판에서 담당자가 자산 단위로 체크·처리) ──
+    ack_status: Mapped[enums.AckStatus] = mapped_column(
+        _enum(enums.AckStatus), default=enums.AckStatus.NONE, nullable=False
+    )
+    ack_by: Mapped[str | None] = mapped_column(String(80))        # 처리한 담당자명
+    ack_note: Mapped[str | None] = mapped_column(Text)            # 회신 메모(불가 사유 등)
+    ack_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     advisory_cve: Mapped[AdvisoryCve] = relationship()
     asset: Mapped[Asset] = relationship()

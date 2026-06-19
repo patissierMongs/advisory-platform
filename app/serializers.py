@@ -89,10 +89,15 @@ def _max_severity(a: Advisory) -> str | None:
 
 def _impact(a: Advisory) -> dict:
     """권고문의 영향 집계 — 매칭(MATCHED)된 자산 기준 부서·담당자·제품."""
+    return impact_from_matches(a.matches)
+
+
+def impact_from_matches(matches) -> dict:
+    """주어진 매칭 리스트로 영향 집계(부서·담당자·제품). 게시판 필터 스코핑 시 재사용."""
     depts: dict[int, dict] = {}
     products: dict[str, int] = {}
     asset_total = 0
-    for m in a.matches:
+    for m in matches:
         if m.status != enums.MatchStatus.MATCHED:
             continue
         asset = m.asset
@@ -220,6 +225,11 @@ def match_item(m: Match) -> dict:
         "candidate": bool(m.match_reason and m.match_reason.get("candidate")),
         "suggested_exclude": bool(m.match_reason and m.match_reason.get("suggested_exclude")),
         "excluded_reason": m.excluded_reason,
+        # 자산별 조치 회신(게시판 담당자 처리). 미처리는 NONE.
+        "ack_status": m.ack_status.value if m.ack_status else "NONE",
+        "ack_status_ko": enums.ACK_KO.get(m.ack_status, "미회신") if m.ack_status else "미회신",
+        "ack_by": m.ack_by,
+        "ack_at": _d(m.ack_at),
     }
 
 
