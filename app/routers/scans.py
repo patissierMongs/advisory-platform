@@ -17,7 +17,7 @@ from .. import serializers
 from ..audit import record
 from ..core import scan_import
 from ..db import get_db
-from ..models import ScanPort, ScanRun
+from ..models import Asset, ScanPort, ScanRun
 
 router = APIRouter(prefix="/api/v1/scans", tags=["scans"])
 
@@ -111,12 +111,35 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
         select(ScanPort).where(ScanPort.scan_run_id == run_id)
         .order_by(ScanPort.host, ScanPort.proto, ScanPort.port)
     ).all()
+    # 스캔 호스트(IP) → 자산/담당자/부서 매핑 — '누구한테 조치 요청할지' 연결(핵심 목표).
+    amap = _asset_map(db, {p.host for p in ports})
+    items = []
+    for p in ports:
+        d = serializers.scan_port_item(p)
+        a = amap.get(p.host)
+        d["asset_no"] = a["asset_no"] if a else None
+        d["owner_name"] = a["owner_name"] if a else None
+        d["department"] = a["department"] if a else None
+        items.append(d)
     prev = _prev_run(db, run)
     return {
         "run": serializers.scan_run_item(run),
-        "ports": [serializers.scan_port_item(p) for p in ports],
+        "ports": items,
         "prev_run_id": prev.id if prev else None,
+        "mapped_hosts": len(amap),
     }
+
+
+def _asset_map(db: Session, hosts: set[str]) -> dict[str, dict]:
+    """호스트 IP → 자산 요약(자산번호·담당자·부서). 자산관리의 ip 와 매칭."""
+    hosts = {h for h in hosts if h}
+    if not hosts:
+        return {}
+    out: dict[str, dict] = {}
+    for a in db.scalars(select(Asset).where(Asset.ip.in_(hosts))).all():
+        out.setdefault(a.ip, {"asset_no": a.asset_no, "owner_name": a.owner_name,
+                              "department": a.department.name if a.department else None})
+    return out
 
 
 @router.get("/{run_id}/diff")

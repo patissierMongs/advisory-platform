@@ -206,7 +206,7 @@ async function renderDetail(id){
         </div>
         <div style="overflow:auto">
           <table id="ptbl"><thead><tr>
-            <th>호스트</th><th>포트</th><th>서비스</th><th>제품 · 버전</th><th>식별</th><th>근거 / 배너</th><th>비고</th>
+            <th>호스트</th><th>담당 · 자산</th><th>포트</th><th>서비스</th><th>제품 · 버전</th><th>식별</th><th>근거 / 배너</th><th>비고</th>
           </tr></thead><tbody></tbody></table>
         </div>
       </div>`;
@@ -220,9 +220,10 @@ function drawPorts(){
   let rows=window.__ports||[];
   if(FILT.onlyAction)rows=rows.filter(p=>p.identified!=="Y");
   if(q)rows=rows.filter(p=>[p.host,p.hostname,p.service,p.product,p.version].some(v=>(v||"").toLowerCase().includes(q)));
-  if(!rows.length){tb.innerHTML=`<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">해당 포트가 없습니다.</td></tr>`;return;}
+  if(!rows.length){tb.innerHTML=`<tr><td colspan="8" class="muted" style="text-align:center;padding:20px">해당 포트가 없습니다.</td></tr>`;return;}
   tb.innerHTML=rows.map(p=>`<tr class="${p.identified!=="Y"?"hl":""}">
     <td class="mono">${esc(p.host)}${p.hostname?`<div class="muted" style="font-size:11px">${esc(p.hostname)}</div>`:""}</td>
+    <td>${p.owner_name||p.asset_no?`${esc(p.owner_name||"-")}${p.department?`<div class="muted" style="font-size:11px">${esc(p.department)}</div>`:""}${p.asset_no?`<div class="muted mono" style="font-size:10.5px">${esc(p.asset_no)}</div>`:""}`:'<span class="muted" style="font-size:11px">미매핑</span>'}</td>
     <td class="mono">${p.port}/${p.proto}</td>
     <td>${esc(p.service||"-")}</td>
     <td>${esc([p.product,p.version].filter(Boolean).join(" "))||'<span class="muted">-</span>'}</td>

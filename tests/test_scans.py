@@ -95,6 +95,38 @@ def test_diff_tracks_new_and_closed(client):
     assert [p["port"] for p in diff["closed"]] == [4444]
 
 
+def test_scan_maps_to_asset_owner(client):
+    """스캔 호스트(IP)가 자산관리의 ip 와 매칭되면 담당자/부서가 붙는다(조치 요청 연결)."""
+    from sqlalchemy import delete
+
+    from app import enums
+    from app.db import SessionLocal
+    from app.models import Asset, Department
+    with SessionLocal() as db:
+        dept = Department(name="스캔자산부서", is_active=True)
+        db.add(dept)
+        db.commit()
+        did = dept.id
+        a = Asset(asset_no="SCAN-A1", department_id=did, product_key="x", product_raw="X",
+                  ip="10.9.9.9", owner_name="김자산", status=enums.AssetStatus.NORMAL)
+        db.add(a)
+        db.commit()
+        aid = a.id
+    try:
+        z = _zip({"2.xml": _ports("10.9.9.9", [22]),
+                  "3/h.xml": _ident("10.9.9.9", {22: ("ssh", "OpenSSH", "8.2")})})
+        rid = _import(client, z, "m", "mt").json()["run"]["id"]
+        d = client.get(f"/api/v1/scans/{rid}").json()
+        p = d["ports"][0]
+        assert p["owner_name"] == "김자산" and p["department"] == "스캔자산부서"
+        assert p["asset_no"] == "SCAN-A1" and d["mapped_hosts"] == 1
+    finally:
+        with SessionLocal() as db:
+            db.execute(delete(Asset).where(Asset.id == aid))
+            db.execute(delete(Department).where(Department.id == did))
+            db.commit()
+
+
 def test_identification_quality(client):
     """tunnel=ssl→https, method=table(포트추측)은 식별 안 함, probed 서비스명만은 P."""
     xml = (f'{NS}<nmaprun><host><status state="up"/><address addr="10.9.9.5" addrtype="ipv4"/><ports>'
