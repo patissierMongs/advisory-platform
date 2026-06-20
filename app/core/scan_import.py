@@ -90,7 +90,7 @@ def parse_scan(xml_blobs: list[bytes],
                     rec = {"host": ip, "proto": proto, "port": portid,
                            "state": pstate.get("state"), "reason": pstate.get("reason"),
                            "service": None, "product": None, "version": None, "extra": None,
-                           "_scripts": {}}
+                           "tunnel": None, "method": None, "_scripts": {}}
                     recs[key] = rec
                 elif rec["state"] != "open" and pstate.get("state") == "open":
                     rec["state"] = "open"            # 'open' 이 'open|filtered' 보다 확실
@@ -98,10 +98,14 @@ def parse_scan(xml_blobs: list[bytes],
                 svc = p.find("service")
                 if svc is not None:
                     for field, attr in (("service", "name"), ("product", "product"),
-                                        ("version", "version"), ("extra", "extrainfo")):
+                                        ("version", "version"), ("extra", "extrainfo"),
+                                        ("tunnel", "tunnel")):
                         v = svc.get(attr)
                         if v and not rec[field]:
                             rec[field] = v
+                    # method: 'probed'(실측 -sV) 가 'table'(포트번호 추측) 보다 우선.
+                    if svc.get("method") == "probed" or not rec["method"]:
+                        rec["method"] = svc.get("method")
                 for sc in p.findall("script"):
                     sid, out = sc.get("id"), sc.get("output")
                     if sid and out:
@@ -113,11 +117,21 @@ def parse_scan(xml_blobs: list[bytes],
         b = banners.get((rec["host"], rec["proto"], rec["port"]))
         rec["banner"] = (" ".join(b.split())[:300]) if b else None
         rec["hostname"] = hostnames.get(rec["host"])
-        if rec["product"] or rec["version"] or rec["evidence"]:
+        # TLS 터널 보정 — name=http + tunnel=ssl 은 실제 https (nmap 표기 습관).
+        if rec["tunnel"] == "ssl" and rec["service"] == "http":
+            rec["service"] = "https"
+        probed = rec.pop("method") == "probed"
+        rec.pop("tunnel", None)
+        named = rec["service"] and rec["service"] not in ("unknown", "tcpwrapped")
+        if rec["product"] or rec["version"]:
+            # 실제 제품/버전 확보 = 프로그램 식별 완료.
             rec["identified"], rec["note"] = "Y", None
-        elif rec["banner"]:
-            rec["identified"], rec["note"] = "P", "배너 확보 — 판독 필요"
+        elif rec["banner"] or rec["evidence"] or (probed and named):
+            # 프로토콜/근거는 있으나 프로그램 미확정 → 사람 판독 필요.
+            rec["identified"] = "P"
+            rec["note"] = "배너 확보 — 판독 필요" if rec["banner"] else "서비스 추정 — 프로그램 미확정"
         else:
+            # 아무 근거 없음(또는 포트번호 추측만) → 정체불명.
             rec["identified"], rec["note"] = "N", "정체불명 — 벤더 확인 필요"
         records.append(rec)
 

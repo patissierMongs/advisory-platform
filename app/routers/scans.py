@@ -21,6 +21,11 @@ from ..models import ScanPort, ScanRun
 
 router = APIRouter(prefix="/api/v1/scans", tags=["scans"])
 
+# 업로드 가드(폐쇄망 내부용이지만 zip-bomb·메모리 폭주 방지).
+_MAX_ZIP_BYTES = 100 * 1024 * 1024        # 압축 파일 자체 100MB
+_MAX_UNCOMPRESSED = 500 * 1024 * 1024     # 압축 해제 총량 500MB
+_MAX_MEMBERS = 5000                        # 멤버 파일 수
+
 
 @router.post("/import", status_code=201)
 async def import_scan(request: Request, file: UploadFile = File(...),
@@ -28,10 +33,19 @@ async def import_scan(request: Request, file: UploadFile = File(...),
                       db: Session = Depends(get_db)):
     """회차 폴더 zip 업로드 → nmap XML 병합 → ScanRun + ScanPort 저장."""
     data = await file.read()
+    if len(data) > _MAX_ZIP_BYTES:
+        raise HTTPException(413, f"zip 이 너무 큽니다(최대 {_MAX_ZIP_BYTES // (1024*1024)}MB).")
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile:
         raise HTTPException(400, "zip 파일이 아닙니다(회차 폴더를 zip 으로 업로드).")
+
+    # zip-bomb 방어: 멤버 수 + 압축 해제 총량 상한.
+    infos = zf.infolist()
+    if len(infos) > _MAX_MEMBERS:
+        raise HTTPException(400, "zip 안 파일이 너무 많습니다(비정상 압축).")
+    if sum(i.file_size for i in infos) > _MAX_UNCOMPRESSED:
+        raise HTTPException(400, "압축 해제 용량이 과도합니다(zip-bomb 방지).")
 
     xml_blobs: list[bytes] = []
     banners: dict[tuple[str, str, int], str] = {}

@@ -95,6 +95,24 @@ def test_diff_tracks_new_and_closed(client):
     assert [p["port"] for p in diff["closed"]] == [4444]
 
 
+def test_identification_quality(client):
+    """tunnel=ssl→https, method=table(포트추측)은 식별 안 함, probed 서비스명만은 P."""
+    xml = (f'{NS}<nmaprun><host><status state="up"/><address addr="10.9.9.5" addrtype="ipv4"/><ports>'
+           '<port protocol="tcp" portid="443"><state state="open" reason="syn-ack"/>'
+           '<service name="http" tunnel="ssl" product="nginx" method="probed" conf="10"/></port>'
+           '<port protocol="tcp" portid="8080"><state state="open" reason="syn-ack"/>'
+           '<service name="http-proxy" method="table" conf="3"/></port>'
+           '<port protocol="tcp" portid="7000"><state state="open" reason="syn-ack"/>'
+           '<service name="redis" method="probed" conf="10"/></port>'
+           '</ports></host></nmaprun>')
+    z = _zip({"2_ports.xml": _ports("10.9.9.5", [443, 8080, 7000]), "3_ident/h.xml": xml})
+    rid = _import(client, z, "q", "qt").json()["run"]["id"]
+    bp = {p["port"]: p for p in client.get(f"/api/v1/scans/{rid}").json()["ports"]}
+    assert bp[443]["service"] == "https" and bp[443]["identified"] == "Y"
+    assert bp[8080]["identified"] == "N"          # 포트 추측은 식별 아님
+    assert bp[7000]["identified"] == "P"          # 프로토콜만 알고 프로그램 미확정
+
+
 def test_import_rejects_non_zip_and_empty(client):
     assert client.post("/api/v1/scans/import",
                        files={"file": ("x.zip", b"not a zip", "application/zip")},

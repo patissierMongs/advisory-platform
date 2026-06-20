@@ -120,6 +120,50 @@ window.doUpload=async function(){
   catch(e){err.innerHTML=`<div class="err">${esc(e.message)}</div>`;btn.disabled=false;btn.textContent="가져오기";}
 };
 
+// ── 공격표면 히트맵 (호스트 × 서비스 카테고리), 클라이언트 계산 ──
+const HEAT_CATS=[["web","웹"],["remote","원격"],["db","DB"],["file","파일"],["dir","디렉터리"],["mail","메일"],["infra","인프라"],["other","기타"]];
+function catOf(port,svc){
+  svc=(svc||"").toLowerCase(); const has=a=>a.indexOf(port)>=0;
+  if(/https?|http-|proxy/.test(svc)||has([80,81,443,591,2082,2087,2095,3000,5000,7001,8000,8008,8080,8081,8088,8443,8888,9000,9090,9443]))return "web";
+  if(/ssh|telnet|rdp|vnc|winrm|ms-wbt/.test(svc)||has([22,23,3389,5900,5901,5902,5903,5985,5986]))return "remote";
+  if(/mysql|maria|mssql|ms-sql|postgres|oracle|mongo|redis|elastic|memcache/.test(svc)||has([1433,1434,3306,5432,1521,27017,6379,9200,5984,11211]))return "db";
+  if(/ftp|smb|microsoft-ds|netbios|nfs|rpcbind|rpc/.test(svc)||has([21,20,139,445,2049,111]))return "file";
+  if(/ldap|kerberos/.test(svc)||has([389,636,88,464,3268,3269]))return "dir";
+  if(/smtp|pop3|imap/.test(svc)||has([25,465,587,110,995,143,993]))return "mail";
+  if(/snmp|ntp|ipmi|syslog|tftp|isakmp|ssdp|mdns|llmnr/.test(svc)||has([161,162,623,123,514,69,500,4500,1900,5353,5355]))return "infra";
+  return "other";
+}
+function buildHeat(ports){
+  const hosts={};
+  ports.forEach(p=>{
+    const c=catOf(p.port,p.service);
+    const h=hosts[p.host]||(hosts[p.host]={host:p.host,hostname:p.hostname,cats:{},total:0,unid:0});
+    const cell=h.cats[c]||(h.cats[c]={n:0,u:0});
+    cell.n++; h.total++;
+    if(p.identified!=="Y"){cell.u++; h.unid++;}
+  });
+  return Object.values(hosts).sort((a,b)=>b.unid-a.unid||b.total-a.total);
+}
+function cellStyle(cell){
+  if(!cell||!cell.n)return "background:#fafbfd;color:#cdd5e0";
+  const lvl=cell.n>=5?2:cell.n>=2?1:0;
+  const blue=["#e8effb","#aac4ef","#5b87da"], red=["#fde8e6","#f3a89f","#df5e51"];
+  const bg=(cell.u>0?red:blue)[lvl];
+  return `background:${bg};color:${lvl===2?"#fff":"#15294a"}`;
+}
+function heatmapHtml(ports){
+  if(!ports.length)return "";
+  const rows=buildHeat(ports);
+  const head=HEAT_CATS.map(c=>`<th style="text-align:center">${c[1]}</th>`).join("");
+  const body=rows.map(h=>`<tr>
+    <td class="mono">${esc(h.host)}${h.hostname?`<div class="muted" style="font-size:10.5px">${esc(h.hostname)}</div>`:""}</td>
+    ${HEAT_CATS.map(c=>{const cell=h.cats[c[0]];return `<td style="text-align:center;font-weight:700;${cellStyle(cell)}">${cell?cell.n+(cell.u?`<span style="font-size:9px"> ●${cell.u}</span>`:""):""}</td>`;}).join("")}
+    <td style="text-align:center;font-weight:700">${h.total}${h.unid?`<span style="color:#c0392b;font-size:10px"> ●${h.unid}</span>`:""}</td>
+  </tr>`).join("");
+  return `<h2 class="section">공격표면 히트맵 <span class="muted" style="font-weight:400;font-size:11.5px">셀=열린 포트 수 · ●=조치대상(미식별/판독필요) · 빨강=조치대상 포함</span></h2>
+   <div class="card" style="overflow:auto"><table><thead><tr><th>호스트</th>${head}<th style="text-align:center">합계</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
 async function renderDetail(id){
   app.innerHTML=`<div class="muted" style="padding:40px;text-align:center">불러오는 중…</div>`;
   try{
@@ -153,6 +197,7 @@ async function renderDetail(id){
         </div>
       </div>
       ${diffHtml}
+      ${heatmapHtml(d.ports)}
       <h2 class="section">포트 — 정체·근거</h2>
       <div class="card">
         <div class="filterbar">

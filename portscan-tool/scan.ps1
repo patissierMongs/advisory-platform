@@ -147,22 +147,30 @@ Write-Log "열린 포트 총합(상태 기준): $totalOpen"
 $fragile = @($P.FragilePorts)
 $identHostsTcp = @{}  # ip -> Get-NmapHosts 결과(포트객체)
 $identHostsUdp = @{}
+$hostErrors = 0
 foreach ($ip in $openByHost.Keys) {
-    $tcpP = @($openByHost[$ip].tcp | Where-Object { $_ -notin $fragile })
-    if ($tcpP.Count -gt 0) {
-        $ox = Join-Path $RunDir "3_ident\$ip`_tcp.xml"
-        Invoke-Nmap (@('-sS') + $P.TcpVersion + @('-Pn','-n','--reason','--open') + $P.TcpTiming +
-            @('--script',$P.TcpScripts,'--script-timeout',$P.ScriptTimeout,'-p',($tcpP -join ','),$ip,'-oX',$ox)) "stage3-tcp $ip"
-        $identHostsTcp[$ip] = (Get-NmapHosts $ox | Select-Object -First 1)
-    }
-    $udpP = @($openByHost[$ip].udp | Where-Object { $_ -notin $fragile })
-    if ($udpP.Count -gt 0) {
-        $ox = Join-Path $RunDir "3_ident\$ip`_udp.xml"
-        Invoke-Nmap (@('-sU') + $P.UdpVersion + @('-Pn','-n','--reason','--open') + $P.UdpTiming +
-            @('--script',$P.UdpScripts,'--script-timeout',$P.ScriptTimeout,'-p',($udpP -join ','),$ip,'-oX',$ox)) "stage3-udp $ip"
-        $identHostsUdp[$ip] = (Get-NmapHosts $ox | Select-Object -First 1)
+    # 한 호스트에서 실패해도 나머지 호스트는 계속(전체 파이프라인 보호).
+    try {
+        $tcpP = @($openByHost[$ip].tcp | Where-Object { $_ -notin $fragile })
+        if ($tcpP.Count -gt 0) {
+            $ox = Join-Path $RunDir "3_ident\$ip`_tcp.xml"
+            Invoke-Nmap (@('-sS') + $P.TcpVersion + @('-Pn','-n','--reason','--open') + $P.TcpTiming +
+                @('--script',$P.TcpScripts,'--script-timeout',$P.ScriptTimeout,'-p',($tcpP -join ','),$ip,'-oX',$ox)) "stage3-tcp $ip"
+            $identHostsTcp[$ip] = (Get-NmapHosts $ox | Select-Object -First 1)
+        }
+        $udpP = @($openByHost[$ip].udp | Where-Object { $_ -notin $fragile })
+        if ($udpP.Count -gt 0) {
+            $ox = Join-Path $RunDir "3_ident\$ip`_udp.xml"
+            Invoke-Nmap (@('-sU') + $P.UdpVersion + @('-Pn','-n','--reason','--open') + $P.UdpTiming +
+                @('--script',$P.UdpScripts,'--script-timeout',$P.ScriptTimeout,'-p',($udpP -join ','),$ip,'-oX',$ox)) "stage3-udp $ip"
+            $identHostsUdp[$ip] = (Get-NmapHosts $ox | Select-Object -First 1)
+        }
+    } catch {
+        $hostErrors++
+        Write-Log "  ! 호스트 $ip 식별 실패(건너뜀): $($_.Exception.Message)"
     }
 }
+if ($hostErrors) { Write-Log "식별 단계 호스트 오류 $hostErrors 건(건너뜀) — 나머지는 정상 진행." }
 
 # ── 식별 결과 → 포트 레코드(병합) ────────────────────────────────────────────
 $WebPorts = @(80,81,88,443,591,2082,2087,2095,3000,5000,7001,8000,8008,8080,8081,8088,8443,8888,9000,9090,9443)
@@ -182,6 +190,7 @@ function Summarize-Scripts($port) {
 $records = @()
 function Add-Record($ip, $proto, $port, $fragileFlag) {
     $svc = $port.Service; $prod = $port.Product; $ver = $port.Version
+    if ($port.Tunnel -eq 'ssl' -and $svc -eq 'http') { $svc = 'https' }   # TLS 보정
     $evi = Summarize-Scripts $port
     $note = ''
     $ident = $false
