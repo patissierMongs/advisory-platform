@@ -1,6 +1,0 @@
-# 스캔 결과물(원본 XML 포함) — 커밋하지 않음
-out/
-
-# 실제 대상 목록(민감) — 예시만 커밋
-targets/*.txt
-!targets/*.example.txt
