@@ -90,6 +90,11 @@
   .ackbar .nm{width:110px}.ackbar .dp{width:150px}.ackbar .st{width:110px}
   .acknote{font-size:11.5px;color:var(--sub);margin-top:2px}
   .ack-NONE{background:#eef1f5;color:#67748a}
+  .deptbar{max-width:920px;margin:0 auto;padding:0 16px 12px;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .deptbar .lbl{font-size:12.5px;font-weight:700;color:#4a5568}
+  .deptbar input{width:200px;font-size:12.5px;padding:7px 10px}
+  .deptbar .pillon{background:#2f5bd0;color:#fff;font-weight:700;padding:4px 11px;border-radius:999px;font-size:12px}
+  .deptbar .hint{font-size:11.5px;color:var(--sub)}
 </style>
 </head>
 <body>
@@ -99,6 +104,7 @@
     <span class="sp"></span>
     <a class="admin" href="/admin">관리자 ↗</a>
   </div>
+  <div class="deptbar" id="deptbar"></div>
 </header>
 <div class="wrap" id="app"><div class="empty">불러오는 중…</div></div>
 
@@ -107,7 +113,9 @@ const API = "/api/v1/board";
 const app = document.getElementById("app");
 let DEPTS = [];
 const FILTER = { q: "", excludeDone: true };  // 기본: 완료 제외 ON
+let MY_DEPT = null;   // {id,name} — '내 부서' 필터(영속). null = 전체
 let _searchT;
+try{ const _s = localStorage.getItem("board_my_dept"); if(_s) MY_DEPT = JSON.parse(_s); }catch(e){}
 
 async function loadDepts(){
   if(DEPTS.length) return;
@@ -207,6 +215,7 @@ async function loadResults(){
   if(!res) return;
   const qs = new URLSearchParams();
   if(FILTER.q.trim()) qs.set("q", FILTER.q.trim());
+  if(MY_DEPT) qs.set("department_id", MY_DEPT.id);
   qs.set("exclude_done", FILTER.excludeDone);
   try{
     const {items} = await api("/advisories?"+qs.toString());
@@ -220,8 +229,10 @@ async function renderDetail(id){
   app.innerHTML = `<div class="empty">불러오는 중…</div>`;
   try{
     if(!DEPTS.length){ try{ DEPTS = (await api("/departments")).items; }catch(e){} }
-    const ql0 = FILTER.q.trim();
-    const d = await api("/advisories/"+id+(ql0?("?q="+encodeURIComponent(ql0)):""));
+    const dq = new URLSearchParams();
+    if(FILTER.q.trim()) dq.set("q", FILTER.q.trim());
+    if(MY_DEPT) dq.set("department_id", MY_DEPT.id);
+    const d = await api("/advisories/"+id+(dq.toString()?("?"+dq.toString()):""));
     const a = d.advisory;
     const cveRows = d.cves.length ? d.cves.map(c=>`
       <div class="meta" style="padding:5px 0;border-top:1px solid var(--line)">
@@ -243,19 +254,7 @@ async function renderDetail(id){
     const ackBadge = m => `<span class="ack ack-${m.ack_status||'NONE'}" style="margin:0">${ACK_KO[m.ack_status]||"미회신"}</span>`
       + (m.ack_by?`<div class="ownc">${esc(m.ack_by)}</div>`:"");
     const assetsSection = gkeys.length ? `
-      <div class="ackbar">
-        <div class="fld"><label>이름</label><input class="nm" id="ack_name" maxlength="80" placeholder="홍길동"></div>
-        <div class="fld"><label>부서 (선택)</label><input class="dp" id="ack_dept" list="deptlist" placeholder="부서 선택"></div>
-        <div class="fld"><label>조치상태</label>
-          <select class="st" id="ack_status">
-            <option value="DONE">조치완료</option>
-            <option value="IN_PROGRESS">진행중</option>
-            <option value="UNABLE">조치불가</option>
-          </select></div>
-        <button class="btn" id="ack_submit" onclick="submitAssetAck(${id})">선택 자산 조치 회신</button>
-      </div>
-      <div id="ackerr"></div>
-      <div class="acknote">체크박스로 <b>본인 부서 자산</b>을 골라 개별 또는 일괄 처리하세요. 다른 부서 자산이 섞이면 경고가 표시됩니다.</div>
+      <div class="acknote" style="margin-bottom:10px">본인 <b>부서 자산</b>을 체크한 뒤, 아래 <b>댓글 작성</b>에서 조치상태를 선택해 등록하면 체크한 자산에 함께 반영됩니다. <span class="muted">(이름은 달라도 되며 부서명만 일치하면 됩니다. 다른 부서 자산이 섞이면 경고가 표시됩니다.)</span></div>
       <table class="assets" style="margin-top:8px">
       <tr><th class="ck"><input type="checkbox" id="ack_all" onclick="toggleAllAck(this)"></th><th>부서 / 자산</th><th>제품 · 버전</th><th>담당자</th><th>심각도</th><th>조치상태</th></tr>
       ${gkeys.map(g=>{
@@ -285,13 +284,6 @@ async function renderDetail(id){
         ${c.has_evidence?`<a class="evlink" href="${API}/comments/${c.id}/evidence" target="_blank" rel="noopener">📎 ${esc(c.evidence||"증빙 파일")}</a>`:""}
       </div>`).join("") : `<div class="muted" style="font-size:12.5px;padding:8px 0">아직 댓글이 없습니다. 첫 회신을 남겨주세요.</div>`;
 
-    // 조치 진행 현황 — 자산 단위 집계(아래 영향 자산 표에서 담당자가 직접 처리).
-    const pg = d.progress || {total:0};
-    const progSection = pg.total ? `
-      ${progLine(pg)}
-      <div class="acknote" style="margin-top:8px">자산별 조치는 아래 <b>영향 부서 · 자산</b> 표에서 체크 후 처리합니다.</div>`
-      : `<div class="muted" style="font-size:12.5px">영향 자산이 없습니다(관리자 매칭 전이거나 해당 자산 없음).</div>`;
-
     const deptOpts = DEPTS.map(x=>`<option value="${esc(x.name)}">`).join("");
 
     app.innerHTML = `
@@ -317,9 +309,6 @@ async function renderDetail(id){
         <div id="pdfbox"></div>
       </div>
 
-      <h2 class="section">조치 진행 현황</h2>
-      <div class="card">${progSection}</div>
-
       <h2 class="section">영향 부서 · 자산 · 담당자</h2>
       <div class="card">${assetsSection}</div>
 
@@ -335,7 +324,7 @@ async function renderDetail(id){
         <div class="grid2">
           <div><label class="f">이름</label><input id="c_name" maxlength="80" placeholder="홍길동"></div>
           <div><label class="f">부서 (검색·선택)</label>
-            <input id="c_dept" list="deptlist" placeholder="부서명 입력 또는 선택">
+            <input id="c_dept" list="deptlist" placeholder="부서명 입력 또는 선택" value="${MY_DEPT?esc(MY_DEPT.name):''}">
             <datalist id="deptlist">${deptOpts}</datalist>
           </div>
         </div>
@@ -370,8 +359,13 @@ async function submitComment(id){
   if(!body){ errEl.innerHTML = `<div class="err">내용을 입력하세요.</div>`; return; }
   const matched = DEPTS.find(d=>d.name===deptName);
   if(ack && !matched){ errEl.innerHTML = `<div class="err">조치상태를 첨부하려면 목록의 부서를 선택해야 회신으로 반영됩니다.</div>`; return; }
+  // 영향 자산 표에서 체크한 자산 → 댓글로 함께 조치상태 반영(부서명만 일치하면 됨).
+  const checkedIds = [...document.querySelectorAll(".ackchk:checked")].map(c=>parseInt(c.dataset.matchId,10));
+  if(checkedIds.length && !ack){ errEl.innerHTML = `<div class="err">체크한 자산이 있습니다. 위 <b>조치상태</b>를 선택하면 해당 자산에 반영됩니다(또는 체크를 해제하세요).</div>`; return; }
+  if(checkedIds.length && !matched){ errEl.innerHTML = `<div class="err">체크한 자산을 반영하려면 <b>부서</b>를 목록에서 선택하세요.</div>`; return; }
   const payload = { author_name:name, body, ack_status:ack||null };
   if(matched) payload.department_id = matched.id; else if(deptName) payload.department_name = deptName;
+  if(checkedIds.length) payload.match_ids = checkedIds;
   const fileInput = document.getElementById("c_file");
   const file = fileInput && fileInput.files && fileInput.files[0];
   const btn = document.getElementById("c_submit"); btn.disabled = true; btn.textContent = "등록 중…";
@@ -394,31 +388,6 @@ window.onFilePick = function(inp){
 window.toggleAllAck = function(box){
   document.querySelectorAll(".ackchk").forEach(c=>{ c.checked = box.checked; });
 };
-// 자산별 조치 회신 — 체크한 자산을 개별/일괄 처리. 선택 부서와 다른 부서 자산이 섞이면 경고.
-window.submitAssetAck = async function(id){
-  const name = (document.getElementById("ack_name").value||"").trim();
-  const deptName = (document.getElementById("ack_dept").value||"").trim();
-  const status = document.getElementById("ack_status").value;
-  const err = document.getElementById("ackerr"); err.innerHTML = "";
-  const checked = [...document.querySelectorAll(".ackchk:checked")];
-  if(!name){ err.innerHTML = `<div class="err">이름을 입력하세요.</div>`; return; }
-  if(!checked.length){ err.innerHTML = `<div class="err">처리할 자산을 한 개 이상 선택하세요.</div>`; return; }
-  const matched = DEPTS.find(d=>d.name===deptName);
-  if(!matched){ err.innerHTML = `<div class="err">부서를 목록에서 선택해야 조치 회신으로 반영됩니다.</div>`; return; }
-  const wrong = checked.filter(c=> String(c.dataset.deptId)!==String(matched.id));
-  if(wrong.length){
-    const names = [...new Set(wrong.map(c=>c.dataset.assetNo||c.closest("tr").children[1].textContent.trim()))].join(", ");
-    err.innerHTML = `<div class="err">선택한 부서(${esc(deptName)})와 <b>다른 부서 자산</b>이 포함되어 있습니다: ${esc(names)}. 본인 부서 자산만 선택하세요.</div>`;
-    return;
-  }
-  const match_ids = checked.map(c=>parseInt(c.dataset.matchId,10));
-  const btn = document.getElementById("ack_submit"); btn.disabled = true; const ot = btn.textContent; btn.textContent = "처리 중…";
-  try{
-    await api("/advisories/"+id+"/asset-ack", {method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({author_name:name, department_id:matched.id, ack_status:status, match_ids})});
-    renderDetail(id);
-  }catch(e){ err.innerHTML = `<div class="err">${esc(e.message)}</div>`; btn.disabled=false; btn.textContent=ot; }
-};
 
 window.togglePdf = function(id){
   const box = document.getElementById("pdfbox");
@@ -429,7 +398,36 @@ window.togglePdf = function(id){
   box.dataset.open = "1";
 };
 
+// ── '내 부서' 필터(영속) ──
+function renderDeptBar(){
+  const el = document.getElementById("deptbar"); if(!el) return;
+  const opts = DEPTS.map(d=>`<option value="${esc(d.name)}">`).join("");
+  el.innerHTML = `<span class="lbl">🏢 내 부서</span>
+    <input id="mydept_in" list="mydeptlist" placeholder="부서명 입력·선택" value="${MY_DEPT?esc(MY_DEPT.name):''}" onkeydown="if(event.key==='Enter')applyMyDept()">
+    <datalist id="mydeptlist">${opts}</datalist>
+    <button class="btn-ghost" onclick="applyMyDept()">적용</button>
+    ${MY_DEPT?`<span class="pillon">${esc(MY_DEPT.name)} 필터 적용중</span><button class="btn-ghost" onclick="clearMyDept()">전체 보기</button>`
+            :`<span class="hint">— 부서를 지정하면 해당 부서 관련 글·자산·댓글만 표시됩니다(페이지 이동해도 유지)</span>`}`;
+}
+window.applyMyDept = function(){
+  const inp = document.getElementById("mydept_in"); if(!inp) return;
+  const name = (inp.value||"").trim();
+  if(!name){ clearMyDept(); return; }
+  const d = DEPTS.find(x=>x.name===name) || DEPTS.find(x=>x.name.toLowerCase()===name.toLowerCase());
+  if(!d){ inp.style.borderColor="#c0392b"; inp.value=""; inp.placeholder="목록의 부서를 선택하세요"; return; }
+  MY_DEPT = {id:d.id, name:d.name};
+  try{ localStorage.setItem("board_my_dept", JSON.stringify(MY_DEPT)); }catch(e){}
+  renderDeptBar(); route();
+};
+window.clearMyDept = function(){
+  MY_DEPT = null;
+  try{ localStorage.removeItem("board_my_dept"); }catch(e){}
+  renderDeptBar(); route();
+};
+async function initDeptBar(){ await loadDepts(); renderDeptBar(); }
+
 window.addEventListener("hashchange", route);
+initDeptBar();
 route();
 </script>
 </body>

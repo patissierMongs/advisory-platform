@@ -204,12 +204,13 @@ def _public_comment(c) -> dict:
 
 
 @router.get("/advisories/{advisory_id}")
-def board_detail(advisory_id: int, q: str | None = None, db: Session = Depends(get_db)):
+def board_detail(advisory_id: int, q: str | None = None,
+                 department_id: int | None = None, db: Session = Depends(get_db)):
     """게시판 상세 — 권고문 요약 + 영향 CVE + 자산별 조치 + 댓글 스레드.
 
-    q(선택): 게시판 검색어를 그대로 전달하면, 검색 대상(부서·담당자·자산)만 남기고
-    다른 부서/다른 사람의 자산·댓글·진행현황은 숨긴다(본인 관련 정보만 노출).
-    단, 검색어가 제목/문서번호에 걸린 '주제 검색'이면 전체를 그대로 보여준다.
+    department_id(선택): '내 부서' 필터. 해당 부서의 자산·댓글만 남기고 타부서는 숨긴다
+    (관리자 댓글은 항상 노출). 페이지 이동 후에도 유지되도록 화면이 매번 전달한다.
+    q(선택): 게시판 검색어. 인물/부서/자산이 걸리면 본인 관련만, 제목/문서번호면 전체 노출.
     """
     adv = _published(db, advisory_id)
     cves = [
@@ -223,28 +224,40 @@ def board_detail(advisory_id: int, q: str | None = None, db: Session = Depends(g
     ]
     matched = [m for m in adv.matches if m.status == enums.MatchStatus.MATCHED]
 
+    # '내 부서' 필터 — 해당 부서 자산만.
+    dept = db.get(Department, department_id) if department_id is not None else None
+    if dept is not None:
+        matched = [m for m in matched if m.asset and m.asset.department_id == dept.id]
+
     ql = q.strip().lower() if q and q.strip() else None
     title_hit = bool(ql and any(ql in (v or "").lower()
                                 for v in (adv.title, adv.doc_no, adv.source_org)))
-    scoped = False
+    q_scoped = False
     if ql and not title_hit:
         hits = [m for m in matched if _asset_hit(m, ql)]
         if hits:                       # 인물/부서/자산 검색 → 본인 관련만 노출
             matched = hits
-            scoped = True
+            q_scoped = True
 
-    comments = []
-    for c in adv.comments:
-        if scoped and not (
+    def _visible(c):
+        if dept is not None and not (
+            c.is_admin or c.author_department_id == dept.id
+            or (c.author_department_name and c.author_department_name == dept.name)
+        ):
+            return False
+        if q_scoped and not (
             c.is_admin
             or (c.author_name and ql in c.author_name.lower())
             or (c.author_department_name and ql in c.author_department_name.lower())
         ):
-            continue
-        comments.append(_public_comment(c))
+            return False
+        return True
 
+    comments = [_public_comment(c) for c in adv.comments if _visible(c)]
+
+    scoped = dept is not None or q_scoped
     advisory_item = serializers.board_advisory_item(adv, comment_count=len(comments))
-    if scoped:   # 상단 영향 요약도 검색 대상(본인 부서)만 반영 — 타부서 노출 차단.
+    if scoped:   # 상단 영향 요약도 스코프(본인 부서)만 반영 — 타부서 노출 차단.
         advisory_item.update(serializers.impact_from_matches(matched))
 
     return {
@@ -254,6 +267,7 @@ def board_detail(advisory_id: int, q: str | None = None, db: Session = Depends(g
         "progress": _asset_counts(matched),
         "comments": comments,
         "scoped": scoped,
+        "department_id": department_id,
         "q": q,
     }
 
@@ -266,7 +280,11 @@ def board_comments(advisory_id: int, db: Session = Depends(get_db)):
 
 @router.post("/advisories/{advisory_id}/comments", status_code=201)
 def add_comment(advisory_id: int, body: CommentIn, request: Request, db: Session = Depends(get_db)):
-    """댓글 작성(무인증). ack_status 첨부 시 해당 부서 발송 ack 로 동기화."""
+    """댓글 작성(무인증). ack_status 첨부 시 해당 부서 발송 ack 로 동기화.
+
+    영향 자산 표에서 체크한 자산(match_ids)이 함께 오면, 그 자산들의 조치상태도 댓글로
+    갱신한다(이름은 무관, 부서명만 일치하면 됨 — 다른 부서 자산이 섞이면 409 거부).
+    """
     adv = _published(db, advisory_id)
 
     dept = None
@@ -288,9 +306,36 @@ def add_comment(advisory_id: int, body: CommentIn, request: Request, db: Session
     )
     db.add(comment)
 
-    # 조치상태 첨부 + 부서 식별 가능 → (이 권고문, 부서)의 가장 최근 발송 ack 동기화.
+    now = datetime.now(timezone.utc)
     ack_synced = None
+    assets_updated = 0
     if body.ack_status is not None and dept is not None:
+        # (1) 체크한 자산(match_ids)의 조치상태 갱신 — 부서 불일치 안전장치(이름은 무관).
+        if body.match_ids:
+            rows = db.scalars(
+                select(Match).where(Match.id.in_(body.match_ids), Match.advisory_id == adv.id,
+                                    Match.status == enums.MatchStatus.MATCHED)
+            ).all()
+            found = {m.id for m in rows}
+            missing = [i for i in body.match_ids if i not in found]
+            if missing:
+                raise HTTPException(404, f"대상 자산을 찾을 수 없습니다(match {missing}).")
+            mismatch = sorted({m.asset.asset_no or str(m.id) for m in rows
+                               if m.asset.department_id != dept.id})
+            if mismatch:
+                raise HTTPException(409, detail={
+                    "code": "DEPT_MISMATCH",
+                    "message": (f"선택한 부서({dept_name})와 다른 부서의 자산이 포함되어 있습니다: "
+                                f"{', '.join(mismatch)}. 본인 부서 자산만 선택하세요."),
+                })
+            for m in rows:
+                m.ack_status = body.ack_status
+                m.ack_by = comment.author_name
+                m.ack_note = comment.body
+                m.ack_at = now
+            assets_updated = len(rows)
+
+        # (2) (이 권고문, 부서)의 가장 최근 발송 ack 동기화.
         n = db.scalar(
             select(Notification)
             .where(Notification.advisory_id == adv.id, Notification.department_id == dept.id)
@@ -300,7 +345,7 @@ def add_comment(advisory_id: int, body: CommentIn, request: Request, db: Session
             n.ack_status = body.ack_status
             n.ack_note = comment.body
             n.ack_by = comment.author_name
-            n.ack_updated_at = datetime.now(timezone.utc)
+            n.ack_updated_at = now
             if body.ack_status == enums.AckStatus.DONE:
                 n.status = enums.NotificationStatus.ACKED
             ack_synced = n.id
@@ -308,10 +353,12 @@ def add_comment(advisory_id: int, body: CommentIn, request: Request, db: Session
     record(db, action="BOARD_COMMENT", actor_id=None, entity_type="advisory",
            entity_id=adv.id, detail={"author": comment.author_name, "dept": dept_name,
                                      "ack": body.ack_status.value if body.ack_status else None,
+                                     "assets_updated": assets_updated,
                                      "ack_synced_notification": ack_synced}, request=request)
     db.commit()
     db.refresh(comment)
-    return {"comment": serializers.comment_item(comment), "ack_synced_notification": ack_synced}
+    return {"comment": serializers.comment_item(comment), "ack_synced_notification": ack_synced,
+            "assets_updated": assets_updated}
 
 
 @router.post("/advisories/{advisory_id}/asset-ack")

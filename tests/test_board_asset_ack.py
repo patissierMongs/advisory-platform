@@ -134,3 +134,56 @@ def test_board_detail_title_search_shows_all(client, ack_ids):
     aid = ack_ids["aid"]
     res = client.get(f"/api/v1/board/advisories/{aid}", params={"q": "자산조치"}).json()
     assert res["scoped"] is False and len(res["matches"]) == 2
+
+
+# ── 댓글 + 체크 자산(match_ids) 동기화(자산 조치 회신을 댓글로 대체) ──
+def test_comment_with_match_ids_acks_checked_assets(client, ack_ids):
+    """댓글에 조치상태+부서+체크자산(match_ids) → 댓글 등록 + 해당 자산 ack 반영(이름 무관)."""
+    aid = ack_ids["aid"]
+    r = client.post(f"/api/v1/board/advisories/{aid}/comments",
+                    json={"author_name": "아무개", "department_id": ack_ids["didA"],
+                          "body": "패치 완료했습니다", "ack_status": "DONE",
+                          "match_ids": [ack_ids["mA"]]})
+    assert r.status_code == 201
+    assert r.json()["assets_updated"] == 1
+
+    detail = client.get(f"/api/v1/board/advisories/{aid}").json()
+    mA = next(m for m in detail["matches"] if m["id"] == ack_ids["mA"])
+    mB = next(m for m in detail["matches"] if m["id"] == ack_ids["mB"])
+    assert mA["ack_status"] == "DONE" and mA["ack_by"] == "아무개"   # 이름 무관, 부서만 일치
+    assert mB["ack_status"] == "NONE"
+
+
+def test_comment_with_match_ids_rejects_other_department(client, ack_ids):
+    """댓글로 다른 부서 자산을 처리하려 하면 409(DEPT_MISMATCH), 자산 상태·댓글 불변."""
+    aid = ack_ids["aid"]
+    r = client.post(f"/api/v1/board/advisories/{aid}/comments",
+                    json={"author_name": "갑담당", "department_id": ack_ids["didA"],
+                          "body": "잘못 체크", "ack_status": "DONE",
+                          "match_ids": [ack_ids["mB"]]})
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "DEPT_MISMATCH"
+    with SessionLocal() as db:
+        assert db.get(Match, ack_ids["mB"]).ack_status == enums.AckStatus.NONE
+    # 거부 시 댓글도 저장되지 않음.
+    detail = client.get(f"/api/v1/board/advisories/{aid}").json()
+    assert detail["comments"] == []
+
+
+def test_board_detail_department_id_scopes(client, ack_ids):
+    """department_id('내 부서') 필터 → 해당 부서 자산/댓글만, 타부서 숨김(관리자 댓글은 노출)."""
+    aid = ack_ids["aid"]
+    client.post(f"/api/v1/board/advisories/{aid}/comments",
+                json={"author_name": "갑담당", "department_id": ack_ids["didA"], "body": "A 회신"})
+    client.post(f"/api/v1/board/advisories/{aid}/comments",
+                json={"author_name": "을담당", "department_id": ack_ids["didB"], "body": "B 회신"})
+    client.post(f"/api/v1/board/advisories/{aid}/comments",
+                json={"author_name": "관리자", "body": "공지", "is_admin": True})
+
+    scoped = client.get(f"/api/v1/board/advisories/{aid}",
+                        params={"department_id": ack_ids["didA"]}).json()
+    assert scoped["scoped"] is True
+    assert [m["asset_no"] for m in scoped["matches"]] == ["AACK-A1"]
+    authors = [c["author_name"] for c in scoped["comments"]]
+    assert "갑담당" in authors and "관리자" in authors and "을담당" not in authors
+    assert scoped["advisory"]["affected_dept_count"] == 1

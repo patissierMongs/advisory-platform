@@ -164,10 +164,21 @@
               </div>
               <div style="font-size:15.5px; font-weight:700; color:#15294a; letter-spacing:-.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ advisory.title }}</div>
             </div>
-            <div style="display:flex; gap:26px; flex-shrink:0;">
-              <div><div style="font-size:11px; color:#94a1b4; margin-bottom:3px;">접수 경로</div><div style="font-size:13px; font-weight:600; color:#3a4a63;">{{ advisory.route }}</div></div>
-              <div><div style="font-size:11px; color:#94a1b4; margin-bottom:3px;">접수일</div><div style="font-size:13px; font-weight:600; color:#3a4a63;">{{ advisory.receivedAt }}</div></div>
-              <div><div style="font-size:11px; color:#94a1b4; margin-bottom:3px;">조치 기한</div><div style="font-size:13px; font-weight:700; color:#b42318;">{{ advisory.dueAt }}</div></div>
+            <div style="display:flex; gap:20px; flex-shrink:0; align-items:flex-start;">
+              <div>
+                <div style="font-size:11px; color:#94a1b4; margin-bottom:4px; display:flex; align-items:center; gap:5px;">접수 경로 <span style="{{ advisory.chBadgeStyle }}">{{ advisory.chBadgeLabel }}</span></div>
+                <select value="{{ advisory.channelValue }}" onChange="{{ onChannelPick }}" title="본문에서 추출되지 않으면 직접 지정" style="font-size:12.5px; font-weight:600; color:#3a4a63; border:1px solid #d3dbe8; border-radius:7px; padding:5px 8px; background:#fff; font-family:inherit; cursor:pointer;">
+                  <option value="">미지정</option>
+                  <option value="NCST">국가정보원 NCST</option>
+                  <option value="WEBMAIL">웹메일</option>
+                  <option value="OFFICIAL_DOC">공문</option>
+                </select>
+              </div>
+              <div><div style="font-size:11px; color:#94a1b4; margin-bottom:4px;">접수일</div><div style="font-size:13px; font-weight:600; color:#3a4a63; padding:5px 0;">{{ advisory.receivedAt }}</div></div>
+              <div>
+                <div style="font-size:11px; color:#94a1b4; margin-bottom:4px; display:flex; align-items:center; gap:5px;">조치 기한 <span style="{{ advisory.dueBadgeStyle }}">{{ advisory.dueBadgeLabel }}</span></div>
+                <input type="date" value="{{ advisory.dueAtValue }}" onChange="{{ onDuePick }}" title="PDF에 기한이 없으면 직접 입력" style="font-size:12.5px; font-weight:600; color:#b42318; border:1px solid #d3dbe8; border-radius:7px; padding:5px 8px; background:#fff; font-family:inherit;">
+              </div>
             </div>
             <button onClick="{{ onPostBoard }}" style="{{ boardBtnStyle }}" title="내부 게시판(/board)에 권고문 공개 — 사내 누구나 열람·댓글 회신. (외부 그룹웨어 어댑터도 함께 시도)">{{ boardLabel }}</button>
           </div>
@@ -250,7 +261,11 @@
                       <span style="width:7px; height:7px; border-radius:50%; background:#8a98ab;"></span>
                       <span style="font-size:13px; font-weight:700; color:#3a4a63;">원문 — 보안권고문 PDF</span>
                     </div>
-                    <span style="font-size:11px; color:#0f766e; background:#e6f4f2; border-radius:5px; padding:3px 9px; font-weight:600;">CVE 코드 추출</span>
+                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
+                      <span style="font-size:11px; color:#0f766e; background:#e6f4f2; border-radius:5px; padding:3px 9px; font-weight:600;">CVE 코드 추출</span>
+                      <span style="{{ dueExtractBadgeStyle }}">{{ dueExtractBadgeLabel }}</span>
+                      <span style="{{ chExtractBadgeStyle }}">{{ chExtractBadgeLabel }}</span>
+                    </div>
                   </div>
                   <!-- 실제 PDF 페이지 이미지 + 추출 CVE 강조 오버레이 -->
                   <sc-if value="{{ pdfAvailable }}" hint-placeholder-val="{{ true }}">
@@ -733,63 +748,106 @@
 
       <!-- ============ 발송 이력 ============ -->
       <sc-if value="{{ navHistory }}" hint-placeholder-val="">
-        <div>
-          <!-- 조치 현황 헤더: 조치율 · SLA · 보고서 · 리마인드 (§★★★★★) -->
-          <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:16px 20px; margin-bottom:16px; display:flex; align-items:center; gap:22px;">
-            <div style="display:flex; align-items:baseline; gap:8px; flex-shrink:0;">
-              <span style="font-size:26px; font-weight:800; color:#0f766e;">{{ remRate }}</span>
-              <span style="font-size:12px; color:#94a1b4;">조치 완료율</span>
+        <div style="display:grid; grid-template-columns:340px 1fr; gap:16px; align-items:start;">
+
+          <!-- LEFT: 권고문 목록(클릭 선택) — 드롭다운 대체(§5) -->
+          <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden;">
+            <div style="padding:14px 16px; border-bottom:1px solid #eef1f5;">
+              <h2 style="margin:0; font-size:14px; font-weight:700; color:#15294a;">발송된 권고문</h2>
+              <p style="margin:3px 0 0; font-size:11.5px; color:#8a98ab;">권고문을 선택하면 오른쪽에 부서별 조치 현황이 표시됩니다</p>
             </div>
-            <div style="flex:1; min-width:0;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <select value="{{ advPickValue }}" onChange="{{ onPickAdvisory }}" style="font-size:13px; font-weight:700; color:#15294a; border:1px solid #d3dbe8; border-radius:7px; padding:5px 9px; background:#fff; max-width:380px; font-family:inherit; cursor:pointer;">
-                  <sc-for list="{{ advOptions }}" as="o" hint-placeholder-count="2">
-                    <option value="{{ o.value }}">{{ o.label }}</option>
-                  </sc-for>
-                </select>
-                <span style="{{ slaStyle }}">{{ slaText }}</span>
-              </div>
-              <div style="font-size:11.5px; color:#8a98ab; margin-top:3px;">{{ remText }}</div>
-            </div>
-            <div style="display:flex; gap:8px; flex-shrink:0;">
-              <button onClick="{{ onRemind }}" style="background:#fff; color:#b45309; border:1px solid #e6c98a; border-radius:8px; padding:9px 13px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">미회신 리마인드</button>
-              <button onClick="{{ onReportXlsx }}" style="background:#fff; color:#0f5d56; border:1px solid #b8e0da; border-radius:8px; padding:9px 13px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">Excel 보고서</button>
-              <button onClick="{{ onReportHtml }}" style="background:#0f766e; color:#fff; border:none; border-radius:8px; padding:9px 15px; font-size:12.5px; font-weight:700; cursor:pointer; font-family:inherit;">조치결과 보고서(PDF)</button>
+            <div>
+              <sc-for list="{{ historyAdvList }}" as="a" hint-placeholder-count="3">
+                <div onClick="{{ a.onSelect }}" style="{{ a.itemStyle }}">
+                  <div style="display:flex; align-items:center; gap:7px; margin-bottom:4px; flex-wrap:wrap;">
+                    <span style="{{ a.slaStyle }}">{{ a.slaLabel }}</span>
+                    <span style="font-size:10.5px; color:#94a1b4; font-family:monospace;">{{ a.docNo }}</span>
+                  </div>
+                  <div style="font-size:13px; font-weight:700; color:#15294a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ a.title }}</div>
+                  <div style="height:6px; border-radius:99px; background:#eef1f5; overflow:hidden; display:flex; margin-top:7px;">
+                    <sc-for list="{{ a.bars }}" as="b" hint-placeholder-count="2"><span style="{{ b }}"></span></sc-for>
+                  </div>
+                  <div style="font-size:11px; color:#8a98ab; margin-top:5px;">완료 {{ a.done }}/{{ a.total }} · {{ a.rate }}%{{ a.noneText }}</div>
+                </div>
+              </sc-for>
+              <sc-if value="{{ historyEmpty }}" hint-placeholder-val="">
+                <div style="padding:34px 16px; text-align:center; color:#94a1b4; font-size:12.5px;">발송된 권고문이 없습니다.</div>
+              </sc-if>
             </div>
           </div>
 
-          <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden;">
-            <div style="padding:16px 20px; border-bottom:1px solid #eef1f5;">
-              <h2 style="margin:0; font-size:15px; font-weight:700; color:#15294a;">발송 이력 · 조치 회신</h2>
-              <p style="margin:4px 0 0; font-size:12.5px; color:#8a98ab;">버튼으로 부서 회신 상태(완료/진행/불가)를 갱신하세요</p>
-            </div>
-            <div style="display:grid; grid-template-columns:96px 1fr 76px 44px 72px 144px 90px 64px; gap:0; padding:10px 20px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:11px; font-weight:700; color:#94a1b4;">
-              <span>발송일시</span><span>대상 부서</span><span>채널</span><span style="text-align:center;">자산</span><span style="text-align:center;">상태</span><span style="text-align:center;">조치 회신</span><span style="text-align:center;">증빙</span><span style="text-align:right;">원문</span>
-            </div>
-            <sc-for list="{{ historyRows }}" as="h" hint-placeholder-count="6">
-              <div style="display:grid; grid-template-columns:96px 1fr 76px 44px 72px 144px 90px 64px; gap:0; align-items:center; padding:11px 20px; border-bottom:1px solid #f2f5f9; font-size:12.5px;">
-                <span style="color:#8a98ab; font-family:monospace; font-size:11px;">{{ h.sentAt }}</span>
-                <span style="color:#2a3a52; font-weight:600;">{{ h.dept }}</span>
-                <span style="color:#5a6b86; font-size:11px;">{{ h.channel }}</span>
-                <span style="text-align:center; color:#3a4a63;">{{ h.assets }}</span>
-                <span style="display:flex; justify-content:center;"><span style="{{ h.statusStyle }}">{{ h.status }}</span></span>
-                <span style="display:flex; justify-content:center; gap:4px;">
-                  <button onClick="{{ h.ackDone.onClick }}" style="{{ h.ackDone.style }}">{{ h.ackDone.label }}</button>
-                  <button onClick="{{ h.ackProg.onClick }}" style="{{ h.ackProg.style }}">{{ h.ackProg.label }}</button>
-                  <button onClick="{{ h.ackUnable.onClick }}" style="{{ h.ackUnable.style }}">{{ h.ackUnable.label }}</button>
-                </span>
-                <span style="display:flex; justify-content:center;">
-                  <button onClick="{{ h.onEvidence }}" style="{{ h.evidenceStyle }}" title="조치 증빙 파일 업로드">{{ h.evidenceLabel }}</button>
-                </span>
-                <span style="display:flex; justify-content:flex-end;">
-                  <button onClick="{{ h.onOpenPdf }}" style="display:flex; align-items:center; gap:4px; background:#fff; color:#b42318; border:1px solid #f3c9c4; border-radius:7px; padding:5px 8px; font-size:11px; font-weight:600; cursor:pointer; font-family:inherit;">
-                    <svg width="11" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 2h8l4 4v16H6z" stroke="#b42318" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 2v4h4" stroke="#b42318" stroke-width="1.7"/></svg>
-                    PDF
-                  </button>
-                </span>
+          <!-- RIGHT: 선택 권고문 상세(조치율 · SLA · 보고서 · 부서별 조치) -->
+          <div>
+            <sc-if value="{{ historyHasSel }}" hint-placeholder-val="{{ true }}">
+              <div>
+                <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:16px 20px; margin-bottom:16px; display:flex; align-items:center; gap:20px;">
+                  <div style="display:flex; align-items:baseline; gap:8px; flex-shrink:0;">
+                    <span style="font-size:26px; font-weight:800; color:#0f766e;">{{ detailRate }}</span>
+                    <span style="font-size:12px; color:#94a1b4;">조치 완료율</span>
+                  </div>
+                  <div style="flex:1; min-width:0;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span style="font-size:14px; font-weight:700; color:#15294a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ detailTitle }}</span>
+                      <span style="{{ detailSlaStyle }}">{{ detailSlaLabel }}</span>
+                    </div>
+                    <div style="font-size:11.5px; color:#8a98ab; margin-top:3px;">{{ detailMeta }}</div>
+                  </div>
+                  <div style="display:flex; gap:8px; flex-shrink:0;">
+                    <button onClick="{{ onRemind }}" style="background:#fff; color:#b45309; border:1px solid #e6c98a; border-radius:8px; padding:9px 13px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">미회신 리마인드</button>
+                    <button onClick="{{ onReportXlsx }}" style="background:#fff; color:#0f5d56; border:1px solid #b8e0da; border-radius:8px; padding:9px 13px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">Excel 보고서</button>
+                    <button onClick="{{ onReportHtml }}" style="background:#0f766e; color:#fff; border:none; border-radius:8px; padding:9px 15px; font-size:12.5px; font-weight:700; cursor:pointer; font-family:inherit;">보고서 보기</button>
+                  </div>
+                </div>
+
+                <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden;">
+                  <div style="padding:16px 20px; border-bottom:1px solid #eef1f5;">
+                    <h2 style="margin:0; font-size:15px; font-weight:700; color:#15294a;">부서별 조치 현황</h2>
+                    <p style="margin:4px 0 0; font-size:12.5px; color:#8a98ab;">부서명을 누르면 게시판 글로 이동 · 버튼으로 회신 상태(완료/진행/불가)를 갱신하세요</p>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 96px 56px 76px 150px 84px 52px; gap:0; padding:10px 20px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:11px; font-weight:700; color:#94a1b4;">
+                    <span>대상 부서</span><span>담당자</span><span style="text-align:center;">자산</span><span style="text-align:center;">상태</span><span style="text-align:center;">조치 회신</span><span style="text-align:center;">증빙</span><span style="text-align:right;">원문</span>
+                  </div>
+                  <sc-for list="{{ detailRows }}" as="h" hint-placeholder-count="4">
+                    <div style="display:grid; grid-template-columns:1fr 96px 56px 76px 150px 84px 52px; gap:0; align-items:center; padding:11px 20px; border-bottom:1px solid #f2f5f9; font-size:12.5px;">
+                      <div style="min-width:0;">
+                        <button onClick="{{ h.onOpenBoard }}" title="게시판 글로 이동(상태 표시)" style="background:none; border:none; padding:0; font-family:inherit; font-size:12.5px; font-weight:700; color:#2f5bd0; cursor:pointer; text-align:left; text-decoration:underline; text-underline-offset:2px;">{{ h.dept }} ↗</button>
+                        <sc-if value="{{ h.hasComments }}" hint-placeholder-val="">
+                          <div><button onClick="{{ h.onOpenBoard }}" title="신규 댓글 확인" style="{{ h.commentStyle }}">{{ h.commentLabel }}</button></div>
+                        </sc-if>
+                        <sc-if value="{{ h.hasNote }}" hint-placeholder-val="">
+                          <div style="font-size:11px; color:#b42318; margin-top:3px; line-height:1.4; white-space:normal;">사유: {{ h.noteText }}</div>
+                        </sc-if>
+                      </div>
+                      <span style="color:#3a4a63; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ h.owner }}</span>
+                      <span style="text-align:center; color:#3a4a63;">{{ h.assets }}</span>
+                      <span style="display:flex; justify-content:center;"><span style="{{ h.statusStyle }}">{{ h.status }}</span></span>
+                      <span style="display:flex; justify-content:center; gap:4px;">
+                        <button onClick="{{ h.ackDone.onClick }}" style="{{ h.ackDone.style }}">{{ h.ackDone.label }}</button>
+                        <button onClick="{{ h.ackProg.onClick }}" style="{{ h.ackProg.style }}">{{ h.ackProg.label }}</button>
+                        <button onClick="{{ h.ackUnable.onClick }}" style="{{ h.ackUnable.style }}">{{ h.ackUnable.label }}</button>
+                      </span>
+                      <span style="display:flex; justify-content:center;">
+                        <button onClick="{{ h.onEvidence }}" style="{{ h.evidenceStyle }}" title="조치 증빙 파일 업로드">{{ h.evidenceLabel }}</button>
+                      </span>
+                      <span style="display:flex; justify-content:flex-end;">
+                        <button onClick="{{ h.onOpenPdf }}" style="display:flex; align-items:center; gap:4px; background:#fff; color:#b42318; border:1px solid #f3c9c4; border-radius:7px; padding:5px 8px; font-size:11px; font-weight:600; cursor:pointer; font-family:inherit;">
+                          <svg width="11" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 2h8l4 4v16H6z" stroke="#b42318" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 2v4h4" stroke="#b42318" stroke-width="1.7"/></svg>
+                          PDF
+                        </button>
+                      </span>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ detailEmpty }}" hint-placeholder-val="">
+                    <div style="padding:30px 16px; text-align:center; color:#94a1b4; font-size:12.5px;">이 권고문의 발송 내역이 없습니다.</div>
+                  </sc-if>
+                </div>
               </div>
-            </sc-for>
+            </sc-if>
+            <sc-if value="{{ historyNoSel }}" hint-placeholder-val="">
+              <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:70px 20px; text-align:center; color:#94a1b4; font-size:13px;">왼쪽에서 권고문을 선택하세요.</div>
+            </sc-if>
           </div>
+
         </div>
       </sc-if>
 
@@ -916,6 +974,39 @@
     </div>
   </sc-if>
 
+  <!-- ===== 조치결과 보고서 웹 모달(§4) ===== -->
+  <sc-if value="{{ reportModalOpen }}" hint-placeholder-val="">
+    <div onClick="{{ closeReport }}" style="position:fixed; inset:0; background:rgba(15,29,46,.55); display:flex; align-items:center; justify-content:center; z-index:80; padding:40px;">
+      <div onClick="{{ stopProp }}" style="width:1000px; max-width:100%; max-height:94vh; background:#fff; border-radius:14px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 24px 70px rgba(0,0,0,.35);">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:15px 20px; border-bottom:1px solid #eef1f5; background:#fafbfd;">
+          <div style="display:flex; align-items:center; gap:11px; min-width:0;">
+            <div style="width:30px; height:36px; border-radius:5px; background:#e6f4f2; display:flex; align-items:center; justify-content:center; flex-shrink:0;"><span style="font-size:8px; font-weight:800; color:#0f766e;">RPT</span></div>
+            <div style="min-width:0;">
+              <div style="font-size:13.5px; font-weight:700; color:#15294a;">조치 결과 보고서</div>
+              <div style="font-size:11px; color:#94a1b4;">엑셀과 동일 설계 · 브라우저 인쇄(Ctrl+P)로 PDF 저장</div>
+            </div>
+          </div>
+          <button onClick="{{ closeReport }}" style="width:30px; height:30px; border-radius:7px; background:#fff; border:1px solid #e1e7ef; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="#5a6b86" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div style="flex:1; min-height:0; background:#f4f6f9;">
+          <iframe src="{{ reportModalSrc }}" style="width:100%; height:80vh; border:none; display:block; background:#fff;" title="조치결과 보고서"></iframe>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:13px 20px; border-top:1px solid #eef1f5;">
+          <div style="display:flex; gap:8px;">
+            <button onClick="{{ reportXlsx }}" style="display:flex; align-items:center; gap:6px; background:#fff; color:#0f5d56; border:1px solid #b8e0da; border-radius:8px; padding:9px 15px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" stroke="#0f5d56" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Excel 다운로드
+            </button>
+            <button onClick="{{ reportOpenNew }}" style="background:#fff; color:#5a6b86; border:1px solid #d3dbe8; border-radius:8px; padding:9px 15px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">새 탭에서 열기</button>
+          </div>
+          <button onClick="{{ closeReport }}" style="background:#0f766e; color:#fff; border:none; border-radius:8px; padding:9px 20px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">닫기</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
   <!-- ===== TOAST ===== -->
   <sc-if value="{{ toastOpen }}" hint-placeholder-val="">
     <div style="position:fixed; right:24px; bottom:24px; z-index:90; width:360px; background:#fff; border:1px solid #e1e7ef; border-left:4px solid {{ toastAccent }}; border-radius:11px; box-shadow:0 14px 40px rgba(15,29,46,.22); padding:15px 17px;">
@@ -961,6 +1052,7 @@ class Component extends DCLogic {
     assetImported: false,
     toast: null,
     pdfModal: null,
+    reportModal: null,     // 조치결과 보고서 웹 모달 {advisoryId}
     pdfView: null,         // STEP2 원문 뷰어 {available, scale, pages, boxes}
     pdfPage: 0,
     apiAudit: [],          // 활동 기록
@@ -973,6 +1065,9 @@ class Component extends DCLogic {
     apiAssets: [],
     apiRecent: [],
     apiHistory: [],
+    apiHistoryRollup: [], // /history/advisories — 권고문별 조치현황 롤업(발송이력 마스터/디테일)
+    historySel: null,     // 발송이력 좌측에서 선택한 권고문 id(드롭다운 대체 §5)
+    apiCommentCounts: {}, // advisory_id → 게시판 댓글 수(신규 댓글 표시용)
     apiDash: null,
     apiFeedLog: [],
     cveStats: null,
@@ -1064,6 +1159,8 @@ class Component extends DCLogic {
         this.api('GET', '/audit?size=100').catch(() => ({ items: [] })),
         this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/pdf-view').catch(() => null) : Promise.resolve(null),
       ]);
+      const counts = await this._loadCommentCounts();
+      const histRollup = await this.api('GET', '/history/advisories').catch(() => ({ items: [] }));
       await this._loadMatches();
       this.setState({
         loaded: true,
@@ -1073,6 +1170,8 @@ class Component extends DCLogic {
         apiAssets: assets.items || [],
         apiRecent: advs.items || [],
         apiHistory: history.items || [],
+        apiHistoryRollup: histRollup.items || [],
+        apiCommentCounts: counts,
         apiDash: dash || null,
         apiFeedLog: feeds.items || [],
         cveStats: stats || null,
@@ -1088,25 +1187,152 @@ class Component extends DCLogic {
     let note = null;
     if (status === 'UNABLE') { note = window.prompt('조치불가 사유를 입력하세요'); if (note === null) return; }
     this.api('PATCH', '/notifications/' + notifId + '/ack', { ack_status: status, note: note, by: '관제' })
-      .then(() => Promise.all([
-        this.api('GET', '/notifications'),
-        this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/remediation') : Promise.resolve(null),
-      ]))
-      .then(([h, rem]) => this.setState({ apiHistory: h.items || [], apiRem: rem }))
+      .then(() => this._refreshHistory())
       .catch(e => console.error('[ack]', e));
   }
 
-  _remind() {
-    if (!this._advisoryId) return;
-    this.api('POST', '/advisories/' + this._advisoryId + '/remind', {})
-      .then(r => { if (this.flashToast) this.flashToast('리마인드 발송', r.reminded + '개 부서'); return this.api('GET', '/notifications'); })
-      .then(h => this.setState({ apiHistory: h.items || [] }))
+  // 발송이력 데이터 일괄 갱신 — 알림 목록 + 권고문 롤업(마스터/디테일) + 조치율.
+  _refreshHistory() {
+    return Promise.all([
+      this.api('GET', '/notifications'),
+      this.api('GET', '/history/advisories').catch(() => ({ items: [] })),
+      this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/remediation').catch(() => null) : Promise.resolve(null),
+    ]).then(([h, roll, rem]) => this.setState({
+      apiHistory: h.items || [], apiHistoryRollup: roll.items || [], apiRem: rem,
+    }));
+  }
+
+  // 발송이력 좌측 목록에서 권고문 선택(드롭다운 대체 §5).
+  _selectHistoryAdv(id) {
+    this.setState({ historySel: id, advPick: id });
+  }
+
+  _remind(advisoryId) {
+    const id = advisoryId || this.state.historySel || this._advisoryId;
+    if (!id) return;
+    this.api('POST', '/advisories/' + id + '/remind', {})
+      .then(r => { if (this.flashToast) this.flashToast('리마인드 발송', r.reminded + '개 부서'); return this._refreshHistory(); })
       .catch(e => console.error('[remind]', e));
   }
 
-  _report(kind) {
-    const id = this.state.advPick || this._advisoryId;
+  _report(kind, advisoryId) {
+    const id = advisoryId || this.state.historySel || this.state.advPick || this._advisoryId;
     if (id) window.open('/api/v1/advisories/' + id + '/report.' + kind, '_blank');
+  }
+
+  // 발송이력 우측 상세 행 — 선택 권고문(롤업)의 부서별 조치현황을 행 데이터로.
+  _detailRows(adv) {
+    if (!adv) return [];
+    const m = { green: 'background:#e6f4f2; color:#0f766e;', amber: 'background:#fef3e2; color:#b45309;', red: 'background:#fdecec; color:#b42318;', gray: 'background:#eef1f5; color:#67748a;' };
+    const cc = (this.state.apiCommentCounts || {})[adv.id] || 0;
+    const isNew = cc > (this._seenComments()[adv.id] || 0);
+    return (adv.departments || []).map(d => {
+      const ack = d.ack_status;
+      const st = ack === 'DONE' ? ['조치완료', 'green'] : ack === 'IN_PROGRESS' ? ['조치중', 'amber']
+        : ack === 'UNABLE' ? ['조치불가', 'red'] : ['미회신', 'gray'];
+      const ackBtn = (s, label) => ({
+        label, onClick: () => this._ack(d.notification_id, s),
+        style: 'font-family:inherit; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:5px; cursor:pointer; border:1px solid; '
+          + (ack === s
+            ? ({ DONE: 'background:#0f766e;color:#fff;border-color:#0f766e;', IN_PROGRESS: 'background:#e8a33d;color:#fff;border-color:#e8a33d;', UNABLE: 'background:#8a98ab;color:#fff;border-color:#8a98ab;' }[s])
+            : 'background:#fff;color:#5a6b86;border-color:#d3dbe8;'),
+      });
+      return {
+        dept: d.department || '-', owner: d.owner || '-', assets: (d.asset_count || 0) + '대',
+        status: st[0], statusStyle: 'font-size:11px; font-weight:700; padding:3px 10px; border-radius:6px; ' + m[st[1]],
+        ackDone: ackBtn('DONE', '완료'), ackProg: ackBtn('IN_PROGRESS', '진행'), ackUnable: ackBtn('UNABLE', '불가'),
+        evidenceLabel: d.has_evidence ? '📎 ✓' : '📎 증빙',
+        evidenceStyle: 'font-family:inherit; font-size:11px; font-weight:600; padding:5px 8px; border-radius:7px; cursor:pointer; '
+          + (d.has_evidence ? 'background:#e6f4f2;color:#0f766e;border:1px solid #b8e0da;' : 'background:#fff;color:#5a6b86;border:1px solid #d3dbe8;'),
+        onEvidence: () => this._uploadEvidence(d.notification_id),
+        onOpenPdf: () => this._openPdf(adv.id, adv.title || adv.doc_no, adv.doc_no),
+        onOpenBoard: () => this._openBoard(adv.id),
+        hasComments: cc > 0,
+        commentLabel: '💬 ' + cc + (isNew ? ' · 신규' : ''),
+        commentStyle: 'font-family:inherit; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:5px; cursor:pointer; margin-top:4px; '
+          + (isNew ? 'background:#fdecec; color:#b42318; border:1px solid #f3c9c4;' : 'background:#eef2fb; color:#2f5bd0; border:1px solid #d4e3f2;'),
+        hasNote: !!d.ack_note, noteText: d.ack_note,
+      };
+    });
+  }
+
+  // 발송이력 마스터/디테일 바인딩(§5) — 좌측 권고문 목록 + 우측 선택 권고문 상세.
+  _historyView() {
+    const S = this.state;
+    const roll = S.apiHistoryRollup || [];
+    let sel = S.historySel;
+    if ((sel == null || !roll.some(a => a.id === sel)) && roll.length) sel = roll[0].id;
+    const selObj = roll.find(a => a.id === sel) || null;
+    const SLA = { OVERDUE: ['기한초과', 'red'], IMMINENT: ['임박', 'amber'], NORMAL: ['여유', 'green'], DONE: ['완료', 'blue'] };
+    const badge = { red: 'background:#fdecec;color:#b42318;', amber: 'background:#fef3e2;color:#b45309;', green: 'background:#e6f4f2;color:#0f766e;', blue: 'background:#eef2fb;color:#2f5bd0;' };
+    const slaPill = (s) => { const x = SLA[s] || ['', 'green']; return { label: x[0], style: 'font-size:10px; font-weight:700; padding:2px 7px; border-radius:5px; ' + (badge[x[1]] || '') }; };
+    const dday = (n) => n == null ? '' : (n < 0 ? '기한+' + (-n) : (n === 0 ? 'D-DAY' : 'D-' + n));
+
+    const historyAdvList = roll.map(a => {
+      const total = a.dept_total || 0;
+      const bars = [];
+      const seg = (n, c) => { if (n && total) bars.push('height:100%; background:' + c + '; width:' + (n / total * 100) + '%;'); };
+      seg(a.done, '#2e9e5b'); seg(a.in_progress, '#e0a82e'); seg(a.unable, '#c0392b'); seg(a.none, '#cfd6e0');
+      const p = slaPill(a.sla_status);
+      const isSel = a.id === sel;
+      return {
+        id: a.id, title: a.title || a.doc_no || '제목 없음', docNo: a.doc_no || '',
+        done: a.done, total: total, rate: a.done_rate, noneText: a.none ? (' · 미회신 ' + a.none) : '',
+        bars: bars, slaLabel: p.label, slaStyle: p.style,
+        itemStyle: 'padding:12px 15px; border-bottom:1px solid #f2f5f9; cursor:pointer; ' + (isSel ? 'background:#eef4ff; box-shadow:inset 3px 0 0 #2f5bd0;' : ''),
+        onSelect: () => this._selectHistoryAdv(a.id),
+      };
+    });
+
+    const dp = selObj ? slaPill(selObj.sla_status) : { label: '', style: '' };
+    return {
+      historyAdvList,
+      historyEmpty: roll.length === 0,
+      historyHasSel: !!selObj,
+      historyNoSel: roll.length === 0,
+      detailRows: this._detailRows(selObj),
+      detailEmpty: !!selObj && (selObj.departments || []).length === 0,
+      detailRate: selObj ? (selObj.done_rate + '%') : '—',
+      detailTitle: selObj ? (selObj.title || selObj.doc_no || '제목 없음') : '',
+      detailSlaLabel: dp.label, detailSlaStyle: dp.style,
+      detailMeta: selObj ? ((selObj.doc_no ? selObj.doc_no + ' · ' : '') + '기한 ' + (selObj.due_at ? selObj.due_at.slice(0, 10) : '-')
+        + (selObj.d_day != null ? ' (' + dday(selObj.d_day) + ')' : '') + ' · 회신 ' + selObj.responded_rate + '%') : '',
+      onRemind: () => this._remind(sel),
+      onReportXlsx: () => this._report('xlsx', sel),
+      onReportHtml: () => this._openReport(sel),
+    };
+  }
+
+  // 조치결과 보고서를 웹 모달로 바로 표시(§4, 엑셀과 동일 설계의 HTML 보고서).
+  _openReport(advisoryId) {
+    const id = advisoryId || this.state.advPick || this._advisoryId;
+    if (!id) { if (this.flashToast) this.flashToast('보고서 없음', '대상 권고문을 먼저 선택하세요'); return; }
+    this.setState({ reportModal: { advisoryId: id } });
+  }
+
+  // 게시판 공개 권고문 댓글 수 일괄 조회(발송이력 '신규 댓글' 표시용).
+  _loadCommentCounts() {
+    return this.api('GET', '/board/advisories?exclude_done=false')
+      .then(d => { const m = {}; (d.items || []).forEach(a => { m[a.id] = a.comment_count || 0; }); return m; })
+      .catch(() => ({}));
+  }
+
+  // 발송이력 부서 → 해당 권고문 게시판 글로 이동(상태 표시). 신규 댓글은 '읽음' 처리.
+  _openBoard(advisoryId) {
+    if (!advisoryId) { if (this.flashToast) this.flashToast('게시판 미게시', '아직 게시판에 공개되지 않은 권고문입니다'); return; }
+    this._markSeen(advisoryId);
+    window.open('/board#/a/' + advisoryId, '_blank');
+  }
+
+  // 신규 댓글 추적 — localStorage 에 권고문별 '확인한 댓글 수' 저장.
+  _seenComments() {
+    try { return JSON.parse(localStorage.getItem('dc_seen_comments') || '{}'); } catch (e) { return {}; }
+  }
+  _markSeen(advisoryId) {
+    const cur = (this.state.apiCommentCounts || {})[advisoryId] || 0;
+    const seen = this._seenComments(); seen[advisoryId] = cur;
+    try { localStorage.setItem('dc_seen_comments', JSON.stringify(seen)); } catch (e) {}
+    this.setState({});  // 신규 배지 갱신
   }
 
   // CVE 수동 추가/삭제(§A2) — 정규식 누락 보정. 게이트 재평가 후 리로드.
@@ -1197,8 +1423,8 @@ class Component extends DCLogic {
       const fd = new FormData();
       fd.append('file', f);
       this.api('POST', '/notifications/' + notifId + '/evidence', fd, true)
-        .then(() => this.api('GET', '/notifications'))
-        .then(h => { this.setState({ apiHistory: h.items || [] }); if (this.flashToast) this.flashToast('증빙 업로드', f.name); })
+        .then(() => this._refreshHistory())
+        .then(() => { if (this.flashToast) this.flashToast('증빙 업로드', f.name); })
         .catch(e => console.error('[evidence]', e));
     };
     inp.click();
@@ -1224,7 +1450,7 @@ class Component extends DCLogic {
       const fd = new FormData();
       fd.append('file', files[i]);
       fd.append('source_org', '국가정보원');
-      fd.append('receive_channel', 'NCST');
+      // 접수경로는 서버가 본문에서 추출하거나(없으면) 관리자가 상세에서 직접 지정(§9).
       return self.api('POST', '/advisories', fd, true)
         .then(adv => { okCount++; return self.api('POST', '/advisories/' + adv.id + '/extract').catch(() => {}); })
         .catch(r => { if (r && r.status === 409) dup++; else console.error('[advisory upload]', r); })
@@ -1397,14 +1623,34 @@ class Component extends DCLogic {
 
   advisory() {
     const a = this.state.apiAdvisory;
-    if (!a) return { docNo: '', title: '로딩 중…', route: '', receivedAt: '', dueAt: '' };
+    const CH = { NCST: '국가정보원 NCST', WEBMAIL: '웹메일', OFFICIAL_DOC: '공문' };
+    // 출처 배지(§8·9): PDF 추출 / 관리자 지정 / 미지정.
+    const mk = (src) => src === 'PDF'
+      ? { label: '📄 PDF에서 추출', style: 'font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:4px; background:#e6f4f2; color:#0f766e; border:1px solid #b8e0da;' }
+      : src === 'MANUAL'
+        ? { label: '✏ 관리자 지정', style: 'font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:4px; background:#eef2fb; color:#2f5bd0; border:1px solid #d4e3f2;' }
+        : { label: '미지정', style: 'font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:4px; background:#fff6e9; color:#b45309; border:1px solid #f3dcb0;' };
+    if (!a) return { docNo: '', title: '로딩 중…', route: '', receivedAt: '', dueAt: '', channelValue: '', dueAtValue: '', chBadgeLabel: '', chBadgeStyle: '', dueBadgeLabel: '', dueBadgeStyle: '' };
+    const ch = mk(a.channel_source), due = mk(a.due_source);
     return {
       docNo: a.doc_no || '',
       title: a.title || '',
-      route: a.receive_channel === 'NCST' ? (a.source_org || '') + ' NCST 전용망' : (a.source_org || ''),
+      route: a.receive_channel ? (CH[a.receive_channel] || a.receive_channel) : '미지정',
       receivedAt: this._fmtDate(a.received_at),
-      dueAt: this._fmtDate(a.due_at),
+      channelValue: a.receive_channel || '',
+      chBadgeLabel: ch.label, chBadgeStyle: ch.style,
+      dueAt: a.due_at ? this._fmtDate(a.due_at) : '미지정',
+      dueAtValue: a.due_at ? a.due_at.slice(0, 10) : '',
+      dueBadgeLabel: due.label, dueBadgeStyle: due.style,
     };
+  }
+
+  // 조치기한·접수경로 관리자 수동 지정(§8·9) — 즉시 PATCH 후 컨텍스트 갱신.
+  _saveMeta(patch) {
+    const a = this.state.apiAdvisory; if (!a) return;
+    this.api('PATCH', '/advisories/' + a.id + '/meta', patch)
+      .then(adv => { this.setState({ apiAdvisory: adv }); if (this.flashToast) this.flashToast('저장됨', '조치기한·접수경로를 갱신했습니다'); })
+      .catch(e => { console.error('[meta]', e); if (this.flashToast) this.flashToast('저장 실패', '다시 시도하세요'); });
   }
 
   // PDF에서 추출된 CVE 코드(서버 advisory_cve). 제품/버전 파싱은 하지 않음.
@@ -1625,38 +1871,6 @@ class Component extends DCLogic {
         meta: (a.source_org || '') + ' · ' + this._fmtDate(a.received_at) + ' 접수 · ' + sk[0],
         statusStyle: 'font-size:11px; font-weight:700; padding:3px 10px; border-radius:6px; '
           + (sk[1] === 'amber' ? 'background:#fef3e2; color:#b45309;' : 'background:#e6f4f2; color:#0f766e;'),
-      };
-    });
-  }
-
-  historyRows() {
-    const m = { green: 'background:#e6f4f2; color:#0f766e;', amber: 'background:#fef3e2; color:#b45309;', red: 'background:#fdecec; color:#b42318;' };
-    const chLabel = { MESSENGER: '메신저', MAIL: '메일', WEB_UI: '웹UI' };
-    return (this.state.apiHistory || []).map(n => {
-      const ack = n.ack_status;
-      const st = ack === 'DONE' ? ['조치완료', 'green'] : ack === 'IN_PROGRESS' ? ['조치중', 'amber']
-        : ack === 'UNABLE' ? ['조치불가', 'red'] : (n.status === 'SENT' || n.status === 'ACKED') ? ['미회신', 'red'] : ['대기', 'amber'];
-      const ackBtn = (s, label) => ({
-        label,
-        onClick: () => this._ack(n.id, s),
-        style: 'font-family:inherit; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:5px; cursor:pointer; border:1px solid; '
-          + (ack === s
-            ? ({ DONE: 'background:#0f766e;color:#fff;border-color:#0f766e;', IN_PROGRESS: 'background:#e8a33d;color:#fff;border-color:#e8a33d;', UNABLE: 'background:#8a98ab;color:#fff;border-color:#8a98ab;' }[s])
-            : 'background:#fff;color:#5a6b86;border-color:#d3dbe8;'),
-      });
-      return {
-        id: n.id,
-        sentAt: (n.sent_at || '').replace('T', ' ').slice(5, 16),
-        dept: n.department, channel: (n.channels || []).map(c => chLabel[c] || c).join(' · '),
-        assets: (n.asset_count || 0) + '대', status: st[0],
-        docNo: n.doc_no || '', title: '', advisoryId: n.advisory_id,
-        statusStyle: 'font-size:11px; font-weight:700; padding:3px 10px; border-radius:6px; ' + m[st[1]],
-        ackDone: ackBtn('DONE', '완료'), ackProg: ackBtn('IN_PROGRESS', '진행'), ackUnable: ackBtn('UNABLE', '불가'),
-        evidence: n.evidence || '', note: n.ack_note || '',
-        onEvidence: () => this._uploadEvidence(n.id),
-        evidenceStyle: 'font-family:inherit; font-size:11px; font-weight:600; padding:5px 8px; border-radius:7px; cursor:pointer; '
-          + (n.evidence ? 'background:#e6f4f2;color:#0f766e;border:1px solid #b8e0da;' : 'background:#fff;color:#5a6b86;border:1px solid #d3dbe8;'),
-        evidenceLabel: n.evidence ? '📎 ✓' : '📎 증빙',
       };
     });
   }
@@ -2045,9 +2259,17 @@ class Component extends DCLogic {
       remText: S.apiRem ? ('완료 ' + S.apiRem.done + ' / 진행 ' + S.apiRem.in_progress + ' / 불가 ' + S.apiRem.unable + ' / 미회신 ' + S.apiRem.none + ' · 자산 ' + S.apiRem.asset_done + '/' + S.apiRem.asset_total + '대') : '발송 내역 없음',
       slaText: (() => { const r = S.apiRem; if (!r) return ''; const map = { NORMAL: '정상', IMMINENT: '임박', OVERDUE: '기한초과', DONE: '완료' }; return (r.d_day != null ? ('D' + (r.d_day >= 0 ? '-' : '+') + Math.abs(r.d_day) + ' · ') : '') + (map[r.sla_status] || r.sla_status || ''); })(),
       slaStyle: (() => { const s = S.apiRem ? S.apiRem.sla_status : 'NORMAL'; const c = { OVERDUE: 'background:#fdecec;color:#b42318;', IMMINENT: 'background:#fef3e2;color:#b45309;', DONE: 'background:#e6f4f2;color:#0f766e;', NORMAL: 'background:#eef4fb;color:#2f5d8f;' }[s] || 'background:#eef4fb;color:#2f5d8f;'; return 'font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;' + c; })(),
-      onReportXlsx: () => this._report('xlsx'),
-      onReportHtml: () => this._report('html'),
-      onRemind: () => this._remind(),
+      ...this._historyView(),   // 발송이력 마스터/디테일(§5) — 좌:권고문 목록·우:부서별 조치·보고서·리마인드
+      // 조치기한·접수경로 수동 지정(§8·9) — 컨텍스트 카드 편집 컨트롤.
+      onChannelPick: (e) => this._saveMeta({ receive_channel: e.target.value }),
+      onDuePick: (e) => this._saveMeta({ due_at: e.target.value }),
+      // STEP2 원문 패널 배지 — CVE/조치기한/접수경로 추출 여부(§9).
+      dueExtractBadgeLabel: (S.apiAdvisory && S.apiAdvisory.due_source === 'PDF') ? '조치기한 추출' : '조치기한 미추출',
+      dueExtractBadgeStyle: 'font-size:11px; border-radius:5px; padding:3px 9px; font-weight:600; '
+        + ((S.apiAdvisory && S.apiAdvisory.due_source === 'PDF') ? 'color:#0f766e; background:#e6f4f2;' : 'color:#b45309; background:#fff6e9;'),
+      chExtractBadgeLabel: (S.apiAdvisory && S.apiAdvisory.channel_source === 'PDF') ? '접수경로 추출' : '접수경로 미추출',
+      chExtractBadgeStyle: 'font-size:11px; border-radius:5px; padding:3px 9px; font-weight:600; '
+        + ((S.apiAdvisory && S.apiAdvisory.channel_source === 'PDF') ? 'color:#0f766e; background:#e6f4f2;' : 'color:#b45309; background:#fff6e9;'),
       // 게시판 게시(§A3)
       onPostBoard: () => this._postBoard(),
       boardLabel: (S.boardPosted || (S.apiAdvisory && S.apiAdvisory.board_post_id)) ? '게시판 게시됨 ✓' : '📋 게시판 게시',
@@ -2096,9 +2318,12 @@ class Component extends DCLogic {
       importBtnStyle: 'font-family:inherit; font-size:13px; font-weight:700; padding:11px 22px; border-radius:8px; border:none; ' + (canImport ? 'background:#0f766e; color:#fff; cursor:pointer;' : 'background:#e3e8ef; color:#a3aebf; cursor:not-allowed;'),
       doImport: () => this._doRealImport(),
 
-      historyRows: this.historyRows().map(h => Object.assign({}, h, {
-        onOpenPdf: () => this._openPdf(h.advisoryId, h.title || h.docNo, h.docNo),
-      })),
+      // 조치결과 보고서 웹 모달(§4) — 엑셀과 동일 설계 HTML 보고서를 인라인 표시.
+      reportModalOpen: !!S.reportModal,
+      reportModalSrc: S.reportModal ? ('/api/v1/advisories/' + S.reportModal.advisoryId + '/report.html') : '',
+      reportXlsx: () => { const m = this.state.reportModal; if (m) window.open('/api/v1/advisories/' + m.advisoryId + '/report.xlsx', '_blank'); },
+      reportOpenNew: () => { const m = this.state.reportModal; if (m) window.open('/api/v1/advisories/' + m.advisoryId + '/report.html', '_blank'); },
+      closeReport: () => this.setState({ reportModal: null }),
 
       // pdf viewer modal — 실제 PDF 임베드 + 다운로드/새탭
       pdfModalOpen: !!S.pdfModal,
