@@ -12,7 +12,7 @@ from .config import WEB_DIR, settings
 from .db import SessionLocal, init_db
 from .routers import (
     advisories, assets, audit, board, cve_feeds, cves, dashboard, departments, history, matches,
-    notifications, remediation,
+    notifications, remediation, scans,
 )
 
 
@@ -94,7 +94,7 @@ app.add_middleware(
 )
 
 for r in (advisories, cve_feeds, cves, assets, matches, notifications, departments, dashboard,
-          remediation, audit, board, history):
+          remediation, audit, board, history, scans):
     app.include_router(r.router)
 
 
@@ -128,3 +128,9 @@ def admin_page():
 def admin_history_page():
     # 발송이력·조치관리 콘솔(마스터-디테일). 기존 관리자 SPA 와 분리된 독립 페이지.
     return RedirectResponse(url="/ui/history.html")
+
+
+@app.get("/admin/scans")
+def admin_scans_page():
+    # 포트스캔 회차 import·표시 콘솔(독립 스캐너 결과 열람).
+    return RedirectResponse(url="/ui/portscan.html")
