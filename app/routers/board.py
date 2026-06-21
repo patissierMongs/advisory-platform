@@ -164,21 +164,38 @@ def board_list(
         ql = q.strip().lower()
         advs = [a for a in advs if _matches_query(a, ql)]
 
-    counts = dict(
-        db.execute(
-            select(AdvisoryComment.advisory_id, func.count(AdvisoryComment.id))
-            .group_by(AdvisoryComment.advisory_id)
-        ).all()
-    )
+    # 댓글 수 — 부서 지정 시 그 부서(+관리자) 댓글만 카운트(타부서 노출 차단), 아니면 전체.
+    if department_id is not None:
+        counts: dict[int, int] = {}
+        for c in db.scalars(
+            select(AdvisoryComment).where(AdvisoryComment.advisory_id.in_([a.id for a in advs]))
+        ).all() if advs else []:
+            if c.is_admin or c.author_department_id == department_id:
+                counts[c.advisory_id] = counts.get(c.advisory_id, 0) + 1
+    else:
+        counts = dict(
+            db.execute(
+                select(AdvisoryComment.advisory_id, func.count(AdvisoryComment.id))
+                .group_by(AdvisoryComment.advisory_id)
+            ).all()
+        )
+
     prog = _asset_progress_map(db, [a.id for a in advs])
     items = []
     for a in advs:
         item = serializers.board_advisory_item(a, comment_count=counts.get(a.id, 0))
-        item["progress"] = prog.get(a.id)
         if department_id is not None:
+            # 영향 요약·진행률도 그 부서 매칭만 반영(상세와 동일 스코핑 — 타부서 자산/진행 미노출).
+            scoped = [m for m in a.matches
+                      if m.status == enums.MatchStatus.MATCHED
+                      and m.asset is not None and m.asset.department_id == department_id]
+            item.update(serializers.impact_from_matches(scoped))
+            item["progress"] = _asset_counts(scoped)
             ack = dept_ack.get(a.id)
             item["dept_ack_status"] = ack.value if ack else None
             item["dept_ack_status_ko"] = enums.ACK_KO.get(ack) if ack else None
+        else:
+            item["progress"] = prog.get(a.id)
         items.append(item)
     return {"items": items, "q": q, "department_id": department_id, "exclude_done": exclude_done}
 
@@ -336,17 +353,29 @@ def add_comment(advisory_id: int, body: CommentIn, request: Request, db: Session
             assets_updated = len(rows)
 
         # (2) (이 권고문, 부서)의 가장 최근 발송 ack 동기화.
+        #     자산 단위 회신(match_ids)에서 'DONE' 은 부서 전체 매칭 자산이 모두 DONE 일 때만
+        #     부서 종결로 본다(부분 선택이 부서 전체를 완료 처리하지 않도록 — asset_ack 과 동일 가드).
+        sync_status = body.ack_status
+        if body.match_ids and body.ack_status == enums.AckStatus.DONE:
+            dept_matches = db.scalars(
+                select(Match).join(Asset, Match.asset_id == Asset.id)
+                .where(Match.advisory_id == adv.id, Match.status == enums.MatchStatus.MATCHED,
+                       Asset.department_id == dept.id)
+            ).all()
+            if not (dept_matches and all(m.ack_status == enums.AckStatus.DONE for m in dept_matches)):
+                sync_status = enums.AckStatus.IN_PROGRESS   # 일부 자산만 완료 → 진행중(부서 미종결)
+
         n = db.scalar(
             select(Notification)
             .where(Notification.advisory_id == adv.id, Notification.department_id == dept.id)
             .order_by(Notification.id.desc())
         )
         if n is not None:
-            n.ack_status = body.ack_status
+            n.ack_status = sync_status
             n.ack_note = comment.body
             n.ack_by = comment.author_name
             n.ack_updated_at = now
-            if body.ack_status == enums.AckStatus.DONE:
+            if sync_status == enums.AckStatus.DONE:
                 n.status = enums.NotificationStatus.ACKED
             ack_synced = n.id
 

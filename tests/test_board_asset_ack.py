@@ -187,3 +187,80 @@ def test_board_detail_department_id_scopes(client, ack_ids):
     authors = [c["author_name"] for c in scoped["comments"]]
     assert "갑담당" in authors and "관리자" in authors and "을담당" not in authors
     assert scoped["advisory"]["affected_dept_count"] == 1
+
+
+def test_board_list_row_scoped_to_department(client, ack_ids):
+    """'내 부서' 필터 시 목록 행의 영향요약·진행률·댓글수도 그 부서만(타부서 미노출) — Codex P2."""
+    aid = ack_ids["aid"]
+    client.post(f"/api/v1/board/advisories/{aid}/comments",
+                json={"author_name": "갑담당", "department_id": ack_ids["didA"], "body": "A"})
+    client.post(f"/api/v1/board/advisories/{aid}/comments",
+                json={"author_name": "을담당", "department_id": ack_ids["didB"], "body": "B"})
+    client.post(f"/api/v1/board/advisories/{aid}/comments",
+                json={"author_name": "관리자", "body": "공지", "is_admin": True})
+
+    res = client.get("/api/v1/board/advisories",
+                     params={"department_id": ack_ids["didA"], "exclude_done": "false"}).json()
+    row = next(it for it in res["items"] if it["id"] == aid)
+    assert row["affected_dept_count"] == 1
+    assert [d["name"] for d in row["affected_departments"]] == ["조치부서A"]
+    assert row["affected_asset_count"] == 1
+    assert row["progress"]["total"] == 1                 # B부서 자산(1) 미포함
+    assert row["comment_count"] == 2                     # A부서(1)+관리자(1), B부서 제외
+
+
+def test_comment_done_partial_assets_keeps_department_open(client):
+    """부서 자산 2개 중 1개만 체크 + DONE 댓글 → 부서 발송 ack 종결 안 됨(진행중) — Codex P1."""
+    with SessionLocal() as db:
+        d = Department(name="부분조치부서", is_active=True)
+        adv = Advisory(doc_no="PART-1", title="부분조치 테스트",
+                       status=enums.AdvisoryStatus.MATCHED, board_published_at=datetime.now())
+        db.add_all([d, adv])
+        db.commit()
+        aid, did = adv.id, d.id
+        a1 = Asset(asset_no="PART-A1", department_id=did, product_key="google_chrome",
+                   product_raw="Chrome", version_raw="120", status=enums.AssetStatus.NORMAL)
+        a2 = Asset(asset_no="PART-A2", department_id=did, product_key="google_chrome",
+                   product_raw="Chrome", version_raw="121", status=enums.AssetStatus.NORMAL)
+        ac = AdvisoryCve(advisory_id=aid, cve_id_text="CVE-2026-40001",
+                         lookup_status=enums.LookupStatus.FOUND)
+        db.add_all([a1, a2, ac])
+        db.commit()
+        m1 = Match(advisory_id=aid, advisory_cve_id=ac.id, asset_id=a1.id,
+                   status=enums.MatchStatus.MATCHED)
+        m2 = Match(advisory_id=aid, advisory_cve_id=ac.id, asset_id=a2.id,
+                   status=enums.MatchStatus.MATCHED)
+        n = Notification(advisory_id=aid, department_id=did, channels=[], asset_ids=[],
+                         status=enums.NotificationStatus.SENT, ack_status=enums.AckStatus.NONE)
+        db.add_all([m1, m2, n])
+        db.commit()
+        ids = dict(aid=aid, did=did, m1=m1.id, m2=m2.id, n=n.id, a1=a1.id, a2=a2.id)
+    try:
+        client.post(f"/api/v1/board/advisories/{ids['aid']}/comments",
+                    json={"author_name": "갑", "department_id": ids["did"], "body": "1대 완료",
+                          "ack_status": "DONE", "match_ids": [ids["m1"]]})
+        with SessionLocal() as db:
+            assert db.get(Match, ids["m1"]).ack_status == enums.AckStatus.DONE
+            assert db.get(Match, ids["m2"]).ack_status == enums.AckStatus.NONE
+            n = db.get(Notification, ids["n"])
+            assert n.ack_status == enums.AckStatus.IN_PROGRESS        # 부서 미종결
+            assert n.status != enums.NotificationStatus.ACKED
+        # 나머지 자산까지 DONE → 부서 종결.
+        client.post(f"/api/v1/board/advisories/{ids['aid']}/comments",
+                    json={"author_name": "갑", "department_id": ids["did"], "body": "나머지 완료",
+                          "ack_status": "DONE", "match_ids": [ids["m2"]]})
+        with SessionLocal() as db:
+            n = db.get(Notification, ids["n"])
+            assert n.ack_status == enums.AckStatus.DONE
+            assert n.status == enums.NotificationStatus.ACKED
+    finally:
+        with SessionLocal() as db:
+            from sqlalchemy import delete
+            db.execute(delete(AdvisoryComment).where(AdvisoryComment.advisory_id == ids["aid"]))
+            db.execute(delete(Notification).where(Notification.advisory_id == ids["aid"]))
+            db.execute(delete(Match).where(Match.advisory_id == ids["aid"]))
+            db.execute(delete(AdvisoryCve).where(AdvisoryCve.advisory_id == ids["aid"]))
+            db.execute(delete(Asset).where(Asset.id.in_([ids["a1"], ids["a2"]])))
+            db.execute(delete(Advisory).where(Advisory.id == ids["aid"]))
+            db.execute(delete(Department).where(Department.id == ids["did"]))
+            db.commit()
