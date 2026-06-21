@@ -16,13 +16,20 @@ from ..core.files import safe_filename
 from ..db import get_db
 from ..deps import get_actor_id
 from ..models import Advisory, Department, Match, Notification
-from ..schemas import AckPatch, NotifyRequest
+from ..schemas import AckPatch, NotifyRequest, NotifyTestRequest
 from ..serializers import notification_item
 
 EVIDENCE_DIR = DATA_DIR / "evidence"
 EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter(prefix="/api/v1", tags=["notifications"])
+
+
+def _default_channels() -> list[enums.NotifyChannel]:
+    channels = [enums.NotifyChannel.MAIL, enums.NotifyChannel.WEB_UI]
+    if enums.NotifyChannel.MESSENGER not in channels and notify.settings.MESSENGER_ENABLED:
+        channels.insert(0, enums.NotifyChannel.MESSENGER)
+    return channels
 
 
 def _active_matches(db: Session, advisory_id: int) -> list[Match]:
@@ -40,7 +47,9 @@ def preview(advisory_id: int, db: Session = Depends(get_db)):
     sent_keys = {
         n.department_id
         for n in db.scalars(select(Notification).where(
-            Notification.advisory_id == advisory_id, Notification.status == enums.NotificationStatus.SENT))
+            Notification.advisory_id == advisory_id,
+            Notification.status.in_([enums.NotificationStatus.SENT, enums.NotificationStatus.ACKED]),
+        ))
     }
     out = []
     for dept_id, matches in groups.items():
@@ -56,8 +65,7 @@ def preview(advisory_id: int, db: Session = Depends(get_db)):
             "issue_count": len(cves),
             "cve_list": ", ".join(cves),
             "message": notify.build_message(adv, dept.name if dept else str(dept_id), matches),
-            "default_channels": [enums.NotifyChannel.MESSENGER.value, enums.NotifyChannel.MAIL.value,
-                                 enums.NotifyChannel.WEB_UI.value],
+            "default_channels": [c.value for c in _default_channels()],
             "sent": dept_id in sent_keys,
         })
     return {"departments": out, "total_departments": len(out),
@@ -77,8 +85,7 @@ def send(advisory_id: int, body: NotifyRequest, request: Request, db: Session = 
     # 발송 대상 결정: all=true → 전 부서, 아니면 지정 부서.
     targets: dict[int, list[str]] = {}
     if body.all:
-        common = [c.value for c in (body.channels or [enums.NotifyChannel.MESSENGER,
-                                                      enums.NotifyChannel.MAIL, enums.NotifyChannel.WEB_UI])]
+        common = [c.value for c in (body.channels or _default_channels())]
         targets = {dept_id: common for dept_id in groups}
     else:
         for d in (body.departments or []):
@@ -97,9 +104,17 @@ def send(advisory_id: int, body: NotifyRequest, request: Request, db: Session = 
         key = notify.idempotency_key(advisory_id, dept_id, asset_ids)
 
         existing = db.scalar(select(Notification).where(Notification.idempotency_key == key))
-        if existing and existing.status == enums.NotificationStatus.SENT:
-            results.append({"department_id": dept_id, "status": "SENT", "notification_id": existing.id,
-                            "idempotent": True})
+        if existing and existing.status in (enums.NotificationStatus.SENT, enums.NotificationStatus.ACKED):
+            results.append({
+                "department_id": dept_id,
+                "status": "SENT",
+                "notification_id": existing.id,
+                "idempotent": True,
+                "delivery_results": [
+                    {"channel": ch, "ok": True, "info": "idempotent"}
+                    for ch in (existing.channels or [])
+                ],
+            })
             continue
 
         body_text = notify.build_message(adv, dept.name if dept else str(dept_id), matches)
@@ -117,17 +132,34 @@ def send(advisory_id: int, body: NotifyRequest, request: Request, db: Session = 
         db.flush()
         record(db, action="NOTIFY_SEND", actor_id=actor, entity_type="notification", entity_id=n.id,
                detail={"department_id": dept_id, "channels": channels, "result": outcome}, request=request)
-        results.append({"department_id": dept_id, "status": n.status.value, "notification_id": n.id})
+        results.append({
+            "department_id": dept_id,
+            "status": n.status.value,
+            "notification_id": n.id,
+            "delivery_results": outcome["results"],
+        })
 
     # 전 부서 발송 완료 시 COMPLETED.
     sent_depts = {
         n.department_id for n in db.scalars(select(Notification).where(
-            Notification.advisory_id == advisory_id, Notification.status == enums.NotificationStatus.SENT))
+            Notification.advisory_id == advisory_id,
+            Notification.status.in_([enums.NotificationStatus.SENT, enums.NotificationStatus.ACKED]),
+        ))
     }
     if set(groups.keys()).issubset(sent_depts):
         adv.status = enums.AdvisoryStatus.COMPLETED
     db.commit()
     return {"results": results}
+
+
+@router.get("/notify/status")
+def notify_status():
+    return notify.smtp_status()
+
+
+@router.post("/notify/test")
+def notify_test(body: NotifyTestRequest):
+    return notify.send_test_mail(body.to.strip())
 
 
 @router.get("/notifications")

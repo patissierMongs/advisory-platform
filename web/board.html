@@ -106,7 +106,7 @@
 const API = "/api/v1/board";
 const app = document.getElementById("app");
 let DEPTS = [];
-const FILTER = { q: "", excludeDone: true };  // 기본: 완료 제외 ON
+const FILTER = { q: "", excludeDone: true, departmentId: "" };  // 기본: 완료 제외 ON
 let _searchT;
 
 async function loadDepts(){
@@ -130,18 +130,35 @@ function slaBadge(s){ const ko={OVERDUE:"기한초과",IMMINENT:"임박",NORMAL:
 
 function route(){
   const h = location.hash;
-  const m = h.match(/^#\/a\/(\d+)/);
-  if(m) renderDetail(parseInt(m[1],10)); else renderList();
+  const m = h.match(/^#\/a\/(\d+)(?:\?(.*))?$/);
+  if(m){
+    const params = new URLSearchParams(m[2] || "");
+    if(params.has("dept")) FILTER.departmentId = params.get("dept") || "";
+    renderDetail(parseInt(m[1],10));
+  } else renderList();
 }
 
 function filterBar(){
+  const deptOptions = DEPTS.map(d =>
+    `<option value="${d.id}" ${String(FILTER.departmentId)===String(d.id)?"selected":""}>${esc(d.name)}</option>`
+  ).join("");
   return `<div class="card filterbar">
     <div style="flex:1;min-width:220px">
       <input id="f_q" type="search" placeholder="자산번호 · 담당자명 · 부서명 · 제목 검색" value="${esc(FILTER.q)}" oninput="onSearch(this.value)">
     </div>
+    <div style="min-width:180px;flex:0 1 230px">
+      <select aria-label="부서 필터" onchange="onDeptFilter(this.value)">
+        <option value="">부서 선택</option>
+        ${deptOptions}
+      </select>
+    </div>
     <label class="ck"><input type="checkbox" ${FILTER.excludeDone?"checked":""} onchange="onDoneFilter(this.checked)"> 완료 제외</label>
-    ${FILTER.q||!FILTER.excludeDone?`<button class="btn-ghost" onclick="resetFilter()">초기화</button>`:""}
+    ${FILTER.q||FILTER.departmentId||!FILTER.excludeDone?`<button class="btn-ghost" onclick="resetFilter()">초기화</button>`:""}
   </div>`;
+}
+function selectedDept(){
+  const id = String(FILTER.departmentId||"");
+  return id ? DEPTS.find(d=>String(d.id)===id) : null;
 }
 function deptChips(a){
   const ql = FILTER.q.trim().toLowerCase();
@@ -176,11 +193,16 @@ function progLine(p){
 }
 
 window.onSearch = function(v){ FILTER.q = v; clearTimeout(_searchT); _searchT = setTimeout(loadResults, 220); };
+window.onDeptFilter = function(v){ FILTER.departmentId = v; loadResults(); };
 window.onDoneFilter = function(v){ FILTER.excludeDone = !!v; loadResults(); };
-window.resetFilter = function(){ FILTER.q=""; FILTER.excludeDone=true; renderList(); };
+window.resetFilter = function(){ FILTER.q=""; FILTER.departmentId=""; FILTER.excludeDone=true; renderList(); };
+
+function detailHash(id){
+  return FILTER.departmentId ? `#/a/${id}?dept=${encodeURIComponent(FILTER.departmentId)}` : `#/a/${id}`;
+}
 
 function rowHtml(a){
-  return `<div class="card row" onclick="location.hash='#/a/${a.id}'">
+  return `<div class="card row" onclick="location.hash='${detailHash(a.id)}'">
     <div class="ttl">${esc(a.title||a.doc_no||"제목 없음")}</div>
     <div class="meta">
       ${sevBadge(a.max_severity,a.max_severity_ko)}
@@ -190,6 +212,7 @@ function rowHtml(a){
       ${a.receive_channel?`<span>· ${CH_KO[a.receive_channel]||a.receive_channel}</span>`:""}
       <span>· 기한 ${fmtDate(a.due_at)}</span>
       <span>· 💬 ${a.comment_count}</span>
+      ${FILTER.departmentId&&a.dept_ack_status?`<span class="chip">내 부서 ${ACK_KO[a.dept_ack_status]||a.dept_ack_status}</span>`:""}
     </div>
     ${impactLine(a)}
     ${progLine(a.progress)}
@@ -205,14 +228,20 @@ async function renderList(){
 async function loadResults(){
   const res = document.getElementById("results");
   if(!res) return;
+  if(!FILTER.departmentId){
+    res.innerHTML = `<div class="empty">부서를 선택하면 해당 부서 권고문만 표시됩니다.</div>`;
+    return;
+  }
   const qs = new URLSearchParams();
   if(FILTER.q.trim()) qs.set("q", FILTER.q.trim());
+  if(FILTER.departmentId) qs.set("department_id", FILTER.departmentId);
   qs.set("exclude_done", FILTER.excludeDone);
   try{
     const {items} = await api("/advisories?"+qs.toString());
-    const info = `<div class="muted" style="margin:2px 2px 12px;font-size:12px">${items.length}건${FILTER.q.trim()?` · "${esc(FILTER.q.trim())}" 검색 결과`:""}</div>`;
+    const dept = selectedDept();
+    const info = `<div class="muted" style="margin:2px 2px 12px;font-size:12px">${items.length}건${dept?` · ${esc(dept.name)}`:""}${FILTER.q.trim()?` · "${esc(FILTER.q.trim())}" 검색 결과`:""}</div>`;
     res.innerHTML = info + (items.length ? items.map(rowHtml).join("")
-      : `<div class="empty">${FILTER.q.trim()||FILTER.excludeDone?"조건에 맞는 권고문이 없습니다.":"게시된 보안권고문이 없습니다."}</div>`);
+      : `<div class="empty">${FILTER.q.trim()||FILTER.departmentId||FILTER.excludeDone?"조건에 맞는 권고문이 없습니다.":"게시된 보안권고문이 없습니다."}</div>`);
   }catch(e){ res.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
 
@@ -220,8 +249,15 @@ async function renderDetail(id){
   app.innerHTML = `<div class="empty">불러오는 중…</div>`;
   try{
     if(!DEPTS.length){ try{ DEPTS = (await api("/departments")).items; }catch(e){} }
-    const ql0 = FILTER.q.trim();
-    const d = await api("/advisories/"+id+(ql0?("?q="+encodeURIComponent(ql0)):""));
+    if(!FILTER.departmentId){
+      app.innerHTML = `<div class="back" onclick="location.hash='#/'">← 목록</div><div class="err">부서를 먼저 선택하세요.</div>`;
+      return;
+    }
+    const scopedDept = selectedDept();
+    const detailQs = new URLSearchParams();
+    detailQs.set("department_id", FILTER.departmentId);
+    if(FILTER.q.trim()) detailQs.set("q", FILTER.q.trim());
+    const d = await api("/advisories/"+id+"?"+detailQs.toString());
     const a = d.advisory;
     const cveRows = d.cves.length ? d.cves.map(c=>`
       <div class="meta" style="padding:5px 0;border-top:1px solid var(--line)">
@@ -242,10 +278,11 @@ async function renderDetail(id){
       || (m.owner_name||"").toLowerCase().includes(ql) || (m.department||"").toLowerCase().includes(ql));
     const ackBadge = m => `<span class="ack ack-${m.ack_status||'NONE'}" style="margin:0">${ACK_KO[m.ack_status]||"미회신"}</span>`
       + (m.ack_by?`<div class="ownc">${esc(m.ack_by)}</div>`:"");
+    const deptInputAttrs = scopedDept ? `value="${esc(scopedDept.name)}" readonly` : "";
     const assetsSection = gkeys.length ? `
       <div class="ackbar">
         <div class="fld"><label>이름</label><input class="nm" id="ack_name" maxlength="80" placeholder="홍길동"></div>
-        <div class="fld"><label>부서 (선택)</label><input class="dp" id="ack_dept" list="deptlist" placeholder="부서 선택"></div>
+        <div class="fld"><label>부서</label><input class="dp" id="ack_dept" list="deptlist" placeholder="부서 선택" ${deptInputAttrs}></div>
         <div class="fld"><label>조치상태</label>
           <select class="st" id="ack_status">
             <option value="DONE">조치완료</option>
@@ -293,6 +330,9 @@ async function renderDetail(id){
       : `<div class="muted" style="font-size:12.5px">영향 자산이 없습니다(관리자 매칭 전이거나 해당 자산 없음).</div>`;
 
     const deptOpts = DEPTS.map(x=>`<option value="${esc(x.name)}">`).join("");
+    const scopeNotice = scopedDept
+      ? `<span class="chip" style="background:#e8effb;color:#2f5bd0">내 부서 보기 · ${esc(scopedDept.name)}</span>`
+      : "";
 
     app.innerHTML = `
       <div class="back" onclick="location.hash='#/'">← 목록</div>
@@ -300,6 +340,7 @@ async function renderDetail(id){
         <div class="ttl" style="font-size:17px">${esc(a.title||a.doc_no||"제목 없음")}</div>
         <div class="meta" style="margin-bottom:6px">
           ${sevBadge(a.max_severity,a.max_severity_ko)} ${slaBadge(a.sla_status)}
+          ${scopeNotice}
           ${a.d_day!=null?`<span class="chip">${dday(a.d_day)}</span>`:""}
           ${a.source_org?`<span>${esc(a.source_org)}</span>`:""}
           ${a.receive_channel?`<span>· ${CH_KO[a.receive_channel]||a.receive_channel}</span>`:""}
@@ -335,7 +376,7 @@ async function renderDetail(id){
         <div class="grid2">
           <div><label class="f">이름</label><input id="c_name" maxlength="80" placeholder="홍길동"></div>
           <div><label class="f">부서 (검색·선택)</label>
-            <input id="c_dept" list="deptlist" placeholder="부서명 입력 또는 선택">
+            <input id="c_dept" list="deptlist" placeholder="부서명 입력 또는 선택" ${deptInputAttrs}>
             <datalist id="deptlist">${deptOpts}</datalist>
           </div>
         </div>

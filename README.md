@@ -25,23 +25,26 @@ pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-브라우저에서 **http://localhost:8000** 접속 → 첫 부팅 시 프로토타입과 동일한 데이터가 자동 시드됩니다.
+브라우저에서 **http://localhost:8000** 접속 → 기본 실행은 운영 기준으로 빈 SQLite DB에서 시작합니다.
 
-> 기본 DB는 **SQLite**(파일, 무설치)입니다. 운영(PostgreSQL)은 `ADVISORY_DATABASE_URL` 만 교체하면 됩니다
-> (스키마는 SQLAlchemy 로 동일). 외부망/외부 API 호출은 0건입니다.
+> 기본 DB는 **SQLite**(파일, 무설치)입니다. 내부 관리자용 운영도 SQLite 파일 구조를 그대로 유지하는 것을 기본 전제로 합니다.
+> 기존 `data/` 가 있다면 운영 시작 전 백업하거나 초기화하세요. 데모 데이터는 `ADVISORY_SEED=true` 를 명시한 경우에만 넣습니다.
 
 ---
 
-## 데모 시나리오 (시드 상태로 바로 재현)
+## 데모 시나리오 (필요할 때만)
+
+데모 데이터가 필요하면 실행 전에 `ADVISORY_SEED=true` 를 지정하세요.
 
 1. **권고문 처리 · STEP 2** — 활성 권고문 `국정원-사이버-2026-0612` 의 CVE 6건 중 **2건이 "DB 미등록"**
    (한컴오피스/Acrobat). 서버 게이트에 의해 "자산 매칭" 진행이 막혀 있습니다.
-2. **CVE 데이터베이스** 탭 → "파일 선택"으로 스테이징 → **"피드 적용"** 클릭. 프론트가 번들된
-   `samples/krcert_cve_feed_2026-06-15.json` 을 업로드·적용 → 미등록 2건이 자동 해소 → 게이트 해제.
+2. **CVE 데이터베이스** 탭 → "파일 선택"에서
+   `samples/krcert_cve_feed_2026-06-15.json` 을 직접 선택해 스테이징 → **"피드 적용"** 클릭.
+   미등록 2건이 자동 해소 → 게이트 해제.
 3. **STEP 3 자산 매칭** — 진입 시 서버 매칭 실행. 버전 비교기로 *Chrome 122.x/121.x < 124* 는 매칭,
    *Windows 10* 은 Windows 11 CVE에서 제외됩니다. 오탐 제외 토글 가능.
-4. **STEP 4 발송** — 부서별 메시지 자동 생성 → 발송(멱등). 메신저/메일 게이트웨이 미연동 시
-   `data/outbox.log` 에 적재(외부 호출 0).
+4. **STEP 4 발송** — 부서별 메시지 자동 생성 → SMTP 메일 + 내부 기록 발송(멱등).
+   SMTP 미설정 또는 실패는 `FAILED` 로 기록되며 `SENT` 로 취급하지 않습니다.
 5. **발송 이력 / 대시보드** — 발송·회신 현황 집계.
 
 ---
@@ -70,7 +73,7 @@ advisory-platform/
 │  ├─ support.js         DC 런타임
 │  └─ sample-feed.json   데모용 CVE 피드
 ├─ samples/              CVE 피드 샘플
-├─ smoke_test.py         엔드투엔드 테스트(29건)
+├─ smoke_test.py         엔드투엔드 테스트(66건)
 └─ requirements.txt start.bat start.sh
 ```
 
@@ -84,6 +87,7 @@ advisory-platform/
 | 자산 | `GET /assets` · `POST /assets/import/preview` → `:id/commit` |
 | 매칭 | `POST /advisories/:id/match` · `GET /advisories/:id/matches` · `PATCH /matches/:id` |
 | 발송 | `GET /advisories/:id/notification-preview` · `POST /advisories/:id/notifications` · `GET /notifications` |
+| 발송 진단 | `GET /notify/status` · `POST /notify/test` |
 | **조치 진척** | `GET /advisories/:id/remediation` · `PATCH /notifications/:id/ack` (완료/진행중/불가+코멘트) · `POST /notifications/:id/evidence` |
 | **보고서** | `GET /advisories/:id/report.xlsx` · `GET /advisories/:id/report.html` (인쇄→PDF) |
 | **SLA·리마인드** | `GET /reminders/due` · `POST /advisories/:id/remind` |
@@ -112,19 +116,24 @@ advisory-platform/
 
 ## 설정(환경변수)
 
+`.env.example` 을 `.env` 로 복사해 값을 채우면 앱 시작 시 자동으로 읽습니다. 실제 `.env` 는 `.gitignore` 대상입니다.
+
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `ADVISORY_DATABASE_URL` | `sqlite:///data/advisory.db` | 운영은 `postgresql+psycopg://…` |
-| `ADVISORY_SEED` | `true` | 시작 시 데모 데이터 시드 |
-| `ADVISORY_MESSENGER_ENABLED` / `ADVISORY_MAIL_ENABLED` / `ADVISORY_GROUPWARE_ENABLED` | `false` | 발신 채널 활성(미설정·실패 시 outbox·board.log 폴백 → 외부호출 0 유지) |
-| `ADVISORY_MAIL_SMTP_HOST` `_PORT` `_USER` `_PASSWORD` `ADVISORY_MAIL_USE_TLS` `ADVISORY_MAIL_FROM` | (빈값)·`25` | 메일 = 표준 SMTP. 호스트 지정 시 실제 발송 |
+| `ADVISORY_DATABASE_URL` | `sqlite:///data/advisory.db` | 기본 SQLite 파일 DB 유지. 필요 시 데이터 파일 위치만 조정 |
+| `ADVISORY_SEED` | `false` | 시작 시 데모 데이터 시드. 데모가 필요할 때만 `true` |
+| `ADVISORY_BUNDLED_FEEDS` | `false` | `samples/cve_feeds/` 자동 적재. 운영은 실제 피드 파일을 화면에서 검증 후 적용 |
+| `ADVISORY_MAIL_ENABLED` | `true` | SMTP 메일 채널 활성. SMTP host 미설정·실패는 `FAILED` |
+| `ADVISORY_MESSENGER_ENABLED` / `ADVISORY_GROUPWARE_ENABLED` | `false` | 메신저·그룹웨어 웹훅 활성. 미설정·실패는 실패로 기록 |
+| `ADVISORY_MAIL_SMTP_HOST` `_PORT` `_USER` `_PASSWORD` `ADVISORY_MAIL_USE_TLS` `ADVISORY_MAIL_FROM` | (빈값)·`25` | 메일 = 표준 SMTP. 비밀번호는 환경변수로만 관리하며 UI/DB에 저장하지 않음 |
 | `ADVISORY_MESSENGER_WEBHOOK_URL` · `ADVISORY_GROUPWARE_WEBHOOK_URL` | (빈값) | 메신저·게시판 = 범용 웹훅 POST(JSON) |
 | `ADVISORY_MAX_UPLOAD_MB` | `30` | 업로드 크기 제한 |
 
 ## 테스트
 
 ```bash
-.venv/Scripts/python.exe smoke_test.py    # 게이트·피드·매칭·발송·업로드·임포트·어댑터 55건
+.venv/Scripts/python.exe smoke_test.py    # 게이트·피드·매칭·발송·업로드·임포트·어댑터 66건
+pytest tests
 ```
 
 ---
@@ -140,13 +149,15 @@ PDF 표 추출 등에서 흔한 띄어쓰기·구분자 변형(`CVE 2026 21345`,
 
 - [x] **완료** — React·ReactDOM·Pretendard 를 `web/vendor/` 로 로컬 번들링(외부 CDN 요청 0건, 브라우저 검증 완료).
       Babel 은 JSX x-import 미사용으로 호출되지 않음.
-- [ ] DB 를 PostgreSQL 로(`ADVISORY_DATABASE_URL`), 원본 PDF/피드 저장소를 내부 스토리지로.
+- [ ] 운영 시작 전 `data/` 백업 또는 초기화 후 `ADVISORY_SEED=false` 로 기동.
+- [ ] SMTP 환경변수 설정 후 관리자 화면의 테스트 메일로 발송 확인.
+- [ ] CVE 피드와 자산대장은 실제 파일을 화면에서 검증 후 적용.
 
 ## 아직 외부 규격 확정이 필요한 부분(명세 §9 — 어댑터로 격리됨)
 
 | 항목 | 현재 구현 | 확정 시 |
 |---|---|---|
-| 사내 메일 발송 | **표준 SMTP 구현 완료**(`notify._send_mail`) — `ADVISORY_MAIL_SMTP_HOST` 설정 시 발송, 미설정·실패 시 outbox 폴백 | (선택) 조직 메일 정책 반영 |
+| 사내 메일 발송 | **표준 SMTP 구현 완료**(`notify._send_mail`) — SMTP 성공만 `SENT`, 미설정·실패는 `FAILED` | (선택) 조직 메일 정책 반영 |
 | 사내 메신저·그룹웨어 게시판 | **범용 웹훅 POST 구현 완료**(`notify._post_webhook`·`groupware.post_board`) — `*_WEBHOOK_URL` 설정 시 발신, 미설정·실패 시 outbox·board.log 폴백 | (선택) 비표준 API면 어댑터 1곳만 교체 |
 | CVE 피드 정밀 스키마 | NVD JSON / CSV / 내부 JSON 파서 | 실제 피드 필드 고정 |
 | 제품 정규화 사전 | `core/normalize.py` 별칭 사전 | 자산대장 실제 표기 반영 |

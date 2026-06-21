@@ -90,15 +90,43 @@
           <sc-if value="{{ procBoard }}" hint-placeholder-val="{{ true }}">
             <div>
               <!-- 업로드 -->
-              <div onDragOver="{{ onPdfDragOver }}" onDrop="{{ onPdfDrop }}" style="background:#fff; border:1.5px dashed #c4d0de; border-radius:12px; padding:18px 20px; margin-bottom:16px; display:flex; align-items:center; gap:16px;">
-                <div style="width:44px; height:44px; border-radius:11px; background:#e6f4f2; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5 5 5" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round"/></svg>
+              <div onDragOver="{{ onPdfDragOver }}" onDrop="{{ onPdfDrop }}" style="background:#fff; border:1.5px dashed #c4d0de; border-radius:12px; padding:18px 20px; margin-bottom:16px;">
+                <div style="display:flex; align-items:center; gap:16px;">
+                  <div style="width:44px; height:44px; border-radius:11px; background:#e6f4f2; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5 5 5" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  </div>
+                  <div style="flex:1; min-width:0;">
+                    <div style="font-size:14px; font-weight:700; color:#15294a;">보안권고문 PDF 업로드</div>
+                    <div style="font-size:12px; color:#94a1b4; margin-top:2px;">드래그&드롭 또는 파일 선택 · 다중 업로드 · 업로드 즉시 백그라운드 CVE 추출(아래에서 진행상황 확인)</div>
+                  </div>
+                  <button onClick="{{ onPickFile }}" disabled="{{ uploadBlocked }}" style="{{ uploadInlineBtnStyle }}">파일 선택</button>
                 </div>
-                <div style="flex:1; min-width:0;">
-                  <div style="font-size:14px; font-weight:700; color:#15294a;">보안권고문 PDF 업로드</div>
-                  <div style="font-size:12px; color:#94a1b4; margin-top:2px;">드래그&드롭 또는 파일 선택 · 다중 업로드 · 업로드 즉시 백그라운드 CVE 추출(아래에서 진행상황 확인)</div>
+                <div style="display:grid; grid-template-columns:1fr 160px 180px 150px; gap:10px; margin-top:14px; padding-top:14px; border-top:1px solid #eef1f5;">
+                  <label style="display:flex; flex-direction:column; gap:5px;">
+                    <span style="font-size:11px; font-weight:700; color:#5a6b86;">출처기관</span>
+                    <input value="{{ uploadSourceOrg }}" onInput="{{ onUploadSource }}" placeholder="예: 국가정보원" style="font-family:inherit; font-size:12.5px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a;">
+                  </label>
+                  <label style="display:flex; flex-direction:column; gap:5px;">
+                    <span style="font-size:11px; font-weight:700; color:#5a6b86;">접수채널</span>
+                    <select value="{{ uploadReceiveChannel }}" onChange="{{ onUploadChannel }}" style="font-family:inherit; font-size:12.5px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; background:#fff; color:#33415a;">
+                      <option value="NCST">NCST</option>
+                      <option value="WEBMAIL">웹메일</option>
+                      <option value="OFFICIAL_DOC">공문</option>
+                    </select>
+                  </label>
+                  <label style="display:flex; flex-direction:column; gap:5px;">
+                    <span style="font-size:11px; font-weight:700; color:#5a6b86;">문서번호</span>
+                    <input value="{{ uploadDocNo }}" onInput="{{ onUploadDocNo }}" placeholder="파일명 기반 생성" style="font-family:inherit; font-size:12.5px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a;">
+                  </label>
+                  <label style="display:flex; flex-direction:column; gap:5px;">
+                    <span style="font-size:11px; font-weight:700; color:#5a6b86;">조치기한</span>
+                    <input type="date" value="{{ uploadDueAt }}" onInput="{{ onUploadDueAt }}" style="font-family:inherit; font-size:12.5px; padding:7px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a;">
+                  </label>
+                  <label style="display:flex; flex-direction:column; gap:5px; grid-column:1 / -1;">
+                    <span style="font-size:11px; font-weight:700; color:#5a6b86;">제목</span>
+                    <input value="{{ uploadTitle }}" onInput="{{ onUploadTitle }}" placeholder="미입력 시 PDF 제목 또는 파일명 사용" style="font-family:inherit; font-size:12.5px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a;">
+                  </label>
                 </div>
-                <button onClick="{{ onPickFile }}" style="background:#0f766e; color:#fff; border:none; border-radius:8px; padding:10px 20px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; flex-shrink:0;">파일 선택</button>
               </div>
               <!-- 목록 헤더 -->
               <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
@@ -135,6 +163,9 @@
                           <svg width="12" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 2h8l4 4v16H6z" stroke="#b42318" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 2v4h4" stroke="#b42318" stroke-width="1.7"/></svg>
                           PDF 열람
                         </button>
+                        <sc-if value="{{ a.canRetry }}" hint-placeholder-val="">
+                          <button onClick="{{ a.onRetry }}" style="background:#fff; color:#b45309; border:1px solid #e6c98a; border-radius:8px; padding:7px 13px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap;">추출 재시도</button>
+                        </sc-if>
                         <button onClick="{{ a.onProcess }}" style="background:#0f766e; color:#fff; border:none; border-radius:8px; padding:7px 13px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap;">처리 →</button>
                       </div>
                     </div>
@@ -159,7 +190,7 @@
           <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:16px 20px; margin-bottom:18px; display:flex; align-items:center; gap:22px;">
             <div style="flex:1; min-width:0;">
               <div style="display:flex; align-items:center; gap:9px; margin-bottom:6px;">
-                <span style="font-size:11px; font-weight:700; color:#b42318; background:#fdecec; border:1px solid #f5c6c2; padding:2px 8px; border-radius:5px;">국가정보원</span>
+                <span style="font-size:11px; font-weight:700; color:#b42318; background:#fdecec; border:1px solid #f5c6c2; padding:2px 8px; border-radius:5px;">{{ advisory.source }}</span>
                 <span style="font-size:11.5px; color:#8a98ab; font-family:monospace;">{{ advisory.docNo }}</span>
               </div>
               <div style="font-size:15.5px; font-weight:700; color:#15294a; letter-spacing:-.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ advisory.title }}</div>
@@ -196,13 +227,39 @@
               <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:24px;">
                 <h2 style="margin:0 0 4px; font-size:15px; font-weight:700; color:#15294a;">보안권고문 PDF 업로드</h2>
                 <p style="margin:0 0 20px; font-size:13px; color:#8a98ab;">PDF에서 <b style="color:#0f766e;">CVE 코드만 자동 추출</b>합니다. 제품·버전·심각도 정보는 로컬 CVE 데이터베이스에서 조회합니다.</p>
+                <div style="display:grid; grid-template-columns:1fr 160px; gap:10px; margin-bottom:14px;">
+                  <label style="display:flex; flex-direction:column; gap:5px;">
+                    <span style="font-size:11px; font-weight:700; color:#5a6b86;">출처기관</span>
+                    <input value="{{ uploadSourceOrg }}" onInput="{{ onUploadSource }}" placeholder="예: 국가정보원" style="font-family:inherit; font-size:12.5px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a;">
+                  </label>
+                  <label style="display:flex; flex-direction:column; gap:5px;">
+                    <span style="font-size:11px; font-weight:700; color:#5a6b86;">접수채널</span>
+                    <select value="{{ uploadReceiveChannel }}" onChange="{{ onUploadChannel }}" style="font-family:inherit; font-size:12.5px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; background:#fff; color:#33415a;">
+                      <option value="NCST">NCST</option>
+                      <option value="WEBMAIL">웹메일</option>
+                      <option value="OFFICIAL_DOC">공문</option>
+                    </select>
+                  </label>
+                  <label style="display:flex; flex-direction:column; gap:5px;">
+                    <span style="font-size:11px; font-weight:700; color:#5a6b86;">문서번호</span>
+                    <input value="{{ uploadDocNo }}" onInput="{{ onUploadDocNo }}" placeholder="미입력 시 파일명 기반 생성" style="font-family:inherit; font-size:12.5px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a;">
+                  </label>
+                  <label style="display:flex; flex-direction:column; gap:5px;">
+                    <span style="font-size:11px; font-weight:700; color:#5a6b86;">조치기한</span>
+                    <input type="date" value="{{ uploadDueAt }}" onInput="{{ onUploadDueAt }}" style="font-family:inherit; font-size:12.5px; padding:7px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a;">
+                  </label>
+                  <label style="display:flex; flex-direction:column; gap:5px; grid-column:1 / -1;">
+                    <span style="font-size:11px; font-weight:700; color:#5a6b86;">제목</span>
+                    <input value="{{ uploadTitle }}" onInput="{{ onUploadTitle }}" placeholder="미입력 시 PDF 제목 또는 파일명 사용" style="font-family:inherit; font-size:12.5px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a;">
+                  </label>
+                </div>
                 <div onDragOver="{{ onPdfDragOver }}" onDrop="{{ onPdfDrop }}" style="border:2px dashed #c4d0de; border-radius:12px; background:#f7f9fc; padding:46px 20px; text-align:center;">
                   <div style="width:54px; height:54px; margin:0 auto 14px; border-radius:14px; background:#e6f4f2; display:flex; align-items:center; justify-content:center;">
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5 5 5" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round"/></svg>
                   </div>
                   <div style="font-size:14px; font-weight:600; color:#3a4a63;">PDF 파일을 여기로 끌어다 놓으세요</div>
                   <div style="font-size:12px; color:#94a1b4; margin-top:5px;">또는 클릭하여 파일 선택 · 최대 30MB · 다중 업로드 지원</div>
-                  <button onClick="{{ onPickFile }}" style="margin-top:18px; background:#0f766e; color:#fff; border:none; border-radius:8px; padding:10px 22px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;">파일 선택</button>
+                  <button onClick="{{ onPickFile }}" disabled="{{ uploadBlocked }}" style="{{ uploadHeroBtnStyle }}">파일 선택</button>
                 </div>
                 <div style="margin-top:16px; display:flex; gap:10px; font-size:12px; color:#8a98ab; align-items:flex-start;">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex-shrink:0; margin-top:1px;"><circle cx="12" cy="12" r="9" stroke="#0f766e" stroke-width="1.6"/><path d="M12 8v5m0 3h.01" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -256,7 +313,7 @@
                   <sc-if value="{{ pdfAvailable }}" hint-placeholder-val="{{ true }}">
                     <div style="padding:14px 16px;">
                       <div style="position:relative; width:100%; border:1px solid #eef1f5; border-radius:6px; overflow:hidden; background:#f4f6f9;">
-                        <img src="{{ pdfPageUrl }}" style="display:block; width:100%; height:auto;" alt="권고문 원문" />
+                        {{ pdfPageNode }}
                         <sc-for list="{{ pdfBoxes }}" as="b" hint-placeholder-count="6">
                           <div style="{{ b.style }}" title="{{ b.term }}"></div>
                         </sc-for>
@@ -405,6 +462,14 @@
                 <div style="font-size:13px; color:#8a2820;"><span style="font-weight:700;">발송 직전 최종 검토 —</span> 부서별 메시지 내용과 채널을 확인한 뒤 발송하세요. 발송 후에는 발송이력에 기록되며 회수할 수 없습니다.</div>
               </div>
 
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:13px 18px; margin-bottom:14px;">
+                <div style="display:flex; align-items:center; gap:12px; min-width:0;">
+                  <span style="{{ smtpStyle }}">{{ smtpLabel }}</span>
+                  <span style="font-size:11.5px; color:#8a98ab; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ smtpDetail }}</span>
+                </div>
+                <button onClick="{{ onTestSmtp }}" style="background:#fff; color:#0f5d56; border:1px solid #b8e0da; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap;">테스트 메일</button>
+              </div>
+
               <div style="display:flex; flex-direction:column; gap:14px;">
                 <sc-for list="{{ deptGroups }}" as="g" hint-placeholder-count="4">
                   <div style="{{ g.cardStyle }}">
@@ -524,8 +589,19 @@
           <!-- cve table -->
           <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden;">
             <div style="padding:14px 20px; border-bottom:1px solid #eef1f5; display:flex; align-items:center; justify-content:space-between;">
-              <span style="font-size:13.5px; font-weight:700; color:#15294a;">등록된 CVE (현 권고문 관련)</span>
-              <span style="font-size:11.5px; color:#94a1b4;">최근 반영된 항목</span>
+              <span style="font-size:13.5px; font-weight:700; color:#15294a;">등록된 CVE</span>
+              <span style="font-size:11.5px; color:#94a1b4;">{{ cveTableShown }} / {{ cveTableTotal }}건 표시</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:9px; padding:11px 20px; border-bottom:1px solid #eef1f5; background:#fff;">
+              <input value="{{ cveQuery }}" onInput="{{ onCveQuery }}" placeholder="CVE, 제품, 출처 검색" style="flex:1; font-family:inherit; font-size:12.5px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a;">
+              <select value="{{ cveSeverity }}" onChange="{{ onCveSeverity }}" style="font-family:inherit; font-size:12.5px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; background:#fff; color:#33415a;">
+                <option value="">전체 심각도</option>
+                <option value="긴급">긴급</option>
+                <option value="높음">높음</option>
+                <option value="중간">중간</option>
+                <option value="낮음">낮음</option>
+                <option value="미상">미상</option>
+              </select>
             </div>
             <div style="display:grid; grid-template-columns:140px 1fr 90px 130px 110px 70px; gap:0; padding:10px 20px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:11px; font-weight:700; color:#94a1b4;">
               <span>CVE</span><span>제품 / OS</span><span style="text-align:center;">심각도</span><span>영향 버전</span><span>게시일</span><span style="text-align:right;">출처</span>
@@ -540,6 +616,14 @@
                 <span style="text-align:right; font-size:11px; color:#5a6b86;">{{ c.source }}</span>
               </div>
             </sc-for>
+            <sc-if value="{{ cveTableEmpty }}" hint-placeholder-val="">
+              <div style="padding:22px 20px; font-size:12.5px; color:#8a98ab; text-align:center;">조건에 맞는 CVE가 없습니다.</div>
+            </sc-if>
+            <sc-if value="{{ cveHasMore }}" hint-placeholder-val="">
+              <div style="padding:13px 20px; display:flex; justify-content:center; border-top:1px solid #eef1f5;">
+                <button onClick="{{ onCveMore }}" style="background:#fff; color:#0f5d56; border:1px solid #b8e0da; border-radius:8px; padding:8px 18px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit;">더보기</button>
+              </div>
+            </sc-if>
           </div>
         </div>
       </sc-if>
@@ -563,6 +647,13 @@
                   </button>
                 </div>
               </div>
+              <sc-if value="{{ hasLastImport }}" hint-placeholder-val="">
+                <div style="display:flex; gap:10px; padding:10px 20px; border-bottom:1px solid #eef1f5; background:#f8fbfa;">
+                  <sc-for list="{{ lastImportRows }}" as="r" hint-placeholder-count="3">
+                    <div style="font-size:11.5px; color:#5a6b86;"><span style="font-weight:700; color:#0f5d56;">{{ r.label }}</span> {{ r.value }}</div>
+                  </sc-for>
+                </div>
+              </sc-if>
               <div style="display:grid; grid-template-columns:96px 1fr 150px 130px 100px 120px 96px; gap:0; padding:10px 20px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:11px; font-weight:700; color:#94a1b4;">
                 <span>자산번호</span><span>부서</span><span>제품 / OS</span><span>버전</span><span>IP</span><span>담당자</span><span style="text-align:center;">상태</span>
               </div>
@@ -653,6 +744,15 @@
                     </div>
                   </sc-for>
                 </div>
+              </div>
+
+              <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin-bottom:16px;">
+                <sc-for list="{{ importPlanRows }}" as="p" hint-placeholder-count="4">
+                  <div style="background:#fff; border:1px solid #e1e7ef; border-radius:9px; padding:11px 13px;">
+                    <div style="font-size:10.5px; color:#94a1b4; font-weight:700;">{{ p.label }}</div>
+                    <div style="font-size:13.5px; color:#15294a; font-weight:800; margin-top:4px;">{{ p.value }}</div>
+                  </div>
+                </sc-for>
               </div>
 
               <!-- mapping targets -->
@@ -900,7 +1000,7 @@
           </button>
         </div>
         <div style="flex:1; min-height:0; background:#525659;">
-          <iframe src="{{ pdfModalSrc }}" style="width:100%; height:80vh; border:none; display:block;" title="원문 PDF"></iframe>
+          {{ pdfModalFrame }}
         </div>
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:13px 20px; border-top:1px solid #eef1f5;">
           <div style="display:flex; gap:8px;">
@@ -951,7 +1051,7 @@ class Component extends DCLogic {
     step: 2,
     dbUpdated: false,
     feedStaged: false,
-    updatedAt: '2026-06-12 06:00 (정기)',
+    updatedAt: '',
     excluded: {},
     sent: {},
     assetView: 'list',
@@ -977,6 +1077,18 @@ class Component extends DCLogic {
     apiFeedLog: [],
     cveStats: null,
     cveAddText: '',
+    cveQuery: '',
+    cveSeverity: '',
+    cveVisibleLimit: 50,
+    notifyStatus: null,
+    uploadMeta: {
+      source_org: '',
+      receive_channel: 'NCST',
+      doc_no: '',
+      title: '',
+      due_at: '',
+    },
+    lastImportResult: null,
     advPick: null,        // 조치율/보고서 대상 권고문 선택(§B)
   };
 
@@ -1052,7 +1164,7 @@ class Component extends DCLogic {
       const active = (advs.items || []).find(a => a.status !== 'COMPLETED' && a.status !== 'ARCHIVED')
                    || (advs.items || [])[0];
       this._advisoryId = active ? active.id : null;
-      const [cves, cveList, assets, history, dash, feeds, stats, rem, audit, pdfView] = await Promise.all([
+      const [cves, cveList, assets, history, dash, feeds, stats, rem, audit, pdfView, notifyStatus] = await Promise.all([
         this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/cves') : Promise.resolve({ items: [] }),
         this.api('GET', '/cves?size=500'),
         this.api('GET', '/assets?size=500'),
@@ -1063,6 +1175,7 @@ class Component extends DCLogic {
         this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/remediation') : Promise.resolve(null),
         this.api('GET', '/audit?size=100').catch(() => ({ items: [] })),
         this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/pdf-view').catch(() => null) : Promise.resolve(null),
+        this.api('GET', '/notify/status').catch(() => null),
       ]);
       await this._loadMatches();
       this.setState({
@@ -1079,6 +1192,7 @@ class Component extends DCLogic {
         apiRem: rem,
         apiAudit: audit.items || [],
         pdfView: pdfView, pdfPage: 0,
+        notifyStatus: notifyStatus,
       });
     } catch (e) { console.error('[load]', e); this.setState({ loaded: true }); }
   }
@@ -1158,6 +1272,16 @@ class Component extends DCLogic {
     this.setState({ pdfModal: { advisoryId: advisoryId, title: title || '보안권고문', docNo: docNo || '' } });
   }
 
+  _retryExtract(advisoryId) {
+    if (!advisoryId) return;
+    this.api('POST', '/advisories/' + advisoryId + '/extract', {})
+      .then(() => {
+        if (this.flashToast) this.flashToast('추출 재시도', '백그라운드 추출을 다시 시작했습니다');
+        return this._refreshBoard();
+      })
+      .catch(() => { if (this.flashToast) this.flashToast('재시도 실패', '권고문 상태를 확인하세요'); });
+  }
+
   // CVE 피드 실 업로드(§4.3) — 사용자가 반입한 피드 파일(NVD/CSV/내부 JSON)을 업로드·적용.
   _pickFeedFile() {
     const inp = document.createElement('input');
@@ -1204,6 +1328,70 @@ class Component extends DCLogic {
     inp.click();
   }
 
+  _setUploadMeta(key, value) {
+    this.setState(s => {
+      const meta = Object.assign({}, s.uploadMeta || {});
+      meta[key] = value;
+      return { uploadMeta: meta };
+    });
+  }
+
+  _deliverySummary(items) {
+    const label = { MAIL: 'SMTP 메일', WEB_UI: '내부 기록', MESSENGER: '메신저' };
+    return (items || []).map(r => (label[r.channel] || r.channel) + ' ' + (r.ok ? 'sent' : (r.info || 'failed'))).join(' · ');
+  }
+
+  _sendDepartments(deptNames) {
+    if (!this._advisoryId) return;
+    const idx = this._deptIndex || {};
+    const reverse = {};
+    Object.keys(idx).forEach(name => { reverse[idx[name]] = name; });
+    const payload = {};
+    if (deptNames && deptNames.length) {
+      const targets = deptNames.map(name => idx[name]).filter(Boolean);
+      if (!targets.length) return;
+      payload.departments = targets.map(id => ({ department_id: id, channels: ['MAIL', 'WEB_UI'] }));
+    } else {
+      payload.all = true;
+      payload.channels = ['MAIL', 'WEB_UI'];
+    }
+    this.api('POST', '/advisories/' + this._advisoryId + '/notifications', payload)
+      .then(r => Promise.all([
+        Promise.resolve(r),
+        this.api('GET', '/notifications'),
+        this.api('GET', '/advisories/' + this._advisoryId).catch(() => null),
+        this.api('GET', '/advisories/' + this._advisoryId + '/remediation').catch(() => null),
+      ]))
+      .then(([r, h, adv, rem]) => {
+        const nextSent = Object.assign({}, this.state.sent || {});
+        const failures = [];
+        let sentOk = 0;
+        (r.results || []).forEach(row => {
+          const dept = reverse[row.department_id] || String(row.department_id);
+          if (row.status === 'SENT') { nextSent[dept] = true; sentOk++; }
+          else { nextSent[dept] = false; failures.push(dept + ' · ' + this._deliverySummary(row.delivery_results)); }
+        });
+        this.setState({ sent: nextSent, apiHistory: h.items || [], apiAdvisory: adv || this.state.apiAdvisory, apiRem: rem || this.state.apiRem });
+        if (this.flashToast) {
+          if (failures.length) this.flashToast('발송 실패', failures.slice(0, 2).join(' / '));
+          else this.flashToast('발송 완료', sentOk + '개 부서 · SMTP 메일과 내부 기록 완료');
+        }
+      })
+      .catch(e => { console.error('[notify send]', e); if (this.flashToast) this.flashToast('발송 실패', '서버 응답을 확인하세요'); });
+  }
+
+  _testMail() {
+    const to = window.prompt('테스트 메일 수신자 주소를 입력하세요');
+    if (!to) return;
+    this.api('POST', '/notify/test', { to: to.trim() })
+      .then(r => {
+        if (this.flashToast) this.flashToast(r.ok ? 'SMTP 테스트 성공' : 'SMTP 테스트 실패', r.info || '');
+        return this.api('GET', '/notify/status').catch(() => null);
+      })
+      .then(st => { if (st) this.setState({ notifyStatus: st }); })
+      .catch(() => { if (this.flashToast) this.flashToast('SMTP 테스트 실패', '수신자 주소 또는 SMTP 설정을 확인하세요'); });
+  }
+
   // ── 권고문 PDF 업로드(STEP1) — OS 파일선택/드래그드롭 → /advisories → CVE 추출 ──
   _pickAdvisoryFile() {
     const inp = document.createElement('input');
@@ -1214,17 +1402,24 @@ class Component extends DCLogic {
 
   _uploadAdvisories(files) {
     const self = this; let okCount = 0, dup = 0;
+    const meta = this.state.uploadMeta || {};
+    if (!String(meta.source_org || '').trim()) {
+      if (this.flashToast) this.flashToast('출처기관 필요', 'PDF 업로드 전에 출처기관을 입력하세요');
+      return;
+    }
     const step = (i) => {
       if (i >= files.length) {
         return self.load().then(() => {
-          if (okCount && self.flashToast) self.flashToast('업로드 완료', okCount + '건 접수 · CVE 추출 완료' + (dup ? (' · 중복 ' + dup + '건') : ''));
+          if (okCount && self.flashToast) self.flashToast('업로드 완료', okCount + '건 접수 · 추출 대기열 등록' + (dup ? (' · 중복 ' + dup + '건') : ''));
           else if (dup && self.flashToast) self.flashToast('이미 업로드된 PDF', dup + '건이 접수 목록에 있습니다');
         });
       }
       const fd = new FormData();
       fd.append('file', files[i]);
-      fd.append('source_org', '국가정보원');
-      fd.append('receive_channel', 'NCST');
+      ['source_org', 'receive_channel', 'doc_no', 'title', 'due_at'].forEach(k => {
+        const v = (meta[k] || '').trim();
+        if (v) fd.append(k, v);
+      });
       return self.api('POST', '/advisories', fd, true)
         .then(adv => { okCount++; return self.api('POST', '/advisories/' + adv.id + '/extract').catch(() => {}); })
         .catch(r => { if (r && r.status === 409) dup++; else console.error('[advisory upload]', r); })
@@ -1278,7 +1473,7 @@ class Component extends DCLogic {
       mapping, header_row: this.state.importHeaderRow, header_rows: this.state.importHeaderRows || 1,
       mode: 'append', on_warning: 'skip',
     })
-      .then(r => { if (this.flashToast) this.flashToast('가져오기 완료', r.committed + '행 적재' + (r.created_departments && r.created_departments.length ? (' · 부서 ' + r.created_departments.length + '개 생성') : '') + (r.warnings && r.warnings.length ? (' · 경고 ' + r.warnings.length + '건') : '')); return this.api('GET', '/assets?size=500'); })
+      .then(r => { this.setState({ lastImportResult: r }); if (this.flashToast) this.flashToast('가져오기 완료', r.committed + '행 적재' + (r.created_departments && r.created_departments.length ? (' · 부서 ' + r.created_departments.length + '개 생성') : '') + (r.warnings && r.warnings.length ? (' · 경고 ' + r.warnings.length + '건') : '')); return this.api('GET', '/assets?size=500'); })
       .then(a => this.setState({ apiAssets: a.items || [], assetView: 'list', assetImported: true, importPreview: null }))
       .catch(e => { console.error('[import]', e); if (this.flashToast) this.flashToast('가져오기 실패', '필수 매핑(부서·제품·담당자) 확인'); });
   }
@@ -1305,21 +1500,7 @@ class Component extends DCLogic {
   // 사용자 액션(클라이언트 상태 변화)을 서버에 반영 — 기존 UI 핸들러를 건드리지 않고 후킹.
   async componentDidUpdate() {
     const S = this.state, P = this._prev || {};
-    // ① CVE 피드 적용: dbUpdated false→true
-    if (S.dbUpdated && !P.dbUpdated && !this._busy.feed) {
-      this._busy.feed = true;
-      this._prev = Object.assign({}, P, { dbUpdated: true });
-      try {
-        const f = await fetch('/ui/sample-feed.json').then(r => r.blob());
-        const fd = new FormData(); fd.append('file', f, 'krcert_cve_feed_2026-06-15.json');
-        const imp = await this.api('POST', '/cve-feeds', fd, true);
-        await this.api('POST', '/cve-feeds/' + imp.import_id + '/apply');
-        await this.load();
-      } catch (e) { console.error('[feed apply]', e); }
-      this._busy.feed = false;
-      return;
-    }
-    // ② 자산 매칭 단계 진입(step→3): 서버 매칭 실행
+    // ① 자산 매칭 단계 진입(step→3): 서버 매칭 실행
     if (S.step === 3 && P.step !== 3 && !this._busy.match && this._advisoryId) {
       this._busy.match = true;
       this._matchesLoaded = false;   // 서버 매칭 로드 전까지는 클라이언트 추정 표시
@@ -1329,7 +1510,7 @@ class Component extends DCLogic {
       this._busy.match = false;
       return;
     }
-    // ③ 오탐 제외 토글: 서버 match PATCH
+    // ② 오탐 제외 토글: 서버 match PATCH
     const exKeys = new Set(Object.keys(S.excluded || {}).concat(Object.keys(P.excluded || {})));
     for (const k of exKeys) {
       const now = !!(S.excluded || {})[k], was = !!(P.excluded || {})[k];
@@ -1338,22 +1519,20 @@ class Component extends DCLogic {
         this.api('PATCH', '/matches/' + mid, { status: now ? 'EXCLUDED' : 'MATCHED', reason: '관제 검토' }).catch(() => {});
       }
     }
-    // ④ 부서 발송: sent[dept] false→true
-    const sentKeys = Object.keys(S.sent || {}).filter(d => S.sent[d] && !(P.sent || {})[d]);
-    if (sentKeys.length && this._advisoryId) {
-      const idx = this._deptIndex || {};
-      const deptIds = sentKeys.map(n => idx[n]).filter(Boolean);
-      if (deptIds.length) {
-        this.api('POST', '/advisories/' + this._advisoryId + '/notifications',
-          { departments: deptIds.map(id => ({ department_id: id, channels: ['MESSENGER', 'MAIL', 'WEB_UI'] })) })
-          .then(() => this.api('GET', '/notifications')).then(h => this.setState({ apiHistory: h.items || [] })).catch(() => {});
-      }
-    }
     this._prev = { dbUpdated: S.dbUpdated, sent: Object.assign({}, S.sent), excluded: Object.assign({}, S.excluded), step: S.step };
   }
 
   _koSev(sev) {
     return ({ CRITICAL: '긴급', HIGH: '높음', MEDIUM: '중간', LOW: '낮음' })[sev] || sev || '미상';
+  }
+  _versionText(affectedVersions) {
+    const av = affectedVersions;
+    if (Array.isArray(av)) return av.length ? av.join(', ') : '전체';
+    if (av && av.lt) return av.lt + ' 미만 전체';
+    if (av && av.lte) return av.lte + ' 이하 전체';
+    if (av && av.eq) return av.eq;
+    if (typeof av === 'string') return av || '전체';
+    return '전체';
   }
   _fmtDate(iso) {
     if (!iso) return '';
@@ -1397,10 +1576,11 @@ class Component extends DCLogic {
 
   advisory() {
     const a = this.state.apiAdvisory;
-    if (!a) return { docNo: '', title: '로딩 중…', route: '', receivedAt: '', dueAt: '' };
+    if (!a) return { docNo: '', title: '로딩 중…', source: '', route: '', receivedAt: '', dueAt: '' };
     return {
       docNo: a.doc_no || '',
       title: a.title || '',
+      source: a.source_org || '발신기관',
       route: a.receive_channel === 'NCST' ? (a.source_org || '') + ' NCST 전용망' : (a.source_org || ''),
       receivedAt: this._fmtDate(a.received_at),
       dueAt: this._fmtDate(a.due_at),
@@ -1528,6 +1708,7 @@ class Component extends DCLogic {
     if (kind === 'grid') return wrap([p('M4 4h7v7H4z', { key: 1 }), p('M13 4h7v7h-7z', { key: 2 }), p('M4 13h7v7H4z', { key: 3 }), p('M13 13h7v7h-7z', { key: 4 })]);
     if (kind === 'clock') return wrap([React.createElement('circle', { key: 1, cx: 12, cy: 12, r: 9, stroke: c, strokeWidth: 1.7 }), p('M12 7v5l3 2', { key: 2 })]);
     if (kind === 'doc') return wrap([p('M6 2h8l4 4v16H6z', { key: 1 }), p('M14 2v4h4', { key: 2 }), p('M9 13h6M9 17h6', { key: 3 })]);
+    if (kind === 'board') return wrap([p('M5 4h14v16H5z', { key: 1 }), p('M8 8h8M8 12h8M8 16h5', { key: 2 })]);
     if (kind === 'db') return wrap([React.createElement('ellipse', { key: 1, cx: 12, cy: 5.5, rx: 8, ry: 3, stroke: c, strokeWidth: 1.7 }), p('M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13', { key: 2 }), p('M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3', { key: 3 })]);
     if (kind === 'server') return wrap([p('M3 4h18v6H3zM3 14h18v6H3z', { key: 1 }), React.createElement('circle', { key: 2, cx: 7, cy: 7, r: 1, fill: c }), React.createElement('circle', { key: 3, cx: 7, cy: 17, r: 1, fill: c })]);
     if (kind === 'send') return wrap([p('M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z', { key: 1 })]);
@@ -1548,6 +1729,7 @@ class Component extends DCLogic {
     const items = [
       { id: 'dashboard', label: '대시보드', icon: this.icon('grid') },
       { id: 'process', label: '권고문 처리', icon: this.icon('doc') },
+      { id: 'board', label: '게시판', icon: this.icon('board') },
       { id: 'cvedb', label: 'CVE 데이터베이스', icon: this.icon('db'), badge: unresolved ? String(unresolved) : null },
       { id: 'assets', label: '자산관리대장', icon: this.icon('server') },
       { id: 'history', label: '발송 이력', icon: this.icon('send') },
@@ -1556,7 +1738,11 @@ class Component extends DCLogic {
     return items.map(it => {
       const active = S.nav === it.id;
       return Object.assign({}, it, {
-        onClick: () => this.setState({ nav: it.id }),
+        onClick: () => {
+          if (it.id === 'history') window.location.href = '/admin/history';
+          else if (it.id === 'board') window.location.href = '/board';
+          else this.setState({ nav: it.id });
+        },
         style: 'display:flex; align-items:center; gap:11px; width:100%; border:none; cursor:pointer; font-family:inherit; font-size:13.5px; font-weight:' + (active ? '700' : '500') + '; padding:10px 12px; border-radius:9px; text-align:left; '
           + (active ? 'background:#15385c; color:#fff;' : 'background:transparent; color:#9fb1c6;'),
         badgeStyle: 'background:#e8a33d; color:#3a2a08; font-size:10.5px; font-weight:800; padding:1px 7px; border-radius:9px;',
@@ -1635,7 +1821,7 @@ class Component extends DCLogic {
     return (this.state.apiHistory || []).map(n => {
       const ack = n.ack_status;
       const st = ack === 'DONE' ? ['조치완료', 'green'] : ack === 'IN_PROGRESS' ? ['조치중', 'amber']
-        : ack === 'UNABLE' ? ['조치불가', 'red'] : (n.status === 'SENT' || n.status === 'ACKED') ? ['미회신', 'red'] : ['대기', 'amber'];
+        : ack === 'UNABLE' ? ['조치불가', 'red'] : n.status === 'FAILED' ? ['발송실패', 'red'] : (n.status === 'SENT' || n.status === 'ACKED') ? ['미회신', 'red'] : ['대기', 'amber'];
       const ackBtn = (s, label) => ({
         label,
         onClick: () => this._ack(n.id, s),
@@ -1696,50 +1882,73 @@ class Component extends DCLogic {
     const byDept = {};
     activeMatches.forEach(m => { (byDept[m.asset.dept] = byDept[m.asset.dept] || []).push(m); });
     const deptNames = Object.keys(byDept);
+    const notifyStatus = S.notifyStatus || {};
+    const baseChannels = [
+      { label: 'SMTP 메일', style: 'font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:5px; background:#eef4fb; color:#2f5d8f; border:1px solid #d4e3f2;' },
+      { label: '웹UI 기록', style: 'font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:5px; background:#e6f4f2; color:#0f766e; border:1px solid #b8e0da;' },
+    ];
+    if (notifyStatus.messenger_enabled) {
+      baseChannels.unshift({ label: '메신저', style: 'font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:5px; background:#f3edfa; color:#7a5a9a; border:1px solid #e0d2f0;' });
+    }
     const deptGroups = deptNames.map(dept => {
       const ms = byDept[dept];
       const owners = Array.from(new Set(ms.map(m => m.asset.owner).filter(o => o !== '자동배포'))).join(', ') || '시스템';
       const cves = Array.from(new Set(ms.map(m => m.cve)));
       const sent = !!S.sent[dept];
       const lines = ms.map(m => '· ' + m.asset.id + ' (' + m.asset.product + ' ' + m.asset.ver + ') — ' + m.cve + ' ' + m.entry.severity).join('\n');
-      const message = '[보안조치 요청] ' + adv.title + '\n\n수신: ' + dept + ' (담당 ' + owners + ')\n근거: ' + adv.docNo + ' (국가정보원)\n조치기한: ' + adv.dueAt + '\n\n귀 부서 보유 자산 ' + ms.length + '대에서 아래 취약점이 확인되었습니다. 기한 내 보안 업데이트 적용 후 본 메시지에 회신 바랍니다.\n\n' + lines + '\n\n조치 완료 시 [보안권고문 처리 시스템] 웹UI에서 조치 결과를 등록해 주세요.';
+      const message = '[보안조치 요청] ' + adv.title + '\n\n수신: ' + dept + ' (담당 ' + owners + ')\n근거: ' + adv.docNo + '\n조치기한: ' + adv.dueAt + '\n\n귀 부서 보유 자산 ' + ms.length + '대에서 아래 취약점이 확인되었습니다. 기한 내 보안 업데이트 적용 후 본 메시지에 회신 바랍니다.\n\n' + lines + '\n\n조치 완료 시 [보안권고문 처리 시스템] 웹UI에서 조치 결과를 등록해 주세요.';
       return {
         dept, assetCount: ms.length, owners, issueCount: cves.length, cveList: cves.join(', '),
         message,
         cardStyle: 'background:#fff; border:1px solid ' + (sent ? '#c8e3df' : '#e1e7ef') + '; border-radius:12px; overflow:hidden;',
-        channels: [
-          { label: '사내 메신저', style: 'font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:5px; background:#eef4fb; color:#2f5d8f; border:1px solid #d4e3f2;' },
-          { label: '사내 메일', style: 'font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:5px; background:#eef4fb; color:#2f5d8f; border:1px solid #d4e3f2;' },
-          { label: '웹UI 등록', style: 'font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:5px; background:#e6f4f2; color:#0f766e; border:1px solid #b8e0da;' },
-        ],
+        channels: baseChannels,
         sent,
-        sendLabel: sent ? '발송완료 ✓' : '발송',
+        sendLabel: sent ? '발송완료' : 'SMTP 발송',
         sendStyle: 'font-family:inherit; font-size:12.5px; font-weight:700; padding:8px 18px; border-radius:8px; cursor:' + (sent ? 'default' : 'pointer') + '; border:none; ' + (sent ? 'background:#e6f4f2; color:#0f766e;' : 'background:#0f766e; color:#fff;'),
-        onSend: () => { if (!sent) this.setState(s => ({ sent: Object.assign({}, s.sent, { [dept]: true }) })); },
+        onSend: () => { if (!sent) this._sendDepartments([dept]); },
       };
     });
     const sentCount = deptNames.filter(d => S.sent[d]).length;
 
     // ----- CVE DB view -----
-    const db = this.cveDb();
-    const order = ['CVE-2026-21345', 'CVE-2026-21360', 'CVE-2026-21401', 'CVE-2026-30012', 'CVE-2026-44120', 'CVE-2026-45088'];
-    const cveTableRows = order.filter(id => db[id]).map(id => {
-      const e = db[id];
+    const q = (S.cveQuery || '').trim().toLowerCase();
+    const sevFilter = S.cveSeverity || '';
+    const apiRows = (S.apiCveList || []).filter(c => {
+      const sev = this._koSev(c.severity);
+      if (sevFilter && sev !== sevFilter) return false;
+      if (!q) return true;
+      return [c.cve_id, c.product_name, c.product_key, c.source, c.description].some(v => String(v || '').toLowerCase().indexOf(q) >= 0);
+    });
+    const cveVisibleLimit = S.cveVisibleLimit || 50;
+    const cveTableRows = apiRows.slice(0, cveVisibleLimit).map(c => {
+      const sev = this._koSev(c.severity);
       return {
-        id, product: e.product, severity: e.severity, sevStyle: this.sevStyle(e.severity),
-        versions: e.anyVer ? (e.versionNote || '전체') : e.versions.join(', '),
-        published: e.published, source: e.source,
-        isNew: !!(e.isNew && S.dbUpdated),
+        id: c.cve_id,
+        product: c.product_name || c.product_key || '-',
+        severity: sev,
+        sevStyle: this.sevStyle(sev),
+        versions: this._versionText(c.affected_versions),
+        published: (c.published_at || '').slice(0, 10) || '-',
+        source: c.source || '-',
+        isNew: false,
       };
     });
-    const updateLog = [];
-    if (S.dbUpdated) updateLog.push({ time: S.updatedAt, source: 'KISA KrCERT 수동 반입 (피드 업로드)', added: '+2건', kind: 'manual' });
-    updateLog.push({ time: '2026-06-12 06:00', source: 'NVD 정기 동기화', added: '+18건', kind: 'auto' });
-    updateLog.push({ time: '2026-06-11 06:00', source: 'NVD 정기 동기화', added: '+9건', kind: 'auto' });
-    updateLog.push({ time: '2026-06-10 06:00', source: 'KISA KrCERT 반입', added: '+5건', kind: 'manual' });
+    const updateLog = (S.apiFeedLog || []).map(f => ({
+      time: (f.applied_at || f.created_at || '').replace('T', ' ').slice(0, 16) || '-',
+      source: f.source || f.file_name || '피드 반입',
+      added: '신규 ' + (f.added_count || 0) + ' · 갱신 ' + (f.updated_count || 0),
+      kind: /manual|upload/i.test(f.import_mode || '') ? 'manual' : 'auto',
+    }));
+    if (!updateLog.length) updateLog.push({ time: '-', source: '피드 반입 이력 없음', added: '-', kind: 'manual' });
     const updateLogV = updateLog.map(u => Object.assign({}, u, {
       dotStyle: 'width:8px; height:8px; border-radius:50%; flex-shrink:0; background:' + (u.kind === 'manual' ? '#0f766e' : '#2f5d8f') + ';',
     }));
+    const smtpReady = !!(notifyStatus.mail_enabled && notifyStatus.smtp_configured);
+    const smtpLabel = smtpReady
+      ? ('SMTP 설정됨 · ' + (notifyStatus.smtp_from || '발신자 미지정'))
+      : (notifyStatus.mail_enabled ? 'SMTP host 미설정' : '메일 채널 비활성');
+    const smtpStyle = 'font-size:11.5px; font-weight:700; padding:4px 10px; border-radius:6px; '
+      + (smtpReady ? 'background:#e6f4f2; color:#0f766e;' : 'background:#fdecec; color:#b42318;');
 
     const navMap = {
       dashboard: ['대시보드', '취약점 대응 현황 요약'],
@@ -1785,6 +1994,24 @@ class Component extends DCLogic {
     const reqMapped = reqFields.filter(f => colMap[f.id]).length;
     const reqTotal = reqFields.length;
     const canImport = reqMapped === reqTotal;
+    const importPlannedRows = S.importPreview ? Math.max(0, Number(S.importPreview.total_rows || 0) - Number(S.importHeaderRow || S.importPreview.header_row || 1) - Number(S.importHeaderRows || 1) + 1) : 0;
+    const importPlanRows = [
+      { label: '적재 모드', value: 'append' },
+      { label: '적재 예정', value: importPlannedRows + '행' },
+      { label: '필수 매핑', value: reqMapped + ' / ' + reqTotal },
+      { label: '경고 처리', value: 'skip' },
+    ];
+    const lastImport = S.lastImportResult || null;
+    const lastImportRows = lastImport ? [
+      { label: '적재', value: (lastImport.committed || 0) + '행' },
+      { label: '스킵/경고', value: ((lastImport.skipped || 0) + (lastImport.warnings || []).length) + '건' },
+      { label: '자동 생성 부서', value: ((lastImport.created_departments || []).join(', ') || '-') },
+    ] : [];
+    const uploadReady = !!String((S.uploadMeta && S.uploadMeta.source_org) || '').trim();
+    const uploadInlineBtnStyle = 'border:none; border-radius:8px; padding:10px 20px; font-size:13px; font-weight:600; font-family:inherit; flex-shrink:0; '
+      + (uploadReady ? 'background:#0f766e; color:#fff; cursor:pointer;' : 'background:#e3e8ef; color:#a3aebf; cursor:not-allowed;');
+    const uploadHeroBtnStyle = 'margin-top:18px; border:none; border-radius:8px; padding:10px 22px; font-size:13px; font-weight:600; font-family:inherit; '
+      + (uploadReady ? 'background:#0f766e; color:#fff; cursor:pointer;' : 'background:#e3e8ef; color:#a3aebf; cursor:not-allowed;');
 
     const reqMeta = {
       match: { badge: '매칭 필수', style: 'font-size:9.5px; font-weight:800; color:#b42318; background:#fdecec; border:1px solid #f5c6c2; border-radius:4px; padding:1px 6px;' },
@@ -1907,7 +2134,9 @@ class Component extends DCLogic {
         statusStyle: 'display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:3px 10px; border-radius:6px; background:' + bg + '; color:' + fg + ';',
         cveSummary: showSummary ? ('CVE ' + (a.extracted || 0) + '건 · 조회 ' + (a.found || 0) + ' · 미등록 ' + (a.not_found || 0)) : '',
         cardStyle: 'background:#fff; border:1px solid ' + (isErr ? '#f3c9c4' : '#e1e7ef') + '; border-radius:12px; padding:15px 18px;',
+        canRetry: isErr,
         onOpenPdf: () => this._openPdf(a.id, a.title, a.doc_no),
+        onRetry: () => this._retryExtract(a.id),
         onProcess: () => this._openDetail(a.id),
       };
     });
@@ -1926,6 +2155,16 @@ class Component extends DCLogic {
         + '%; width:' + (b.w / pageMeta.width * 100).toFixed(2) + '%; height:' + (b.h / pageMeta.height * 100).toFixed(2)
         + '%; background:rgba(232,163,61,.32); border:1.5px solid rgba(208,135,25,.95); border-radius:2px; box-shadow:0 0 0 1px rgba(255,255,255,.45); pointer-events:none;',
     })) : [];
+    const pdfPageNode = pdfAvailable ? React.createElement('img', {
+      src: pdfPageUrl,
+      alt: '권고문 원문',
+      style: { display: 'block', width: '100%', height: 'auto' },
+    }) : null;
+    const pdfModalFrame = S.pdfModal ? React.createElement('iframe', {
+      src: '/api/v1/advisories/' + S.pdfModal.advisoryId + '/file',
+      title: '원문 PDF',
+      style: { width: '100%', height: '80vh', border: 'none', display: 'block' },
+    }) : null;
 
     // ── 활동 기록 ──
     const auditFilterDefs = [['', '전체'], ['ADVISORY_UPLOAD', '업로드'], ['NOTIFY_SEND', '발송'],
@@ -1962,7 +2201,7 @@ class Component extends DCLogic {
 
       // STEP2 원문 PDF 뷰어
       pdfAvailable, pdfTextFallback: !pdfAvailable,
-      pdfPageUrl, pdfBoxes,
+      pdfPageUrl, pdfPageNode, pdfBoxes,
       pdfMultiPage: pdfAvailable && pv.pages.length > 1,
       pdfPageLabel: pdfAvailable ? ((curPage + 1) + ' / ' + pv.pages.length) : '',
       pdfPrev: () => this.setState(st => ({ pdfPage: Math.max(0, (st.pdfPage || 0) - 1) })),
@@ -1990,6 +2229,19 @@ class Component extends DCLogic {
 
       // 권고문 PDF 업로드 — 실 파일 선택/드래그드롭 → 서버 업로드 → CVE 추출
       onPickFile: () => this._pickAdvisoryFile(),
+      uploadSourceOrg: (S.uploadMeta && S.uploadMeta.source_org) || '',
+      uploadReceiveChannel: (S.uploadMeta && S.uploadMeta.receive_channel) || 'NCST',
+      uploadDocNo: (S.uploadMeta && S.uploadMeta.doc_no) || '',
+      uploadTitle: (S.uploadMeta && S.uploadMeta.title) || '',
+      uploadDueAt: (S.uploadMeta && S.uploadMeta.due_at) || '',
+      uploadBlocked: !uploadReady,
+      uploadInlineBtnStyle,
+      uploadHeroBtnStyle,
+      onUploadSource: (e) => this._setUploadMeta('source_org', e.target.value),
+      onUploadChannel: (e) => this._setUploadMeta('receive_channel', e.target.value),
+      onUploadDocNo: (e) => this._setUploadMeta('doc_no', e.target.value),
+      onUploadTitle: (e) => this._setUploadMeta('title', e.target.value),
+      onUploadDueAt: (e) => this._setUploadMeta('due_at', e.target.value),
       onPdfDragOver: (e) => { e.preventDefault(); try { e.dataTransfer.dropEffect = 'copy'; } catch (x) {} },
       onPdfDrop: (e) => {
         e.preventDefault();
@@ -2022,8 +2274,12 @@ class Component extends DCLogic {
 
       matches, matchTotal: allMatches.length, excludedCount, deptCount: deptNames.length,
       deptGroups,
-      sendAll: () => this.setState(s => { const ns = Object.assign({}, s.sent); deptNames.forEach(d => ns[d] = true); return { sent: ns }; }),
+      sendAll: () => this._sendDepartments(null),
       sendSummary: (sentCount === deptNames.length && deptNames.length > 0) ? ('전체 ' + deptNames.length + '개 부서 발송 완료 — 발송 이력에 기록되었습니다.') : (sentCount + ' / ' + deptNames.length + '개 부서 발송 완료'),
+      smtpLabel,
+      smtpStyle,
+      smtpDetail: notifyStatus.smtp_host ? (notifyStatus.smtp_host + ':' + notifyStatus.smtp_port + (notifyStatus.smtp_use_tls ? ' · TLS' : '')) : '환경변수 ADVISORY_MAIL_SMTP_HOST 필요',
+      onTestSmtp: () => this._testMail(),
 
       // cve db
       cveCount: S.cveStats ? Number(S.cveStats.count || 0).toLocaleString() : '—',
@@ -2036,6 +2292,15 @@ class Component extends DCLogic {
       onApplyFeed: () => this._applyFeed(),
       updateLog: updateLogV,
       cveTableRows,
+      cveTableTotal: apiRows.length,
+      cveTableShown: cveTableRows.length,
+      cveTableEmpty: !cveTableRows.length,
+      cveHasMore: apiRows.length > cveTableRows.length,
+      cveQuery: S.cveQuery || '',
+      cveSeverity: S.cveSeverity || '',
+      onCveQuery: (e) => this.setState({ cveQuery: e.target.value, cveVisibleLimit: 50 }),
+      onCveSeverity: (e) => this.setState({ cveSeverity: e.target.value, cveVisibleLimit: 50 }),
+      onCveMore: () => this.setState(st => ({ cveVisibleLimit: (st.cveVisibleLimit || 50) + 50 })),
 
       recentDocs: this.recentDocs(),
       assetRows, assetTotal: this.assets().length,
@@ -2095,6 +2360,9 @@ class Component extends DCLogic {
       importHintColor: canImport ? '#0f766e' : '#b45309',
       importBtnStyle: 'font-family:inherit; font-size:13px; font-weight:700; padding:11px 22px; border-radius:8px; border:none; ' + (canImport ? 'background:#0f766e; color:#fff; cursor:pointer;' : 'background:#e3e8ef; color:#a3aebf; cursor:not-allowed;'),
       doImport: () => this._doRealImport(),
+      importPlanRows,
+      lastImportRows,
+      hasLastImport: lastImportRows.length > 0,
 
       historyRows: this.historyRows().map(h => Object.assign({}, h, {
         onOpenPdf: () => this._openPdf(h.advisoryId, h.title || h.docNo, h.docNo),
@@ -2104,7 +2372,7 @@ class Component extends DCLogic {
       pdfModalOpen: !!S.pdfModal,
       pdfTitle: S.pdfModal ? S.pdfModal.title : '',
       pdfDocNo: S.pdfModal ? S.pdfModal.docNo : '',
-      pdfModalSrc: S.pdfModal ? ('/api/v1/advisories/' + S.pdfModal.advisoryId + '/file') : '',
+      pdfModalFrame,
       pdfDownload: () => { const m = this.state.pdfModal; if (m) window.open('/api/v1/advisories/' + m.advisoryId + '/file?download=1', '_blank'); },
       pdfOpenNew: () => { const m = this.state.pdfModal; if (m) window.open('/api/v1/advisories/' + m.advisoryId + '/file', '_blank'); },
       closePdf: () => this.setState({ pdfModal: null }),

@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 
 from .. import enums
 from ..audit import record
-from ..config import DATA_DIR
+from ..config import DATA_DIR, settings
 from ..core import assets_import
+from ..core.files import safe_filename
 from ..db import get_db
 from ..deps import get_actor_id
 from ..models import Asset, AssetImport, AssetImportMapping, Department
@@ -54,7 +55,9 @@ async def import_preview(
     db: Session = Depends(get_db),
 ):
     content = await file.read()
-    path = ASSET_DIR / f"import_{file.filename}"
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(413, f"파일 크기 초과(최대 {settings.MAX_UPLOAD_MB}MB)")
+    path = ASSET_DIR / f"import_{safe_filename(file.filename)}"
     path.write_bytes(content)
     imp = AssetImport(file_name=file.filename, sheet_name=sheet,
                       status=enums.AssetImportStatus.PREVIEW, file_path=str(path))

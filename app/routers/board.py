@@ -70,14 +70,12 @@ def _relevant_advisory_ids(db: Session, department_id: int) -> set[int]:
     return notif | matched
 
 
-def _matches_query(a: Advisory, ql: str) -> bool:
+def _matches_query(a: Advisory, ql: str, department_id: int | None = None) -> bool:
     """자유 검색 — 제목·문서번호·출처, 그리고 매칭된 자산의 자산번호·담당자·부서명."""
     for v in (a.title, a.doc_no, a.source_org):
         if v and ql in v.lower():
             return True
-    for m in a.matches:
-        if m.status != enums.MatchStatus.MATCHED or m.asset is None:
-            continue
+    for m in _active_matches(a, department_id):
         asset = m.asset
         if asset.asset_no and ql in asset.asset_no.lower():
             return True
@@ -129,6 +127,75 @@ def _asset_hit(m, ql: str) -> bool:
     return False
 
 
+def _active_matches(a: Advisory, department_id: int | None = None) -> list[Match]:
+    rows = [
+        m for m in a.matches
+        if m.status == enums.MatchStatus.MATCHED and m.asset is not None
+    ]
+    if department_id is not None:
+        rows = [m for m in rows if m.asset.department_id == department_id]
+    return rows
+
+
+def _comments_for_department(a: Advisory, dept: Department | None) -> list[AdvisoryComment]:
+    if dept is None:
+        return list(a.comments)
+    return [
+        c for c in a.comments
+        if c.is_admin
+        or c.author_department_id == dept.id
+        or (c.author_department_id is None and c.author_department_name == dept.name)
+    ]
+
+
+_SEV_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
+
+
+def _scoped_advisory_item(a: Advisory, matches: list[Match], comment_count: int) -> dict:
+    """부서 담당자용 요약. 선택 부서 외 영향/제품/심각도는 내려주지 않는다."""
+    item = serializers.board_advisory_item(a, comment_count=comment_count)
+    item.update(serializers.impact_from_matches(matches))
+    sevs = [
+        m.advisory_cve.cve.severity for m in matches
+        if m.advisory_cve is not None and m.advisory_cve.cve is not None
+    ]
+    if sevs:
+        top = max(sevs, key=lambda s: _SEV_RANK.get(s.value, 0))
+        item["max_severity"] = top.value
+        item["max_severity_ko"] = enums.SEVERITY_KO.get(top)
+    else:
+        item["max_severity"] = None
+        item["max_severity_ko"] = None
+    return item
+
+
+def _department_targeted(db: Session, advisory_id: int, department_id: int) -> bool:
+    return db.scalar(
+        select(Notification.id)
+        .where(Notification.advisory_id == advisory_id, Notification.department_id == department_id)
+        .limit(1)
+    ) is not None
+
+
+def _department_done(a: Advisory, department_id: int, dept_ack: dict[int, enums.AckStatus]) -> bool:
+    matches = _active_matches(a, department_id)
+    if matches:
+        return all(m.ack_status == enums.AckStatus.DONE for m in matches)
+    return dept_ack.get(a.id) == enums.AckStatus.DONE
+
+
+def _advisory_done(db: Session, a: Advisory) -> bool:
+    matches = _active_matches(a)
+    if matches:
+        return all(m.ack_status == enums.AckStatus.DONE for m in matches)
+    notifications = db.scalars(
+        select(Notification).where(Notification.advisory_id == a.id)
+    ).all()
+    if notifications:
+        return all(n.ack_status == enums.AckStatus.DONE for n in notifications)
+    return a.status == enums.AdvisoryStatus.COMPLETED
+
+
 @router.get("/advisories")
 def board_list(
     q: str | None = None,
@@ -141,8 +208,7 @@ def board_list(
     필터(선택):
       · q — 자유 검색: 자산번호·담당자명·부서명·제목·문서번호 부분일치.
       · department_id — 해당 부서 대상 권고문만(발송 OR 자산 매칭).
-      · exclude_done — 완료 제외(기본 True). 부서 지정 시 그 부서가 '조치완료'한 건 제외,
-        미지정 시 권고문 상태가 COMPLETED 인 건 제외.
+      · exclude_done — 완료 제외(기본 True). 자산별 조치 상태를 우선 기준으로 사용한다.
     """
     advs = db.scalars(
         select(Advisory)
@@ -150,19 +216,23 @@ def board_list(
         .order_by(Advisory.board_published_at.desc())
     ).all()
 
+    dept_filter = db.get(Department, department_id) if department_id is not None else None
+    if department_id is not None and dept_filter is None:
+        raise HTTPException(404, "부서 없음")
+
     dept_ack: dict[int, enums.AckStatus] = {}
     if department_id is not None:
         relevant = _relevant_advisory_ids(db, department_id)
         advs = [a for a in advs if a.id in relevant]
         dept_ack = _dept_ack_map(db, department_id)
         if exclude_done:
-            advs = [a for a in advs if dept_ack.get(a.id) != enums.AckStatus.DONE]
+            advs = [a for a in advs if not _department_done(a, department_id, dept_ack)]
     elif exclude_done:
-        advs = [a for a in advs if a.status != enums.AdvisoryStatus.COMPLETED]
+        advs = [a for a in advs if not _advisory_done(db, a)]
 
     if q and q.strip():
         ql = q.strip().lower()
-        advs = [a for a in advs if _matches_query(a, ql)]
+        advs = [a for a in advs if _matches_query(a, ql, department_id)]
 
     counts = dict(
         db.execute(
@@ -170,15 +240,20 @@ def board_list(
             .group_by(AdvisoryComment.advisory_id)
         ).all()
     )
-    prog = _asset_progress_map(db, [a.id for a in advs])
     items = []
     for a in advs:
-        item = serializers.board_advisory_item(a, comment_count=counts.get(a.id, 0))
-        item["progress"] = prog.get(a.id)
         if department_id is not None:
+            scoped_matches = _active_matches(a, department_id)
+            scoped_comments = _comments_for_department(a, dept_filter)
+            item = _scoped_advisory_item(a, scoped_matches, comment_count=len(scoped_comments))
+            item["progress"] = _asset_counts(scoped_matches) if scoped_matches else None
             ack = dept_ack.get(a.id)
             item["dept_ack_status"] = ack.value if ack else None
             item["dept_ack_status_ko"] = enums.ACK_KO.get(ack) if ack else None
+        else:
+            matches = _active_matches(a)
+            item = serializers.board_advisory_item(a, comment_count=counts.get(a.id, 0))
+            item["progress"] = _asset_counts(matches) if matches else None
         items.append(item)
     return {"items": items, "q": q, "department_id": department_id, "exclude_done": exclude_done}
 
@@ -204,7 +279,12 @@ def _public_comment(c) -> dict:
 
 
 @router.get("/advisories/{advisory_id}")
-def board_detail(advisory_id: int, q: str | None = None, db: Session = Depends(get_db)):
+def board_detail(
+    advisory_id: int,
+    q: str | None = None,
+    department_id: int | None = None,
+    db: Session = Depends(get_db),
+):
     """게시판 상세 — 권고문 요약 + 영향 CVE + 자산별 조치 + 댓글 스레드.
 
     q(선택): 게시판 검색어를 그대로 전달하면, 검색 대상(부서·담당자·자산)만 남기고
@@ -212,6 +292,25 @@ def board_detail(advisory_id: int, q: str | None = None, db: Session = Depends(g
     단, 검색어가 제목/문서번호에 걸린 '주제 검색'이면 전체를 그대로 보여준다.
     """
     adv = _published(db, advisory_id)
+    dept = db.get(Department, department_id) if department_id is not None else None
+    if department_id is not None and dept is None:
+        raise HTTPException(404, "부서 없음")
+
+    matched = _active_matches(adv, department_id)
+    if department_id is not None and not matched and not _department_targeted(db, advisory_id, department_id):
+        raise HTTPException(404, "해당 부서 대상 권고문이 아닙니다")
+
+    ql = q.strip().lower() if q and q.strip() else None
+    title_hit = bool(ql and any(ql in (v or "").lower()
+                                for v in (adv.title, adv.doc_no, adv.source_org)))
+    scoped = department_id is not None
+    if ql and not title_hit:
+        hits = [m for m in matched if _asset_hit(m, ql)]
+        if hits:                       # 인물/부서/자산 검색 → 본인 관련만 노출
+            matched = hits
+            scoped = True
+
+    matched_ac_ids = {m.advisory_cve_id for m in matched if m.advisory_cve_id is not None}
     cves = [
         {
             "cve_id_text": ac.cve_id_text,
@@ -220,22 +319,13 @@ def board_detail(advisory_id: int, q: str | None = None, db: Session = Depends(g
             "severity": ac.cve.severity.value if ac.cve else None,
         }
         for ac in adv.cves
+        if not scoped or ac.id in matched_ac_ids
     ]
-    matched = [m for m in adv.matches if m.status == enums.MatchStatus.MATCHED]
 
-    ql = q.strip().lower() if q and q.strip() else None
-    title_hit = bool(ql and any(ql in (v or "").lower()
-                                for v in (adv.title, adv.doc_no, adv.source_org)))
-    scoped = False
-    if ql and not title_hit:
-        hits = [m for m in matched if _asset_hit(m, ql)]
-        if hits:                       # 인물/부서/자산 검색 → 본인 관련만 노출
-            matched = hits
-            scoped = True
-
+    comments_raw = _comments_for_department(adv, dept)
     comments = []
-    for c in adv.comments:
-        if scoped and not (
+    for c in comments_raw:
+        if ql and not department_id and scoped and not (
             c.is_admin
             or (c.author_name and ql in c.author_name.lower())
             or (c.author_department_name and ql in c.author_department_name.lower())
@@ -243,7 +333,8 @@ def board_detail(advisory_id: int, q: str | None = None, db: Session = Depends(g
             continue
         comments.append(_public_comment(c))
 
-    advisory_item = serializers.board_advisory_item(adv, comment_count=len(comments))
+    advisory_item = _scoped_advisory_item(adv, matched, comment_count=len(comments)) if scoped \
+        else serializers.board_advisory_item(adv, comment_count=len(comments))
     if scoped:   # 상단 영향 요약도 검색 대상(본인 부서)만 반영 — 타부서 노출 차단.
         advisory_item.update(serializers.impact_from_matches(matched))
 
@@ -259,9 +350,12 @@ def board_detail(advisory_id: int, q: str | None = None, db: Session = Depends(g
 
 
 @router.get("/advisories/{advisory_id}/comments")
-def board_comments(advisory_id: int, db: Session = Depends(get_db)):
+def board_comments(advisory_id: int, department_id: int | None = None, db: Session = Depends(get_db)):
     adv = _published(db, advisory_id)
-    return {"items": [_public_comment(c) for c in adv.comments]}
+    dept = db.get(Department, department_id) if department_id is not None else None
+    if department_id is not None and dept is None:
+        raise HTTPException(404, "부서 없음")
+    return {"items": [_public_comment(c) for c in _comments_for_department(adv, dept)]}
 
 
 @router.post("/advisories/{advisory_id}/comments", status_code=201)
@@ -405,10 +499,11 @@ async def upload_comment_evidence(comment_id: int, request: Request,
     content = await file.read()
     if len(content) > settings.max_upload_bytes:
         raise HTTPException(413, f"파일 크기 초과(최대 {settings.MAX_UPLOAD_MB}MB)")
-    path = EVIDENCE_DIR / f"comment{comment_id}_{safe_filename(file.filename)}"
+    display_name = safe_filename(file.filename, default="evidence")
+    path = EVIDENCE_DIR / f"comment{comment_id}_{display_name}"
     path.write_bytes(content)
     c.evidence_path = str(path)
-    c.evidence_name = file.filename
+    c.evidence_name = display_name
 
     # 조치상태 회신 + 부서 식별 가능 → (이 권고문, 부서) 최신 발송이력 증빙으로 동기화.
     synced = None
@@ -421,11 +516,11 @@ async def upload_comment_evidence(comment_id: int, request: Request,
         )
         if n is not None:
             n.ack_evidence_path = str(path)
-            n.ack_evidence_name = file.filename
+            n.ack_evidence_name = display_name
             synced = n.id
 
     record(db, action="BOARD_COMMENT_EVIDENCE", actor_id=None, entity_type="advisory",
-           entity_id=c.advisory_id, detail={"comment_id": comment_id, "file": file.filename,
+           entity_id=c.advisory_id, detail={"comment_id": comment_id, "file": display_name,
                                             "ack_synced_notification": synced}, request=request)
     db.commit()
     db.refresh(c)

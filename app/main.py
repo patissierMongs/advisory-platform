@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .config import WEB_DIR, settings
@@ -101,6 +101,11 @@ for r in (advisories, cve_feeds, cves, assets, matches, notifications, departmen
 @app.get("/api/health")
 def health():
     return {"status": "ok", "version": "1.0.0"}
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
 
 
 # 프론트엔드(DC SPA) 정적 서빙. 동일 출처에서 /api/v1 호출.

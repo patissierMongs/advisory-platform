@@ -1,10 +1,11 @@
 """부서 알림 — 메시지 생성·그룹핑·채널 어댑터·멱등성 (명세서 §4.7).
 
-폐쇄망 기본: WEB_UI(내부 알림) + 메신저/메일은 게이트웨이 미연동 시 로컬 아웃박스
-파일에 적재(외부 호출 0). 게이트웨이 규격 확정 시 설정만 채우면 표준 프로토콜로 발신(§9-4):
+폐쇄망 기본: WEB_UI(내부 알림) + SMTP 메일. 운영 발송은 실제 SMTP 성공만 성공으로 본다.
+SMTP/웹훅 미설정 또는 실패 시 로컬 아웃박스에 참고용으로 남기되, 발송 상태는 실패로 반환한다.
+게이트웨이 규격 확정 시 설정만 채우면 표준 프로토콜로 발신(§9-4):
   · 메일 = SMTP(사내 메일 서버/Exchange) — ADVISORY_MAIL_SMTP_HOST 등
   · 메신저 = 범용 웹훅 POST(JSON) — ADVISORY_MESSENGER_WEBHOOK_URL
-미설정/실패 시 아웃박스로 폴백하여 흐름을 보장한다(외부 호출 0 유지).
+미설정/실패 시 아웃박스는 개발/감사용 보조 로그일 뿐 SENT 로 처리하지 않는다.
 """
 from __future__ import annotations
 
@@ -66,7 +67,7 @@ def _outbox_write(channel: str, dept_name: str, body: str) -> None:
 
 
 def _send_mail(email_addr: str, subject: str, body: str) -> tuple[bool, str]:
-    """표준 SMTP 발송. 미설정/실패 시 (False, 사유) → 호출측이 outbox 폴백."""
+    """표준 SMTP 발송. 미설정/실패 시 (False, 사유)."""
     host = settings.MAIL_SMTP_HOST
     if not (email_addr and host):
         return False, "smtp-unconfigured"
@@ -85,6 +86,33 @@ def _send_mail(email_addr: str, subject: str, body: str) -> tuple[bool, str]:
         return True, f"mail→{email_addr}"
     except Exception as e:  # noqa: BLE001 — 폐쇄망: 실패해도 outbox 폴백으로 흐름 보장
         return False, f"smtp-error:{type(e).__name__}"
+
+
+def smtp_status() -> dict:
+    """관리자 화면용 비민감 SMTP 설정 상태."""
+    return {
+        "mail_enabled": settings.MAIL_ENABLED,
+        "smtp_configured": bool(settings.MAIL_SMTP_HOST),
+        "smtp_host": settings.MAIL_SMTP_HOST or None,
+        "smtp_port": settings.MAIL_SMTP_PORT,
+        "smtp_user_configured": bool(settings.MAIL_SMTP_USER),
+        "smtp_from": settings.MAIL_FROM or settings.MAIL_SMTP_USER or None,
+        "smtp_use_tls": settings.MAIL_USE_TLS,
+        "messenger_enabled": settings.MESSENGER_ENABLED,
+        "messenger_configured": bool(settings.MESSENGER_WEBHOOK_URL),
+        "groupware_enabled": settings.GROUPWARE_ENABLED,
+        "groupware_configured": bool(settings.GROUPWARE_WEBHOOK_URL),
+    }
+
+
+def send_test_mail(to_addr: str) -> dict:
+    """SMTP 테스트 메일 발송. 비밀번호/본문 저장 없음."""
+    body = (
+        "[보안권고문 처리 시스템] SMTP 테스트 메일입니다.\n\n"
+        "이 메일을 받았다면 시스템의 SMTP 발송 설정이 동작합니다."
+    )
+    ok, info = _send_mail(to_addr, "[보안권고문 처리 시스템] SMTP 테스트", body)
+    return {"ok": ok, "info": info}
 
 
 def _post_webhook(url: str, payload: dict) -> tuple[bool, str]:
@@ -108,36 +136,34 @@ def _post_webhook(url: str, payload: dict) -> tuple[bool, str]:
 def dispatch(channels: list[str], dept_name: str, messenger_id, email, body: str) -> dict:
     """채널별 전송. 반환 {ok, results:[{channel, ok, info}]}.
 
-    채널 활성(설정 완료) 시 표준 프로토콜로 발신, 미설정/실패 시 로컬 아웃박스 적재 후 성공
-    처리(폐쇄망 기본: 외부 호출 0, 흐름 보장).
+    MAIL/MESSENGER 는 실제 발신 성공만 ok=True. 실패 본문은 참고용 outbox 에 남기되
+    업무 상태는 FAILED 로 남겨 관리자가 재시도할 수 있게 한다.
     """
     results = []
     for ch in channels:
         if ch == NotifyChannel.WEB_UI.value:
             results.append({"channel": ch, "ok": True, "info": "internal"})
         elif ch == NotifyChannel.MAIL.value:
-            if settings.MAIL_ENABLED:
-                sent, info = _send_mail(email, f"[보안조치 요청] {dept_name}", body)
-                if not sent:
-                    _outbox_write(ch, dept_name, body)
-                    info = f"outbox({info})"
-                results.append({"channel": ch, "ok": True, "info": info})
-            else:
+            if not settings.MAIL_ENABLED:
                 _outbox_write(ch, dept_name, body)
-                results.append({"channel": ch, "ok": True, "info": "outbox"})
+                results.append({"channel": ch, "ok": False, "info": "mail-disabled"})
+                continue
+            sent, info = _send_mail(email, f"[보안조치 요청] {dept_name}", body)
+            if not sent:
+                _outbox_write(ch, dept_name, body)
+            results.append({"channel": ch, "ok": sent, "info": info})
         elif ch == NotifyChannel.MESSENGER.value:
-            if settings.MESSENGER_ENABLED:
-                sent, info = _post_webhook(
-                    settings.MESSENGER_WEBHOOK_URL,
-                    {"dept": dept_name, "messenger_id": messenger_id, "text": body},
-                )
-                if not sent:
-                    _outbox_write(ch, dept_name, body)
-                    info = f"outbox({info})"
-                results.append({"channel": ch, "ok": True, "info": info})
-            else:
+            if not settings.MESSENGER_ENABLED:
                 _outbox_write(ch, dept_name, body)
-                results.append({"channel": ch, "ok": True, "info": "outbox"})
+                results.append({"channel": ch, "ok": False, "info": "messenger-disabled"})
+                continue
+            sent, info = _post_webhook(
+                settings.MESSENGER_WEBHOOK_URL,
+                {"dept": dept_name, "messenger_id": messenger_id, "text": body},
+            )
+            if not sent:
+                _outbox_write(ch, dept_name, body)
+            results.append({"channel": ch, "ok": sent, "info": info})
         else:
             results.append({"channel": ch, "ok": False, "info": "unknown channel"})
     return {"ok": all(r["ok"] for r in results), "results": results}

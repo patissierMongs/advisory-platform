@@ -30,7 +30,7 @@ _EXTRACT_POOL = ThreadPoolExecutor(max_workers=3, thread_name_prefix="extract")
 async def upload_advisory(
     request: Request,
     file: UploadFile = File(...),
-    source_org: str = Form("국가정보원"),
+    source_org: str = Form(""),
     receive_channel: str = Form("NCST"),
     doc_no: str | None = Form(None),
     title: str | None = Form(None),
@@ -43,6 +43,14 @@ async def upload_advisory(
         raise HTTPException(413, f"파일 크기 초과(최대 {settings.MAX_UPLOAD_MB}MB)")
     if not content[:5].startswith(b"%PDF"):
         raise HTTPException(400, "PDF 파일이 아닙니다(매직바이트 불일치).")
+    source_org = (source_org or "").strip()
+    if not source_org:
+        raise HTTPException(400, "출처기관은 필수입니다.")
+    try:
+        channel = enums.ReceiveChannel(receive_channel)
+    except ValueError as e:
+        allowed = ", ".join(c.value for c in enums.ReceiveChannel)
+        raise HTTPException(400, f"접수채널은 {allowed} 중 하나여야 합니다.") from e
 
     sha = extract.sha256_bytes(content)
     dup = db.scalar(select(Advisory).where(Advisory.file_sha256 == sha))
@@ -61,10 +69,10 @@ async def upload_advisory(
     text, pages = extract.extract_text_from_pdf(str(path))
 
     adv = Advisory(
-        doc_no=doc_no,
-        title=title or (file.filename or "보안권고문").rsplit(".", 1)[0],
+        doc_no=(doc_no or "").strip() or None,
+        title=(title or "").strip() or (file.filename or "보안권고문").rsplit(".", 1)[0],
         source_org=source_org,
-        receive_channel=enums.ReceiveChannel(receive_channel),
+        receive_channel=channel,
         received_at=date.today(),
         due_at=_parse_date(due_at),
         file_path=str(path),
