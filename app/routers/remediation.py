@@ -86,17 +86,24 @@ def send_reminders(advisory_id: int, request: Request,
             f"[조치기한 임박 알림] {adv.title or ''}\n근거 {adv.doc_no or ''} · 기한 {adv.due_at or ''}"
             f"{f' (D{d_day:+d})' if d_day is not None else ''}\n"
             f"귀 부서 회신이 확인되지 않았습니다. 기한 내 조치 후 회신 바랍니다.")
-        notify.dispatch(n.channels or ["MAIL"], dept.name if dept else "",
-                        dept.messenger_id if dept else None, dept.email if dept else None, msg)
-        n.reminded_at = datetime.now(timezone.utc)
-        n.reminder_count = (n.reminder_count or 0) + 1
-        results.append({"department_id": n.department_id, "department": dept.name if dept else None,
-                        "reminder_count": n.reminder_count})
+        outcome = notify.dispatch(n.channels or ["MAIL"], dept.name if dept else "",
+                                  dept.messenger_id if dept else None, dept.email if dept else None, msg)
+        if outcome["ok"]:
+            n.reminded_at = datetime.now(timezone.utc)
+            n.reminder_count = (n.reminder_count or 0) + 1
+        results.append({
+            "department_id": n.department_id,
+            "department": dept.name if dept else None,
+            "status": "SENT" if outcome["ok"] else "FAILED",
+            "reminder_count": n.reminder_count or 0,
+            "delivery_results": outcome["results"],
+        })
     db.flush()
+    success_count = sum(1 for r in results if r["status"] == "SENT")
     record(db, action="NOTIFY_REMIND", actor_id=get_actor_id(db), entity_type="advisory",
-           entity_id=advisory_id, detail={"count": len(results)}, request=request)
+           entity_id=advisory_id, detail={"count": success_count, "failed": len(results) - success_count}, request=request)
     db.commit()
-    return {"reminded": len(results), "results": results}
+    return {"reminded": success_count, "results": results}
 
 
 # ── 그룹웨어 게시판 연동 (§★★★) ──

@@ -10,6 +10,7 @@ import io
 TMP = tempfile.mkdtemp(prefix="advisory_smoke_")
 os.environ["ADVISORY_DATA_DIR"] = TMP
 os.environ["ADVISORY_DATABASE_URL"] = f"sqlite:///{os.path.join(TMP, 'test.db')}"
+os.environ["ADVISORY_SEED"] = "true"
 os.environ["ADVISORY_BUNDLED_FEEDS"] = "false"  # 결정적 테스트 — 동봉 CVE 대량적재 비활성
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -89,10 +90,10 @@ with TestClient(app) as c:
     prev = c.get(f"/api/v1/advisories/{aid}/notification-preview").json()
     check("preview has departments", prev["total_departments"] > 0, prev["total_departments"])
     check("message generated", "[보안조치 요청]" in prev["departments"][0]["message"])
-    send = c.post(f"/api/v1/advisories/{aid}/notifications", json={"all": True}).json()
+    send = c.post(f"/api/v1/advisories/{aid}/notifications", json={"all": True, "channels": ["WEB_UI"]}).json()
     check("send all SENT", all(r2["status"] == "SENT" for r2 in send["results"]), send)
     # idempotency: re-send returns idempotent
-    send2 = c.post(f"/api/v1/advisories/{aid}/notifications", json={"all": True}).json()
+    send2 = c.post(f"/api/v1/advisories/{aid}/notifications", json={"all": True, "channels": ["WEB_UI"]}).json()
     check("idempotent re-send", all(r2.get("idempotent") for r2 in send2["results"]), send2)
 
     hist = c.get("/api/v1/notifications").json()["items"]

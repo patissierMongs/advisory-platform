@@ -30,7 +30,7 @@ _EXTRACT_POOL = ThreadPoolExecutor(max_workers=3, thread_name_prefix="extract")
 async def upload_advisory(
     request: Request,
     file: UploadFile = File(...),
-    source_org: str = Form("국가정보원"),
+    source_org: str = Form(""),
     receive_channel: str | None = Form(None),
     doc_no: str | None = Form(None),
     title: str | None = Form(None),
@@ -43,6 +43,18 @@ async def upload_advisory(
         raise HTTPException(413, f"파일 크기 초과(최대 {settings.MAX_UPLOAD_MB}MB)")
     if not content[:5].startswith(b"%PDF"):
         raise HTTPException(400, "PDF 파일이 아닙니다(매직바이트 불일치).")
+    source_org = (source_org or "").strip()
+    if not source_org:
+        raise HTTPException(400, "출처기관은 필수입니다.")
+    # 접수경로(§9)는 본문 추출 우선이라 업로드 시 필수는 아니다. 단, 폼으로 값을 주면 유효해야 한다.
+    form_channel = None
+    rc = (receive_channel or "").strip()
+    if rc:
+        try:
+            form_channel = enums.ReceiveChannel(rc)
+        except ValueError as e:
+            allowed = ", ".join(c.value for c in enums.ReceiveChannel)
+            raise HTTPException(400, f"접수채널은 {allowed} 중 하나여야 합니다.") from e
 
     sha = extract.sha256_bytes(content)
     dup = db.scalar(select(Advisory).where(Advisory.file_sha256 == sha))
@@ -70,20 +82,18 @@ async def upload_advisory(
     else:
         final_due, due_source = None, None
 
-    # 접수경로(§9): 본문 추출 우선 → 폼 수동선택 → 미지정. 기한과 동일 정책.
+    # 접수경로(§9): 본문 추출 우선 → 폼 수동선택(검증 완료) → 미지정. 기한과 동일 정책.
     ext_ch, _ = extract.extract_receive_channel(text)
-    final_ch, ch_source = None, None
     if ext_ch is not None:
         final_ch, ch_source = enums.ReceiveChannel(ext_ch), "PDF"
-    elif receive_channel and receive_channel.strip():
-        try:
-            final_ch, ch_source = enums.ReceiveChannel(receive_channel.strip()), "MANUAL"
-        except ValueError:
-            final_ch, ch_source = None, None
+    elif form_channel is not None:
+        final_ch, ch_source = form_channel, "MANUAL"
+    else:
+        final_ch, ch_source = None, None
 
     adv = Advisory(
-        doc_no=doc_no,
-        title=title or (file.filename or "보안권고문").rsplit(".", 1)[0],
+        doc_no=(doc_no or "").strip() or None,
+        title=(title or "").strip() or (file.filename or "보안권고문").rsplit(".", 1)[0],
         source_org=source_org,
         receive_channel=final_ch,
         channel_source=ch_source,

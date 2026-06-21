@@ -5,14 +5,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .config import WEB_DIR, settings
 from .db import SessionLocal, init_db
 from .routers import (
     advisories, assets, audit, board, cve_feeds, cves, dashboard, departments, history, matches,
-    notifications, remediation, scans,
+    notifications, remediation,
 )
 
 
@@ -94,13 +94,18 @@ app.add_middleware(
 )
 
 for r in (advisories, cve_feeds, cves, assets, matches, notifications, departments, dashboard,
-          remediation, audit, board, history, scans):
+          remediation, audit, board, history):
     app.include_router(r.router)
 
 
 @app.get("/api/health")
 def health():
     return {"status": "ok", "version": "1.0.0"}
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
 
 
 # 프론트엔드(DC SPA) 정적 서빙. 동일 출처에서 /api/v1 호출.
@@ -128,9 +133,3 @@ def admin_page():
 def admin_history_page():
     # 발송이력·조치관리 콘솔(마스터-디테일). 기존 관리자 SPA 와 분리된 독립 페이지.
     return RedirectResponse(url="/ui/history.html")
-
-
-@app.get("/admin/scans")
-def admin_scans_page():
-    # 포트스캔 회차 import·표시 콘솔(독립 스캐너 결과 열람).
-    return RedirectResponse(url="/ui/portscan.html")

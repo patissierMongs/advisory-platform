@@ -256,37 +256,3 @@ def notification_item(n: Notification) -> dict:
         "sent_at": _d(n.sent_at),
         "doc_no": n.advisory.doc_no if n.advisory else None,
     }
-
-
-def scan_run_item(r) -> dict:
-    return {
-        "id": r.id,
-        "label": r.label,
-        "network": r.network,
-        "source_name": r.source_name,
-        "host_count": r.host_count,
-        "open_port_count": r.open_port_count,
-        "identified_count": r.identified_count,
-        "unidentified_count": r.open_port_count - r.identified_count,
-        "created_at": _d(r.created_at),
-    }
-
-
-def scan_port_item(p) -> dict:
-    return {
-        "id": p.id,
-        "host": p.host,
-        "hostname": p.hostname,
-        "proto": p.proto,
-        "port": p.port,
-        "state": p.state,
-        "reason": p.reason,
-        "service": p.service,
-        "product": p.product,
-        "version": p.version,
-        "extra": p.extra,
-        "identified": p.identified,
-        "evidence": p.evidence,
-        "banner": p.banner,
-        "note": p.note,
-    }

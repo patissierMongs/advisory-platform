@@ -9,6 +9,24 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _load_env_file() -> None:
+    env_path = BASE_DIR / ".env"
+    if not env_path.exists():
+        return
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_env_file()
 DATA_DIR = Path(os.environ.get("ADVISORY_DATA_DIR", BASE_DIR / "data"))
 UPLOAD_DIR = DATA_DIR / "uploads"
 WEB_DIR = BASE_DIR / "web"
@@ -26,14 +44,14 @@ class Settings:
     # 파일 업로드 제약 (§7 비기능)
     MAX_UPLOAD_MB: int = int(os.environ.get("ADVISORY_MAX_UPLOAD_MB", "30"))
 
-    # 알림 채널 (§4.7) — 폐쇄망 기본은 WEB_UI + 파일 로그. 메신저/메일은 게이트웨이 확정 시 활성.
+    # 알림 채널 (§4.7) — 운영 기본은 WEB_UI + SMTP 메일. 외부 채널 실패는 FAILED 로 기록.
     MESSENGER_ENABLED: bool = os.environ.get("ADVISORY_MESSENGER_ENABLED", "false").lower() == "true"
-    MAIL_ENABLED: bool = os.environ.get("ADVISORY_MAIL_ENABLED", "false").lower() == "true"
+    MAIL_ENABLED: bool = os.environ.get("ADVISORY_MAIL_ENABLED", "true").lower() == "true"
     GROUPWARE_ENABLED: bool = os.environ.get("ADVISORY_GROUPWARE_ENABLED", "false").lower() == "true"
 
-    # 발신 어댑터 상세 — 활성 시에만 사용. 미설정/실패 시 outbox/board.log 폴백(폐쇄망 기본 외부호출 0 유지).
+    # 발신 어댑터 상세 — 활성 시에만 사용. 미설정/실패 시 outbox/board.log 는 참고 로그이며 성공 처리하지 않는다.
     NOTIFY_TIMEOUT_SEC: float = float(os.environ.get("ADVISORY_NOTIFY_TIMEOUT_SEC", "10"))
-    # 메일: 표준 SMTP(사내 메일 서버/Exchange). 호스트 미설정 시 outbox.
+    # 메일: 표준 SMTP(사내 메일 서버/Exchange). 호스트 미설정 시 FAILED.
     MAIL_SMTP_HOST: str = os.environ.get("ADVISORY_MAIL_SMTP_HOST", "")
     MAIL_SMTP_PORT: int = int(os.environ.get("ADVISORY_MAIL_SMTP_PORT", "25"))
     MAIL_SMTP_USER: str = os.environ.get("ADVISORY_MAIL_SMTP_USER", "")
@@ -52,9 +70,9 @@ class Settings:
     ]
 
     # 시작 시 프로토타입 데이터 시드 여부(데모/개발용).
-    SEED_ON_START: bool = os.environ.get("ADVISORY_SEED", "true").lower() == "true"
+    SEED_ON_START: bool = os.environ.get("ADVISORY_SEED", "false").lower() == "true"
     # 최초 부팅 시 동봉 CVE 피드(samples/cve_feeds/) 자동 적재 여부(폐쇄망 즉시 사용).
-    LOAD_BUNDLED_FEEDS: bool = os.environ.get("ADVISORY_BUNDLED_FEEDS", "true").lower() == "true"
+    LOAD_BUNDLED_FEEDS: bool = os.environ.get("ADVISORY_BUNDLED_FEEDS", "false").lower() == "true"
 
     @property
     def max_upload_bytes(self) -> int:

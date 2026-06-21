@@ -39,13 +39,17 @@ class GroupwareAckWebhook(BaseModel):
 
 class NotifyDept(BaseModel):
     department_id: int
-    channels: list[NotifyChannel] = Field(default_factory=lambda: [NotifyChannel.WEB_UI])
+    channels: list[NotifyChannel] = Field(default_factory=lambda: [NotifyChannel.MAIL, NotifyChannel.WEB_UI])
 
 
 class NotifyRequest(BaseModel):
     departments: list[NotifyDept] | None = None
     all: bool = False
     channels: list[NotifyChannel] | None = None  # all=true 일 때 공통 채널
+
+
+class NotifyTestRequest(BaseModel):
+    to: str = Field(min_length=3, max_length=200)
 
 
 class AssetCommitRequest(BaseModel):

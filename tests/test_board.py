@@ -88,6 +88,77 @@ def test_ack_status_syncs_to_notification(client, fixture_ids):
         assert n.ack_by == "담당자" and n.ack_note == "조치 완료"
 
 
+def test_comment_evidence_upload_syncs_and_sanitizes_filename(client, fixture_ids):
+    """게시판 회신 증빙은 안전 파일명으로 저장되고 해당 부서 발송이력에도 연결된다."""
+    from pathlib import Path
+
+    from app.routers.board import EVIDENCE_DIR
+
+    aid, did = fixture_ids
+    client.post(f"/api/v1/advisories/{aid}/board")
+    with SessionLocal() as db:
+        n = Notification(advisory_id=aid, department_id=did, channels=["WEB_UI"],
+                         message_body="m", asset_ids=[], status=enums.NotificationStatus.SENT,
+                         ack_status=enums.AckStatus.NONE)
+        db.add(n)
+        db.commit()
+        nid = n.id
+
+    cid = client.post(
+        f"/api/v1/board/advisories/{aid}/comments",
+        json={"author_name": "증빙담당", "department_id": did,
+              "body": "조치 진행 증빙 첨부", "ack_status": "IN_PROGRESS"},
+    ).json()["comment"]["id"]
+
+    r = client.post(
+        f"/api/v1/board/comments/{cid}/evidence",
+        files={"file": ("dept/../../evidence?.txt", b"proof", "text/plain")},
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["ack_synced_notification"] == nid
+    assert body["comment"]["evidence"] == "evidence_.txt"
+
+    saved = None
+    with SessionLocal() as db:
+        c = db.get(AdvisoryComment, cid)
+        n = db.get(Notification, nid)
+        saved = Path(c.evidence_path)
+        assert saved.parent == EVIDENCE_DIR
+        assert saved.name == f"comment{cid}_evidence_.txt"
+        assert c.evidence_name == "evidence_.txt"
+        assert n.ack_evidence_path == c.evidence_path
+        assert n.ack_evidence_name == "evidence_.txt"
+    assert saved.read_bytes() == b"proof"
+    saved.unlink(missing_ok=True)
+
+
+def test_comment_evidence_rejects_oversize(client, fixture_ids):
+    """게시판 증빙에도 공통 업로드 크기 제한을 적용한다."""
+    from app.config import settings
+
+    aid, _ = fixture_ids
+    client.post(f"/api/v1/advisories/{aid}/board")
+    cid = client.post(
+        f"/api/v1/board/advisories/{aid}/comments",
+        json={"author_name": "파일담당", "body": "증빙 첨부 예정"},
+    ).json()["comment"]["id"]
+
+    old_limit = settings.MAX_UPLOAD_MB
+    settings.MAX_UPLOAD_MB = 0
+    try:
+        r = client.post(
+            f"/api/v1/board/comments/{cid}/evidence",
+            files={"file": ("too-big.txt", b"x", "text/plain")},
+        )
+        assert r.status_code == 413
+        with SessionLocal() as db:
+            c = db.get(AdvisoryComment, cid)
+            assert c.evidence_path is None and c.evidence_name is None
+    finally:
+        settings.MAX_UPLOAD_MB = old_limit
+
+
 def test_unpublish_hides_but_keeps_comments(client, fixture_ids):
     aid, _ = fixture_ids
     client.post(f"/api/v1/advisories/{aid}/board")
@@ -107,24 +178,29 @@ def test_department_filter_and_exclude_done(client):
     from sqlalchemy import delete
     with SessionLocal() as db:
         a_pub = Advisory(doc_no="FLT-PUB", title="공개 권고문", status=enums.AdvisoryStatus.MATCHED)
-        a_done = Advisory(doc_no="FLT-DONE", title="완료 권고문", status=enums.AdvisoryStatus.COMPLETED)
+        a_sent = Advisory(doc_no="FLT-SENT", title="발송완료 미회신 권고문",
+                          status=enums.AdvisoryStatus.COMPLETED)
+        a_closed = Advisory(doc_no="FLT-CLOSED", title="전체 조치완료 권고문",
+                            status=enums.AdvisoryStatus.COMPLETED)
         dA = Department(name="필터부서A", is_active=True)
         dB = Department(name="필터부서B", is_active=True)
         dC = Department(name="필터부서C", is_active=True)
-        db.add_all([a_pub, a_done, dA, dB, dC])
+        db.add_all([a_pub, a_sent, a_closed, dA, dB, dC])
         db.commit()
-        ids = dict(pub=a_pub.id, done=a_done.id, A=dA.id, B=dB.id, C=dC.id)
+        ids = dict(pub=a_pub.id, sent=a_sent.id, closed=a_closed.id, A=dA.id, B=dB.id, C=dC.id)
         # 둘 다 게시판 공개
-        for aid in (ids["pub"], ids["done"]):
+        for aid in (ids["pub"], ids["sent"], ids["closed"]):
             db.get(Advisory, aid).board_published_at = __import__("datetime").datetime.now()
-        # pub: A=미회신, B=조치완료 / done: A=미회신
+        # pub: A=미회신, B=조치완료 / sent: A=미회신 / closed: A=조치완료
         db.add_all([
             Notification(advisory_id=ids["pub"], department_id=ids["A"], channels=[], asset_ids=[],
                          status=enums.NotificationStatus.SENT, ack_status=enums.AckStatus.NONE),
             Notification(advisory_id=ids["pub"], department_id=ids["B"], channels=[], asset_ids=[],
                          status=enums.NotificationStatus.ACKED, ack_status=enums.AckStatus.DONE),
-            Notification(advisory_id=ids["done"], department_id=ids["A"], channels=[], asset_ids=[],
+            Notification(advisory_id=ids["sent"], department_id=ids["A"], channels=[], asset_ids=[],
                          status=enums.NotificationStatus.SENT, ack_status=enums.AckStatus.NONE),
+            Notification(advisory_id=ids["closed"], department_id=ids["A"], channels=[], asset_ids=[],
+                         status=enums.NotificationStatus.ACKED, ack_status=enums.AckStatus.DONE),
         ])
         db.commit()
 
@@ -133,16 +209,16 @@ def test_department_filter_and_exclude_done(client):
         return {a["doc_no"]: a for a in client.get("/api/v1/board/advisories?"+urlencode(q)).json()["items"]}
 
     try:
-        # 기본(부서 미지정, 완료 제외 ON): COMPLETED 권고문 제외
+        # 기본(부서 미지정, 완료 제외 ON): 발송완료(COMPLETED)여도 미회신 부서가 있으면 보여준다.
         b = board(exclude_done=True)
-        assert "FLT-PUB" in b and "FLT-DONE" not in b
-        # 완료 제외 OFF: 둘 다 보임
+        assert "FLT-PUB" in b and "FLT-SENT" in b and "FLT-CLOSED" not in b
+        # 완료 제외 OFF: 전체 보임
         b = board(exclude_done=False)
-        assert "FLT-PUB" in b and "FLT-DONE" in b
+        assert "FLT-PUB" in b and "FLT-SENT" in b and "FLT-CLOSED" in b
 
-        # 부서 A: 두 권고문 모두 관련. 완료 제외 ON이어도 A는 미회신이라 둘 다 남음
+        # 부서 A: pub/sent 는 미회신이라 남고, closed 는 A가 조치완료라 제외됨
         b = board(department_id=ids["A"], exclude_done=True)
-        assert "FLT-PUB" in b and "FLT-DONE" in b
+        assert "FLT-PUB" in b and "FLT-SENT" in b and "FLT-CLOSED" not in b
         assert b["FLT-PUB"]["dept_ack_status"] == "NONE"
 
         # 부서 B: pub 만 관련, 그리고 B는 조치완료 → 완료 제외 ON이면 사라짐
@@ -154,8 +230,12 @@ def test_department_filter_and_exclude_done(client):
         assert board(department_id=ids["C"], exclude_done=False) == {}
     finally:
         with SessionLocal() as db:
-            db.execute(delete(Notification).where(Notification.advisory_id.in_([ids["pub"], ids["done"]])))
-            db.execute(delete(Advisory).where(Advisory.id.in_([ids["pub"], ids["done"]])))
+            db.execute(delete(Notification).where(Notification.advisory_id.in_(
+                [ids["pub"], ids["sent"], ids["closed"]]
+            )))
+            db.execute(delete(Advisory).where(Advisory.id.in_(
+                [ids["pub"], ids["sent"], ids["closed"]]
+            )))
             db.execute(delete(Department).where(Department.id.in_([ids["A"], ids["B"], ids["C"]])))
             db.commit()
 
@@ -212,6 +292,89 @@ def test_board_surfaces_affected_dept_asset_owner(client):
             db.execute(delete(Advisory).where(Advisory.id == aid))
             db.execute(delete(Asset).where(Asset.id == asid))
             db.execute(delete(Department).where(Department.id == did))
+            db.commit()
+
+
+def test_department_scoped_detail_hides_other_department_data(client):
+    """부서 선택 상세는 다른 부서 자산·진행현황·댓글을 응답하지 않는다."""
+    from sqlalchemy import delete
+
+    with SessionLocal() as db:
+        dA = Department(name="스코프부서A", is_active=True)
+        dB = Department(name="스코프부서B", is_active=True)
+        db.add_all([dA, dB])
+        db.commit()
+        aA = Asset(asset_no="SCOPE-A1", department_id=dA.id, product_key="chrome",
+                   product_raw="Chrome", version_raw="120", owner_name="A담당",
+                   status=enums.AssetStatus.NORMAL)
+        aB = Asset(asset_no="SCOPE-B1", department_id=dB.id, product_key="office",
+                   product_raw="Office", version_raw="2021", owner_name="B담당",
+                   status=enums.AssetStatus.NORMAL)
+        adv = Advisory(doc_no="SCOPE-1", title="부서별 스코프 테스트",
+                       status=enums.AdvisoryStatus.MATCHED)
+        db.add_all([aA, aB, adv])
+        db.commit()
+        acA = AdvisoryCve(advisory_id=adv.id, cve_id_text="CVE-2026-71001",
+                          lookup_status=enums.LookupStatus.FOUND)
+        acB = AdvisoryCve(advisory_id=adv.id, cve_id_text="CVE-2026-71002",
+                          lookup_status=enums.LookupStatus.FOUND)
+        db.add_all([acA, acB])
+        db.commit()
+        db.add_all([
+            Match(advisory_id=adv.id, advisory_cve_id=acA.id, asset_id=aA.id,
+                  status=enums.MatchStatus.MATCHED),
+            Match(advisory_id=adv.id, advisory_cve_id=acB.id, asset_id=aB.id,
+                  status=enums.MatchStatus.MATCHED),
+            Notification(advisory_id=adv.id, department_id=dA.id, channels=[], asset_ids=[aA.id],
+                         status=enums.NotificationStatus.SENT, ack_status=enums.AckStatus.NONE),
+            Notification(advisory_id=adv.id, department_id=dB.id, channels=[], asset_ids=[aB.id],
+                         status=enums.NotificationStatus.SENT, ack_status=enums.AckStatus.NONE),
+            AdvisoryComment(advisory_id=adv.id, author_name="A작성자", author_department_id=dA.id,
+                            author_department_name=dA.name, body="A 부서 회신"),
+            AdvisoryComment(advisory_id=adv.id, author_name="B작성자", author_department_id=dB.id,
+                            author_department_name=dB.name, body="B 부서 회신"),
+            AdvisoryComment(advisory_id=adv.id, author_name="관리자", body="공통 공지",
+                            is_admin=True),
+        ])
+        adv.board_published_at = datetime.now()
+        db.commit()
+        ids = dict(adv=adv.id, A=dA.id, B=dB.id, aA=aA.id, aB=aB.id)
+
+    try:
+        scoped_list = client.get("/api/v1/board/advisories",
+                                 params={"department_id": ids["A"], "exclude_done": "false"}).json()["items"]
+        scoped_row = next(x for x in scoped_list if x["doc_no"] == "SCOPE-1")
+        assert scoped_row["comment_count"] == 2
+        assert scoped_row["affected_departments"][0]["name"] == "스코프부서A"
+        assert "스코프부서B" not in str(scoped_row)
+
+        detail = client.get(f"/api/v1/board/advisories/{ids['adv']}",
+                            params={"department_id": ids["A"]}).json()
+        assert detail["advisory"]["affected_dept_count"] == 1
+        assert detail["advisory"]["affected_departments"][0]["name"] == "스코프부서A"
+        assert detail["advisory"]["affected_asset_count"] == 1
+        assert detail["advisory"]["affected_products"] == ["Chrome"]
+        assert [m["department"] for m in detail["matches"]] == ["스코프부서A"]
+        assert detail["matches"][0]["asset_no"] == "SCOPE-A1"
+        assert {c["cve_id_text"] for c in detail["cves"]} == {"CVE-2026-71001"}
+        assert detail["progress"]["total"] == 1
+        assert detail["progress"]["none"] == 1
+        assert {c["author_name"] for c in detail["comments"]} == {"A작성자", "관리자"}
+
+        text = str(detail)
+        assert "스코프부서B" not in text
+        assert "SCOPE-B1" not in text
+        assert "B담당" not in text
+        assert "B 부서 회신" not in text
+    finally:
+        with SessionLocal() as db:
+            db.execute(delete(AdvisoryComment).where(AdvisoryComment.advisory_id == ids["adv"]))
+            db.execute(delete(Notification).where(Notification.advisory_id == ids["adv"]))
+            db.execute(delete(Match).where(Match.advisory_id == ids["adv"]))
+            db.execute(delete(AdvisoryCve).where(AdvisoryCve.advisory_id == ids["adv"]))
+            db.execute(delete(Advisory).where(Advisory.id == ids["adv"]))
+            db.execute(delete(Asset).where(Asset.id.in_([ids["aA"], ids["aB"]])))
+            db.execute(delete(Department).where(Department.id.in_([ids["A"], ids["B"]])))
             db.commit()
 
 
