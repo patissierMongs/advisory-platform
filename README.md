@@ -10,6 +10,21 @@
 
 ## 빠른 시작
 
+이 시스템은 **폐쇄망(인터넷 없음)** 운영을 기본 전제로 합니다. **실행 경로는 외부망을 절대 타지 않습니다.**
+인터넷이 필요한 작업은 배포 준비 단계 한 곳(`prepare_offline` 또는 올인원 빌드)으로 격리했습니다.
+
+**① 인터넷 되는 PC에서 한 번 — 의존성(휠) 수집**
+```bat
+:: Windows
+scripts\prepare_offline.bat
+```
+```bash
+# Linux / Mac
+./scripts/prepare_offline.sh
+```
+→ `vendor/wheels/` 가 생성됩니다. **타깃과 동일한 OS/CPU/파이썬**에서 실행해야 바이너리 휠(pypdfium2 등)이 호환됩니다.
+
+**② 폐쇄망 타깃 — 프로젝트 폴더(+`vendor/wheels`)를 복사 후 실행**
 ```bat
 :: Windows
 start.bat
@@ -18,12 +33,11 @@ start.bat
 # Linux / Mac
 chmod +x start.sh && ./start.sh
 ```
-```bash
-# 수동
-python -m venv .venv && . .venv/Scripts/activate   # (Linux: source .venv/bin/activate)
-pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
+`start.*` 는 `vendor/wheels` 에서 `--no-index` 로만 설치하므로 **PyPI/인터넷에 접속하지 않습니다**.
+(개발 PC에서 굳이 PyPI로 온라인 설치하려면 `ADVISORY_ONLINE_INSTALL=1` 을 명시해야 합니다.)
+
+> **대안 — 올인원 번들**: `python build_allinone.py` 로 임베디드 Python + 의존성까지 포함한 zip을 만들면,
+> 타깃은 Python 설치도 `vendor/wheels` 준비도 없이 압축만 풀고 `start.bat` 으로 바로 실행합니다(외부망 0).
 
 브라우저에서 **http://localhost:8000** 접속 → 기본 실행은 운영 기준으로 빈 SQLite DB에서 시작합니다.
 
@@ -147,8 +161,10 @@ PDF 표 추출 등에서 흔한 띄어쓰기·구분자 변형(`CVE 2026 21345`,
 
 ## 폐쇄망 배포 시 체크리스트(명세 §7)
 
-- [x] **완료** — React·ReactDOM·Pretendard 를 `web/vendor/` 로 로컬 번들링(외부 CDN 요청 0건, 브라우저 검증 완료).
-      Babel 은 JSX x-import 미사용으로 호출되지 않음.
+- [x] **완료** — React·ReactDOM·Pretendard·Babel 모두 `web/vendor/`(동일 출처)에서만 로드. 외부 CDN(unpkg) 폴백 제거 →
+      `support.js` 가 어떤 경우에도 외부망으로 나가지 않음(외부 요청 0건).
+- [x] **완료** — 의존성 설치를 오프라인 휠(`vendor/wheels`)로 전환. `start.sh`/`start.bat` 는 `--no-index` 로만 설치하며
+      기본 경로에서 PyPI/인터넷에 접속하지 않음. 휠 수집은 온라인 PC에서 `scripts/prepare_offline.*` 한 번.
 - [ ] 운영 시작 전 `data/` 백업 또는 초기화 후 `ADVISORY_SEED=false` 로 기동.
 - [ ] SMTP 환경변수 설정 후 관리자 화면의 테스트 메일로 발송 확인.
 - [ ] CVE 피드와 자산대장은 실제 파일을 화면에서 검증 후 적용.

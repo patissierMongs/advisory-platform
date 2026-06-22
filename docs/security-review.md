@@ -91,11 +91,23 @@
 - `allow_origins=["*"]` + 모든 메서드/헤더. credentials 미허용이라 영향은 제한적이나
   내부 운영앱 기본값으로는 과도. 권고: 동일 출처 서빙 시 CORS 제거 또는 출처 한정.
 
-### M-3. 폐쇄망 주장 위배 — CDN 폴백
-- 위치: `web/support.js:1377,1379,942`
-- 로컬 vendor 로드 실패 시 `unpkg.com`에서 React/ReactDOM/Babel을 재요청. Babel은 SRI 없음.
-  README의 "외부 요청 0건" 보장이 코드상 깨질 수 있음.
-- 권고: CDN 폴백 제거 또는 로컬 경로로 교체. (정상 동작 시에는 로컬 vendor가 먼저 로드되어 발생 안 함.)
+### M-3. 폐쇄망 주장 위배 — CDN 폴백  ✅ 조치 완료
+- 위치: `web/support.js`
+- 내용(조치 전): 로컬 vendor 로드 실패 시 `unpkg.com`에서 React/ReactDOM/Babel을 재요청. Babel은 SRI 없음.
+  README의 "외부 요청 0건" 보장이 코드상 깨질 수 있었음.
+- 조치: `REACT_URL`/`REACT_DOM_URL`/`BABEL_URL` 을 모두 동일 출처 `./vendor/...` 로 교체.
+  외부 CDN 폴백 제거 → `support.js` 가 어떤 경우에도 외부망으로 나가지 않음(`grep` 검증: web/ 외부 URL 0건).
+
+### M-4. 설치 경로의 인터넷 의존 — 폐쇄망 전제 위배  ✅ 조치 완료
+- 위치: `start.sh`, `start.bat`, `requirements.txt`
+- 내용(조치 전): 문서화된 빠른 시작(`start.sh`/`start.bat`)이 `pip install -r requirements.txt` 로
+  PyPI(인터넷)에서 의존성을 받았음. 폐쇄망 타깃에서 직접 실행 시 실패. 공급망 측면에서도 범위 지정·해시 미핀.
+- 조치:
+  · `start.*` 를 **오프라인 우선**으로 변경 — 로컬 휠 `vendor/wheels` 에서 `--no-index` 로만 설치.
+    PyPI 온라인 설치는 `ADVISORY_ONLINE_INSTALL=1` 을 명시해야만 동작.
+  · 온라인이 필요한 휠 수집 단계를 `scripts/prepare_offline.{sh,bat}` 한 곳으로 격리(인터넷 PC에서 1회).
+  · README 빠른 시작을 오프라인 경로 우선으로 정리. `vendor/wheels/` 는 `.gitignore`(플랫폼별 재생성).
+- 잔여 권고: 재현성·무결성을 더 높이려면 `pip-compile` 등으로 **버전 고정 + 해시 락파일**(`--require-hashes`) 도입.
 
 ---
 
@@ -136,6 +148,6 @@
 
 1. **H-1, H-2, H-3, H-4, H-7** — 무인증 구조 위 민감 동작/노출. 관리자 게이트·서명·접근제어로 보완.
 2. **H-5, H-6** — 미신뢰 파일/리포트 처리(압축폭탄·수식 인젝션). 입력·출력 정제.
-3. **M-1~M-3, Low** — 하드닝.
+3. **M-1~M-4, Low** — 하드닝. (M-3 CDN 폴백·M-4 설치 인터넷 의존은 본 브랜치에서 조치 완료.)
 
 > 본 보고서는 검토 결과 기록이며, 코드 수정은 포함하지 않는다(요청에 따라 보고서만 작성).
