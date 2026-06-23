@@ -955,9 +955,12 @@
       babelLoading = new Promise((res, rej) => {
         const s = document.createElement("script");
         s.src = BABEL_URL;
-        s.crossOrigin = "anonymous";
         s.onload = () => res();
-        s.onerror = rej;
+        // 폐쇄망: 외부 CDN 으로 폴백하지 않는다. jsx/tsx x-import 를 쓰려면
+        // web/vendor/babel.min.js 를 동봉해야 한다(현재 앱은 x-import 미사용).
+        s.onerror = () => rej(new Error(
+          "Babel(jsx/tsx 변환) 로드 실패: " + BABEL_URL +
+          " — 폐쇄망에서는 web/vendor/babel.min.js 를 동봉하세요."));
         document.head.appendChild(s);
       });
       return babelLoading;
