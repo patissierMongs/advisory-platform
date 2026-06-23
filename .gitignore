@@ -21,3 +21,5 @@ node_modules/
 samples/cve_feeds/
 # 대용량 NVD gz 빌드 자산(올인원 번들에만 포함, git 제외)
 *.json.gz
+# 오프라인 배포용 휠(prepare_offline 로 재생성, 바이너리·플랫폼별)
+vendor/wheels/

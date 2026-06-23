@@ -939,7 +939,9 @@
     }
     return cur;
   }
-  var BABEL_URL = "https://unpkg.com/@babel/standalone@7.26.4/babel.min.js";
+  // 폐쇄망: Babel 도 외부 CDN 으로 나가지 않는다(동일 출처 ./vendor 만).
+  // 현재 앱은 x-import(jsx/tsx)를 쓰지 않아 이 경로는 호출되지 않는다.
+  var BABEL_URL = "./vendor/babel.min.js";
   var GLOBAL_POLL_INTERVAL_MS = 50;
   var GLOBAL_POLL_TIMEOUT_MS = 3e4;
   function createExternalModules(onResolved) {
@@ -953,9 +955,12 @@
       babelLoading = new Promise((res, rej) => {
         const s = document.createElement("script");
         s.src = BABEL_URL;
-        s.crossOrigin = "anonymous";
         s.onload = () => res();
-        s.onerror = rej;
+        // 폐쇄망: 외부 CDN 으로 폴백하지 않는다. jsx/tsx x-import 를 쓰려면
+        // web/vendor/babel.min.js 를 동봉해야 한다(현재 앱은 x-import 미사용).
+        s.onerror = () => rej(new Error(
+          "Babel(jsx/tsx 변환) 로드 실패: " + BABEL_URL +
+          " — 폐쇄망에서는 web/vendor/babel.min.js 를 동봉하세요."));
         document.head.appendChild(s);
       });
       return babelLoading;
@@ -1374,10 +1379,13 @@
   }
 
   // src/index.ts
-  var REACT_URL = "https://unpkg.com/react@18.3.1/umd/react.production.min.js";
-  var REACT_SRI = "sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z";
-  var REACT_DOM_URL = "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js";
-  var REACT_DOM_SRI = "sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1";
+  // 폐쇄망(인트라넷) 전제 — React/ReactDOM 은 로컬 vendor 에서만 로드한다(외부 CDN 미사용).
+  // 정상 부팅 시엔 app.dc.html 의 <script> 태그가 먼저 로드하므로 아래 폴백은 거의 쓰이지 않으며,
+  // 쓰이더라도 동일 출처(./vendor)에서만 받는다.
+  var REACT_URL = "./vendor/react.production.min.js";
+  var REACT_SRI = "";
+  var REACT_DOM_URL = "./vendor/react-dom.production.min.js";
+  var REACT_DOM_SRI = "";
   function hideRawTemplate() {
     const s = document.createElement("style");
     s.textContent = "x-dc{display:none!important}";
@@ -1388,8 +1396,8 @@
       //! nosemgrep: create-script-element
       const s = document.createElement("script");
       s.src = src;
-      s.integrity = integrity;
-      s.crossOrigin = "anonymous";
+      if (integrity) s.integrity = integrity;     // 로컬(동일 출처) 로드는 SRI 불필요
+      if (integrity) s.crossOrigin = "anonymous"; // 외부 SRI 검증용 — 로컬은 설정 안 함
       s.async = false;
       s.onload = () => resolve2();
       s.onerror = () => reject(new Error(`failed to load ${src}`));
