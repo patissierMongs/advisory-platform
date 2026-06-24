@@ -256,8 +256,23 @@ function Download-FeedIfNeeded {
 
     if ($needDownload) {
         $tmpGz = Join-Path $TempDir "$Name.json.gz.tmp"
-        Invoke-DownloadWithRetry -Uri $jsonUrl -OutFile $tmpGz
-        Assert-NvdGzipSha256 -Path $tmpGz -ExpectedSha256 $remoteSha
+        # NVD 는 피드를 주기적으로 갱신한다. .meta 와 .json.gz 를 받는 사이 피드가 갱신되면
+        # 해시가 어긋날 수 있으므로, 불일치 시 meta+gz 를 한 번 더 받아 재검증한다(중간 실패 흔한 원인).
+        $shaAttempts = 2
+        for ($a = 1; $a -le $shaAttempts; $a++) {
+            Invoke-DownloadWithRetry -Uri $jsonUrl -OutFile $tmpGz
+            try {
+                Assert-NvdGzipSha256 -Path $tmpGz -ExpectedSha256 $remoteSha
+                break
+            } catch {
+                if ($a -eq $shaAttempts) { throw }
+                Write-Log "SHA mismatch for $Name (feed likely updated mid-fetch). Refreshing meta and retrying." 'WARN'
+                Invoke-DownloadWithRetry -Uri $metaUrl -OutFile $tmpMeta
+                $meta = Read-NvdMeta -Path $tmpMeta
+                if (-not $meta.ContainsKey('sha256')) { throw "NVD meta file has no sha256: $metaUrl" }
+                $remoteSha = $meta['sha256'].ToUpperInvariant()
+            }
+        }
         Move-Item -Force -Path $tmpGz -Destination $gzPath
         Move-Item -Force -Path $tmpMeta -Destination $metaPath
         Write-Log "Updated feed $Name sha256=$remoteSha"
@@ -284,21 +299,51 @@ function Invoke-FullSync {
     $state = Read-State
     Write-Log "Starting FULL sync: years $StartYear..$EndYear"
 
+    # 기존 진행분을 보존(부분 실패 후 재개). pscustomobject/hashtable 양쪽을 hashtable 로 정규화.
     $yearlySha = @{}
+    if ($state.yearlySha256) {
+        if ($state.yearlySha256 -is [hashtable]) {
+            foreach ($k in $state.yearlySha256.Keys) { $yearlySha[[string]$k] = $state.yearlySha256[$k] }
+        } else {
+            foreach ($p in $state.yearlySha256.PSObject.Properties) { $yearlySha[$p.Name] = $p.Value }
+        }
+    }
+    $failedYears = New-Object System.Collections.ArrayList
+
     for ($year = $StartYear; $year -le $EndYear; $year++) {
         $name = "nvdcve-2.0-$year"
-        $feed = Download-FeedIfNeeded -Name $name -Force
-        $localPath = Copy-CanonicalYearFeed -Year $year -SourceGz $feed.Path
-        $yearlySha["$year"] = Get-FileSha256 -Path $localPath
-        Write-Log "Stored local yearly feed year=$year path=$localPath"
+        try {
+            # -Force 제거: 변동 없는 해(저장된 .meta sha 동일)는 건너뛰어 재실행이 곧 '재개'가 된다.
+            $feed = Download-FeedIfNeeded -Name $name
+            $localPath = Copy-CanonicalYearFeed -Year $year -SourceGz $feed.Path
+            $yearlySha["$year"] = Get-FileSha256 -Path $localPath
+            # 연도별로 즉시 상태 저장 → 중간에 죽어도 진행분이 남고 다음 실행이 이어서 받는다.
+            $state.yearlySha256 = $yearlySha
+            $state.startYear = $StartYear
+            $state.endYear = $EndYear
+            Save-State -State $state
+            Write-Log "Stored local yearly feed year=$year path=$localPath"
+        } catch {
+            [void]$failedYears.Add($year)
+            Write-Log "Year $year failed: $($_.Exception.Message). Continuing with remaining years." 'WARN'
+        }
+    }
+
+    $state.startYear = $StartYear
+    $state.endYear = $EndYear
+    $state.yearlySha256 = $yearlySha
+
+    if ($failedYears.Count -gt 0) {
+        # 한 해라도 실패하면 fullCompleted 를 false 로 유지 → Auto 모드가 다음에 다시 Full 로 빠진 해만 마저 받는다.
+        $state.fullCompleted = $false
+        Save-State -State $state
+        Write-Log ("FULL sync incomplete. Failed years: {0}. Re-run (-Mode Full or Auto) to retry only the missing/changed years." -f ($failedYears -join ', ')) 'WARN'
+        return
     }
 
     $state.fullCompleted = $true
     $state.lastFullSyncUtc = (Get-Date).ToUniversalTime().ToString('o')
     $state.lastIncrementalSyncUtc = $null
-    $state.startYear = $StartYear
-    $state.endYear = $EndYear
-    $state.yearlySha256 = $yearlySha
     Save-State -State $state
 
     if ($BuildCombined) {
