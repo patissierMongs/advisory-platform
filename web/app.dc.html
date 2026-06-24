@@ -766,7 +766,14 @@
                     <div onDragOver="{{ f.onDragOver }}" onDrop="{{ f.onDrop }}" style="{{ f.zoneStyle }}">
                       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
                         <span style="font-size:12.5px; font-weight:700; color:#2a3a52;">{{ f.label }}</span>
-                        <span style="{{ f.reqBadgeStyle }}">{{ f.reqBadge }}</span>
+                        <span style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+                          <span style="{{ f.reqBadgeStyle }}">{{ f.reqBadge }}</span>
+                          <sc-if value="{{ f.removable }}" hint-placeholder-val="">
+                            <button onClick="{{ f.onRemove }}" title="{{ f.removeTitle }}" style="background:none; border:none; cursor:pointer; padding:1px; display:flex; color:#aab4c2;">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                            </button>
+                          </sc-if>
+                        </span>
                       </div>
                       <sc-if value="{{ f.mapped }}" hint-placeholder-val="">
                         <div style="display:flex; align-items:center; justify-content:space-between; background:#e6f4f2; border:1px solid #b8e0da; border-radius:7px; padding:7px 10px;">
@@ -815,6 +822,24 @@
                       </sc-if>
                     </div>
                   </sc-for>
+                </div>
+
+                <!-- 필드 추가/관리 — 선택 필드 자유 추가·제거 -->
+                <div style="margin-top:16px; padding-top:14px; border-top:1px dashed #e1e7ef;">
+                  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span style="font-size:11.5px; font-weight:700; color:#6b7a92; flex-shrink:0;">필드 추가</span>
+                    <input value="{{ customFieldName }}" onInput="{{ onCustomFieldName }}" placeholder="예: 구매일자 · 위치 · 비고 · 자산등급" style="flex:1; min-width:160px; font-family:inherit; font-size:12px; padding:7px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a;" />
+                    <button onClick="{{ onAddCustomField }}" disabled="{{ addFieldDisabled }}" style="{{ addFieldBtnStyle }}">+ 열 추가</button>
+                  </div>
+                  <div style="font-size:10.5px; color:#94a1b4; margin-top:6px;">시스템 필드 외 컬럼도 원하는 이름으로 매핑해 자산 부가정보로 함께 저장됩니다. 선택 필드는 우측 ✕ 로 숨길 수 있습니다.</div>
+                  <sc-if value="{{ hasHiddenFields }}" hint-placeholder-val="">
+                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:10px;">
+                      <span style="font-size:10.5px; color:#94a1b4; font-weight:600;">숨긴 선택 필드</span>
+                      <sc-for list="{{ hiddenChips }}" as="h" hint-placeholder-count="2">
+                        <button onClick="{{ h.onClick }}" style="font-family:inherit; font-size:10.5px; font-weight:600; color:#5a6b86; background:#f0f3f7; border:1px solid #e1e7ef; border-radius:5px; padding:3px 9px; cursor:pointer;">+ {{ h.label }}</button>
+                      </sc-for>
+                    </div>
+                  </sc-if>
                 </div>
 
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-top:18px; padding-top:16px; border-top:1px solid #eef1f5;">
@@ -1459,15 +1484,15 @@ class Component extends DCLogic {
 
   _doRealImport() {
     const id = this.state.importId; if (!id) return;
-    const fm = this._fieldMap(); const inv = {}; Object.keys(fm).forEach(af => inv[fm[af]] = af);
     const colMap = this.state.colMap || {}; const colSplit = this.state.colSplit || {}; const mapping = {};
-    Object.keys(colMap).forEach(fid => {
-      const af = inv[fid]; if (!af || !colMap[fid]) return;
-      const sp = colSplit[fid];
+    // 활성 필드(시스템−숨김+커스텀)만 매핑. 커스텀은 입력 이름이 곧 매핑 키 → 백엔드가 extra 에 이름으로 저장.
+    this.mapFieldsRaw().forEach(f => {
+      const letter = colMap[f.id]; if (!letter || !f.key) return;
+      const sp = colSplit[f.id];
       // 한 셀에 여러 값: 제품·버전 자동분리(pv) 또는 구분자(sep,part). 없으면 전체.
-      if (sp && sp.mode === 'pv') mapping[af] = { col: colMap[fid], mode: (fid === 'f_ver' ? 'version' : 'product') };
-      else if (sp && sp.sep) mapping[af] = { col: colMap[fid], sep: sp.sep, part: sp.part || 0 };
-      else mapping[af] = colMap[fid];
+      if (sp && sp.mode === 'pv') mapping[f.key] = { col: letter, mode: (f.id === 'f_ver' ? 'version' : 'product') };
+      else if (sp && sp.sep) mapping[f.key] = { col: letter, sep: sp.sep, part: sp.part || 0 };
+      else mapping[f.key] = letter;
     });
     this.api('POST', '/assets/import/' + id + '/commit', {
       mapping, header_row: this.state.importHeaderRow, header_rows: this.state.importHeaderRows || 1,
@@ -1561,7 +1586,8 @@ class Component extends DCLogic {
     }));
   }
 
-  mapFieldsRaw() {
+  // 시스템 고정 필드(8). req: match/send=필수, opt=선택(숨김 가능).
+  _sysFields() {
     return [
       { id: 'f_id', label: '자산번호', req: 'opt' },
       { id: 'f_dept', label: '부서', req: 'send' },
@@ -1572,6 +1598,37 @@ class Component extends DCLogic {
       { id: 'f_team', label: '담당팀', req: 'opt' },
       { id: 'f_contact', label: '연락처', req: 'opt' },
     ];
+  }
+
+  // 화면 매핑 필드 = (시스템 − 숨긴 선택필드) + 사용자 정의 필드.
+  // key = 커밋 매핑 키(시스템=API명, 커스텀=입력 이름). custom=true 는 완전 삭제 가능.
+  mapFieldsRaw() {
+    const fm = this._fieldMap();                       // {api: fid}
+    const fid2af = {}; Object.keys(fm).forEach(af => { fid2af[fm[af]] = af; });
+    const hidden = this.state.hiddenFields || {};
+    const sys = this._sysFields()
+      .filter(f => !hidden[f.id])
+      .map(f => ({ id: f.id, label: f.label, req: f.req, custom: false, key: fid2af[f.id] }));
+    const custom = (this.state.customFields || [])
+      .map(c => ({ id: c.id, label: c.label, req: 'opt', custom: true, key: c.label }));
+    return sys.concat(custom);
+  }
+
+  // 사용자 정의 필드 추가 — 이름 중복/시스템 라벨 충돌 방지.
+  _addCustomField() {
+    const name = String(this.state.customFieldName || '').trim();
+    if (!name) return;
+    const sysLabels = this._sysFields().map(f => f.label);
+    const existing = (this.state.customFields || []).map(c => c.label);
+    if (sysLabels.indexOf(name) >= 0 || existing.indexOf(name) >= 0) {
+      if (this.flashToast) this.flashToast('필드 추가 불가', '이미 있는 필드 이름입니다');
+      return;
+    }
+    const id = 'x_' + Date.now().toString(36);
+    this.setState(st => ({
+      customFields: (st.customFields || []).concat([{ id, label: name }]),
+      customFieldName: '',
+    }));
   }
 
   advisory() {
@@ -2097,6 +2154,17 @@ class Component extends DCLogic {
           const cs = Object.assign({}, st.colSplit); delete cs[f.id];
           return { colMap: nm, colSplit: cs };
         }),
+        // 선택 필드 숨김(시스템) / 사용자 정의 필드 삭제(커스텀)
+        removable: (f.req === 'opt' || f.custom),
+        removeTitle: f.custom ? '필드 삭제' : '이 선택 필드 숨기기',
+        onRemove: () => this.setState(st => {
+          const nm = Object.assign({}, st.colMap); delete nm[f.id];
+          const cs = Object.assign({}, st.colSplit); delete cs[f.id];
+          const patch = { colMap: nm, colSplit: cs };
+          if (f.custom) patch.customFields = (st.customFields || []).filter(c => c.id !== f.id);
+          else patch.hiddenFields = Object.assign({}, st.hiddenFields, { [f.id]: true });
+          return patch;
+        }),
       };
     });
 
@@ -2335,6 +2403,18 @@ class Component extends DCLogic {
       sheetCols,
       previewRowNums: (sheetCols[0] && sheetCols[0].samples && sheetCols[0].samples.length) ? sheetCols[0].samples.map((_, i) => i + 1) : [1, 2, 3, 4],
       mapFields,
+      // 필드 추가/관리 — 선택 필드 자유 추가·제거
+      customFieldName: S.customFieldName || '',
+      onCustomFieldName: (e) => this.setState({ customFieldName: e.target.value }),
+      onAddCustomField: () => this._addCustomField(),
+      addFieldDisabled: !String(S.customFieldName || '').trim(),
+      addFieldBtnStyle: 'font-family:inherit; font-size:11.5px; font-weight:700; padding:7px 14px; border-radius:7px; border:none; flex-shrink:0; '
+        + (String(S.customFieldName || '').trim() ? 'background:#0f766e; color:#fff; cursor:pointer;' : 'background:#e3e8ef; color:#a3aebf; cursor:not-allowed;'),
+      hasHiddenFields: this._sysFields().some(f => (S.hiddenFields || {})[f.id]),
+      hiddenChips: this._sysFields().filter(f => (S.hiddenFields || {})[f.id]).map(f => ({
+        label: f.label,
+        onClick: () => this.setState(st => { const h = Object.assign({}, st.hiddenFields); delete h[f.id]; return { hiddenFields: h }; }),
+      })),
       reqMapped, reqTotal,
       reqColor: canImport ? '#0f766e' : '#b45309',
       autoMap: () => {
