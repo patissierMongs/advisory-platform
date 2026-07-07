@@ -178,9 +178,11 @@ def seed(db: Session) -> None:
         ("교통물류실", enums.AckStatus.DONE, ["MESSENGER"]),
         ("주택토지실", enums.AckStatus.NONE, ["MAIL"]),
     ]):
+        dept_asset_ids = list(db.scalars(
+            select(Asset.id).where(Asset.department_id == depts[dept].id).limit(3)))
         db.add(Notification(
             advisory_id=past.id, department_id=depts[dept].id, channels=channels,
-            message_body=f"[보안조치 요청] {past.title}", asset_ids=[],
+            message_body=f"[보안조치 요청] {past.title}", asset_ids=dept_asset_ids,
             status=enums.NotificationStatus.ACKED if acked == enums.AckStatus.DONE else enums.NotificationStatus.SENT,
             ack_status=acked, sent_at=base_dt - timedelta(days=i // 3),
             sent_by=analyst.id, idempotency_key=f"seed-past-{i}",
