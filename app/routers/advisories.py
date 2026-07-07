@@ -17,7 +17,7 @@ from ..core.matching import all_cves_found
 from ..db import SessionLocal, get_db
 from ..deps import get_actor_id
 from ..models import Advisory, AdvisoryCve, Cve, Match
-from ..schemas import CveAddRequest
+from ..schemas import AdvisoryMetaPatch, CveAddRequest
 from ..serializers import advisory_brief, advisory_cve_item
 
 router = APIRouter(prefix="/api/v1", tags=["advisories"])
@@ -31,7 +31,7 @@ async def upload_advisory(
     request: Request,
     file: UploadFile = File(...),
     source_org: str = Form(""),
-    receive_channel: str = Form("NCST"),
+    receive_channel: str | None = Form(None),
     doc_no: str | None = Form(None),
     title: str | None = Form(None),
     due_at: str | None = Form(None),
@@ -46,11 +46,15 @@ async def upload_advisory(
     source_org = (source_org or "").strip()
     if not source_org:
         raise HTTPException(400, "출처기관은 필수입니다.")
-    try:
-        channel = enums.ReceiveChannel(receive_channel)
-    except ValueError as e:
-        allowed = ", ".join(c.value for c in enums.ReceiveChannel)
-        raise HTTPException(400, f"접수채널은 {allowed} 중 하나여야 합니다.") from e
+    # 접수경로(§9)는 본문 추출 우선이라 업로드 시 필수는 아니다. 단, 폼으로 값을 주면 유효해야 한다.
+    form_channel = None
+    rc = (receive_channel or "").strip()
+    if rc:
+        try:
+            form_channel = enums.ReceiveChannel(rc)
+        except ValueError as e:
+            allowed = ", ".join(c.value for c in enums.ReceiveChannel)
+            raise HTTPException(400, f"접수채널은 {allowed} 중 하나여야 합니다.") from e
 
     sha = extract.sha256_bytes(content)
     dup = db.scalar(select(Advisory).where(Advisory.file_sha256 == sha))
@@ -68,13 +72,34 @@ async def upload_advisory(
         path.write_bytes(content)
     text, pages = extract.extract_text_from_pdf(str(path))
 
+    # 조치기한(§8): 본문 추출 우선 → 폼 수동입력 → 미지정(관리자 입력 대기).
+    ext_due, _ = extract.extract_due_date(text)
+    form_due = _parse_date(due_at)
+    if ext_due is not None:
+        final_due, due_source = ext_due, "PDF"
+    elif form_due is not None:
+        final_due, due_source = form_due, "MANUAL"
+    else:
+        final_due, due_source = None, None
+
+    # 접수경로(§9): 본문 추출 우선 → 폼 수동선택(검증 완료) → 미지정. 기한과 동일 정책.
+    ext_ch, _ = extract.extract_receive_channel(text)
+    if ext_ch is not None:
+        final_ch, ch_source = enums.ReceiveChannel(ext_ch), "PDF"
+    elif form_channel is not None:
+        final_ch, ch_source = form_channel, "MANUAL"
+    else:
+        final_ch, ch_source = None, None
+
     adv = Advisory(
         doc_no=(doc_no or "").strip() or None,
         title=(title or "").strip() or (file.filename or "보안권고문").rsplit(".", 1)[0],
         source_org=source_org,
-        receive_channel=channel,
+        receive_channel=final_ch,
+        channel_source=ch_source,
         received_at=date.today(),
-        due_at=_parse_date(due_at),
+        due_at=final_due,
+        due_source=due_source,
         file_path=str(path),
         file_sha256=sha,
         page_count=pages,
@@ -86,6 +111,38 @@ async def upload_advisory(
     db.flush()
     record(db, action="ADVISORY_UPLOAD", actor_id=adv.uploaded_by,
            entity_type="advisory", entity_id=adv.id, detail={"sha256": sha, "force": force}, request=request)
+    db.commit()
+    return advisory_brief(adv)
+
+
+@router.patch("/advisories/{advisory_id}/meta")
+def update_meta(advisory_id: int, body: AdvisoryMetaPatch, request: Request,
+                db: Session = Depends(get_db)):
+    """조치기한·접수경로 관리자 수동 지정(§8·9) — 본문 미추출 시 직접 입력/수정.
+
+    전달한 필드만 갱신하며, 설정 시 출처를 'MANUAL' 로 표기한다(빈 값이면 미지정으로 비움).
+    """
+    adv = _get(db, advisory_id)
+    sent = body.model_fields_set
+    if "due_at" in sent:
+        d = _parse_date(body.due_at)
+        adv.due_at = d
+        adv.due_source = "MANUAL" if d else None
+    if "receive_channel" in sent:
+        ch = (body.receive_channel or "").strip()
+        if ch:
+            try:
+                adv.receive_channel = enums.ReceiveChannel(ch)
+            except ValueError:
+                raise HTTPException(400, "올바른 접수경로 값이 아닙니다(NCST·WEBMAIL·OFFICIAL_DOC).")
+            adv.channel_source = "MANUAL"
+        else:
+            adv.receive_channel = None
+            adv.channel_source = None
+    record(db, action="ADVISORY_META_EDIT", actor_id=get_actor_id(db), entity_type="advisory",
+           entity_id=adv.id, detail={"due_at": str(adv.due_at) if adv.due_at else None,
+                                     "channel": adv.receive_channel.value if adv.receive_channel else None},
+           request=request)
     db.commit()
     return advisory_brief(adv)
 

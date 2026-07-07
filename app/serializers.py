@@ -61,8 +61,10 @@ def advisory_brief(a: Advisory, *, match_count: int | None = None) -> dict:
         "title": a.title,
         "source_org": a.source_org,
         "receive_channel": a.receive_channel.value if a.receive_channel else None,
+        "channel_source": a.channel_source,   # PDF | MANUAL | None — 접수경로 출처(§9)
         "received_at": _d(a.received_at),
         "due_at": _d(a.due_at),
+        "due_source": a.due_source,           # PDF | MANUAL | None — 조치기한 출처(§8)
         "d_day": d_day,
         "sla_status": sla,
         "page_count": a.page_count,
