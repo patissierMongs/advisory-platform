@@ -21,3 +21,24 @@ def safe_filename(name: str | None, default: str = "file") -> str:
     base = PurePosixPath((name or "").replace("\\", "/")).name  # 마지막 성분만(경로 탈출 제거)
     base = _UNSAFE.sub("_", base).strip(". ")                    # 위험문자/끝점·공백 제거
     return base or default
+
+
+# inline 렌더가 안전한 증빙 확장자 — 그 외(html/svg/js 등)는 첨부 강제로 stored-XSS 차단.
+_INLINE_SAFE_EXT = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".txt", ".csv", ".log"}
+
+
+def evidence_response(path: str, display_name: str | None):
+    """증빙 파일 응답 — 안전한 타입만 inline, 나머지는 attachment. 항상 nosniff.
+
+    증빙 업로드는 확장자 제한이 없으므로(운영 편의) 임의 HTML 을 사이트 오리진에서
+    inline 서빙하면 stored-XSS 벡터가 된다. 표시명은 safe_filename 으로 헤더 안전화.
+    """
+    from fastapi.responses import FileResponse
+
+    name = safe_filename(display_name, default="evidence")
+    ext = PurePosixPath(name.lower()).suffix
+    disposition = "inline" if ext in _INLINE_SAFE_EXT else "attachment"
+    return FileResponse(path, filename=name, headers={
+        "Content-Disposition": f'{disposition}; filename="{name}"',
+        "X-Content-Type-Options": "nosniff",
+    })

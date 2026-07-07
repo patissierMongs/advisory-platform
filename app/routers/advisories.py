@@ -181,28 +181,50 @@ def _run_extract(advisory_id: int) -> None:
         adv.extract_phase = "regex"
         db.commit()
 
+        # 재시도 대비: 저장 텍스트가 비어 있으면 원본 PDF 에서 다시 추출을 시도한다.
+        if not text.strip() and adv.file_path:
+            text, _pages = extract.extract_text_from_pdf(adv.file_path)
+            if text.strip():
+                adv.extracted_text = text
+
+        # 스캔본(이미지) PDF: 텍스트가 없으면 '조용한 완료(CVE 0건)' 대신 실패로 안내하고
+        # 기존(수동 추가 포함) CVE 를 보존한다 — 재시도 버튼 노출 + OCR/수동 입력 유도.
+        if not text.strip():
+            adv.extract_phase = "failed"
+            adv.error_message = ("PDF에서 텍스트를 추출하지 못했습니다(스캔본·이미지 PDF 가능성). "
+                                 "OCR 결과를 확인해 CVE를 수동 추가하세요.")
+            if adv.status == enums.AdvisoryStatus.EXTRACTING:
+                adv.status = enums.AdvisoryStatus.UPLOADED
+            db.commit()
+            return
+
         results = extract._regex_candidates(text)
         warning = None
 
         # 재처리 대비: 기존 추출 CVE 와 연결된 매칭을 함께 정리(FK 고립 방지) 후 재적재.
+        # 수동 추가분(source_snippet='(수동 추가)')은 관리자 보정이므로 보존한다.
+        manual_codes = set()
         for ac in list(adv.cves):
+            if (ac.source_snippet or "") == "(수동 추가)":
+                manual_codes.add(ac.cve_id_text)
+                continue
             for mt in db.scalars(select(Match).where(Match.advisory_cve_id == ac.id)):
                 db.delete(mt)
             db.delete(ac)
+        results = [c for c in results if c["cve_id_text"] not in manual_codes]
         db.flush()
-        found = not_found = 0
         for c in results:
             cve = db.scalar(select(Cve).where(Cve.cve_id == c["cve_id_text"]))
-            if cve:
-                found += 1
-            else:
-                not_found += 1
             db.add(AdvisoryCve(
                 advisory_id=adv.id, cve_id_text=c["cve_id_text"],
                 cve_ref_id=cve.id if cve else None,
                 lookup_status=enums.LookupStatus.FOUND if cve else enums.LookupStatus.NOT_FOUND,
                 extraction_confidence=c.get("confidence"), source_snippet=c.get("source_snippet"),
             ))
+        db.flush()
+        db.refresh(adv)
+        # 상태 판정은 보존된 수동 CVE 를 포함한 전체 기준.
+        not_found = sum(1 for ac in adv.cves if ac.lookup_status == enums.LookupStatus.NOT_FOUND)
         adv.status = (enums.AdvisoryStatus.NEEDS_CVE_UPDATE if not_found
                       else enums.AdvisoryStatus.EXTRACTED)
         adv.extract_phase = "done"
@@ -256,7 +278,9 @@ def add_cve(advisory_id: int, body: CveAddRequest, request: Request, db: Session
     m = extract.CVE_RE.search(body.cve_id.replace(" ", "-"))
     if not m:
         raise HTTPException(400, "올바른 CVE 코드 형식이 아닙니다.")
-    code = m.group(0).upper()
+    # 표준형으로 정규화 — 'CVE_2026_1234' 같은 변형이 그대로 저장되면 CVE DB(cve_id 표준형)와
+    # 영원히 불일치해 피드를 적용해도 게이트가 풀리지 않는다(백그라운드 추출과 동일 규칙).
+    code = f"CVE-{m.group(1)}-{m.group(2)}"
     if any(ac.cve_id_text == code for ac in adv.cves):
         raise HTTPException(409, "이미 추출된 CVE입니다.")
     cve = db.scalar(select(Cve).where(Cve.cve_id == code))
@@ -296,7 +320,11 @@ def delete_cve(ac_id: int, request: Request, db: Session = Depends(get_db)):
 def _reeval_status(adv: Advisory) -> None:
     """추출 CVE 변경 후 advisory 상태 재평가(게이트)."""
     if not adv.cves:
-        adv.status = enums.AdvisoryStatus.UPLOADED
+        # 발송 이후 단계(NOTIFYING/COMPLETED/ARCHIVED)는 강등하지 않는다 —
+        # 마지막 CVE 삭제로 발송된 권고문이 SLA/리마인드 대상에서 이탈하는 것 방지.
+        if adv.status not in (enums.AdvisoryStatus.NOTIFYING, enums.AdvisoryStatus.COMPLETED,
+                              enums.AdvisoryStatus.ARCHIVED):
+            adv.status = enums.AdvisoryStatus.UPLOADED
         return
     if any(ac.lookup_status == enums.LookupStatus.NOT_FOUND for ac in adv.cves):
         adv.status = enums.AdvisoryStatus.NEEDS_CVE_UPDATE

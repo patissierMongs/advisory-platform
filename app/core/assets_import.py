@@ -229,15 +229,14 @@ def commit(
     def cell(row, field):
         return resolve_cell(row, specs.get(field))
 
-    if mode == "replace":
-        # 전체 교체: 기존 자산 제거(데모 정책). 운영은 부서/배치 단위 교체 권장.
-        for a in db.scalars(select(Asset)):
-            db.delete(a)
-        db.flush()
+    # replace: 하드 삭제는 진행 중 매칭(match.asset_id)·오탐기억(exclusion_rule.asset_id) FK 를
+    # 깨뜨려 커밋 전체가 실패한다. 새 대장에 없는 자산은 RETIRED 로 전환(매칭 엔진이 제외)하고,
+    # 재등장 자산은 upsert 로 NORMAL 복귀 — 진행 중 조치 데이터가 보존된다.
 
     warnings: list[dict] = []
     created_departments: list[str] = []
     committed = 0
+    batch_by_no: dict[str, Asset] = {}   # 이 커밋에서 처리한 자산번호 → Asset (파일 내 중복 감지)
     for rownum, row in enumerate(body, start=row_offset):  # 엑셀 실제 행번호
         if all(c in (None, "") for c in row):
             continue
@@ -295,12 +294,19 @@ def commit(
             if i not in used_idx and row[i] not in (None, ""):
                 extra.setdefault(col_letter(i), str(row[i]).strip())
 
-        existing = db.scalar(select(Asset).where(Asset.asset_no == asset_no))
-        if existing is None:
-            asset = Asset(asset_no=asset_no)
-            db.add(asset)
+        # 같은 파일 안의 중복 자산번호: autoflush=False 라 select 가 pending insert 를 못 봐
+        # UNIQUE 위반으로 커밋 전체가 죽는다 → 배치 내 캐시로 감지, 뒤 행이 갱신(최신 우선).
+        if asset_no in batch_by_no:
+            asset = batch_by_no[asset_no]
+            warnings.append({"row": rownum, "issue": "DUPLICATE_ASSET_NO", "value": asset_no})
         else:
-            asset = existing  # upsert(최신 배치 우선)
+            existing = db.scalar(select(Asset).where(Asset.asset_no == asset_no))
+            if existing is None:
+                asset = Asset(asset_no=asset_no)
+                db.add(asset)
+            else:
+                asset = existing  # upsert(최신 배치 우선)
+            batch_by_no[asset_no] = asset
         asset.department_id = depts[dept_name].id
         asset.product_raw = product_raw
         asset.product_key = normalize_product(product_part or product_raw)
@@ -315,6 +321,15 @@ def commit(
         asset.extra = extra or None
         committed += 1
 
+    retired = 0
+    if mode == "replace":
+        db.flush()
+        touched = {a.id for a in batch_by_no.values() if a.id is not None}
+        for a in db.scalars(select(Asset).where(Asset.status != enums.AssetStatus.RETIRED)):
+            if a.id not in touched:
+                a.status = enums.AssetStatus.RETIRED
+                retired += 1
+
     db.flush()
     return {"committed": committed, "warnings": warnings, "total_rows": len(body),
-            "created_departments": created_departments}
+            "created_departments": created_departments, "retired": retired}

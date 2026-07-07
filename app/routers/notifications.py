@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from .. import enums
 from ..audit import record
 from ..config import DATA_DIR, settings
-from ..core import notify
-from ..core.files import safe_filename
+from ..core import notify, remediation
+from ..core.files import evidence_response, safe_filename
 from ..db import get_db
 from ..deps import get_actor_id
 from ..models import Advisory, Department, Match, Notification
@@ -103,8 +103,14 @@ def send(advisory_id: int, body: NotifyRequest, request: Request, db: Session = 
         asset_ids = sorted({m.asset_id for m in matches})
         key = notify.idempotency_key(advisory_id, dept_id, asset_ids)
 
-        existing = db.scalar(select(Notification).where(Notification.idempotency_key == key))
-        if existing and existing.status in (enums.NotificationStatus.SENT, enums.NotificationStatus.ACKED):
+        # (권고문, 부서)당 유효 통보는 1행 — 자산 구성이 바뀐 재발송은 행을 재사용해 갱신한다.
+        # (행이 누적되면 이력·조치율이 부서 단위로 이중 계상되고 옛 행이 리마인드 대상에 남는다.)
+        existing = db.scalar(
+            select(Notification)
+            .where(Notification.advisory_id == advisory_id, Notification.department_id == dept_id)
+            .order_by(Notification.id.desc()).limit(1))
+        if existing and existing.idempotency_key == key \
+                and existing.status in (enums.NotificationStatus.SENT, enums.NotificationStatus.ACKED):
             results.append({
                 "department_id": dept_id,
                 "status": "SENT",
@@ -121,6 +127,15 @@ def send(advisory_id: int, body: NotifyRequest, request: Request, db: Session = 
         outcome = notify.dispatch(channels, dept.name if dept else "", dept.messenger_id if dept else None,
                                   dept.email if dept else None, body_text)
         n = existing or Notification(advisory_id=advisory_id, department_id=dept_id, idempotency_key=key)
+        if existing is not None and existing.idempotency_key != key:
+            # 자산 구성이 바뀐 재통보 — 이전 회신은 새 구성에 대한 확인이 아니므로 초기화.
+            n.idempotency_key = key
+            n.ack_status = enums.AckStatus.NONE
+            n.ack_note = None
+            n.ack_by = None
+            n.ack_updated_at = None
+            n.reminded_at = None
+            n.reminder_count = 0
         n.channels = channels
         n.message_body = body_text
         n.asset_ids = asset_ids
@@ -178,16 +193,12 @@ def ack(notification_id: int, body: AckPatch, request: Request, db: Session = De
     new = enums.AckStatus(body.ack_status)
     if new == enums.AckStatus.UNABLE and not (body.note or "").strip():
         raise HTTPException(400, "조치불가는 사유(note)가 필요합니다.")
-    n.ack_status = new
-    if body.note is not None:
-        n.ack_note = body.note
-    if body.by is not None:
-        n.ack_by = body.by
-    n.ack_updated_at = datetime.now(timezone.utc)
-    n.status = enums.NotificationStatus.ACKED if new == enums.AckStatus.DONE else n.status
+    # 부서 단위 선언 → 해당 부서 자산 매칭에도 전파(게시판 자산 표시와 정합).
+    synced_assets = remediation.apply_department_ack(db, n, new, body.note, body.by)
     db.flush()
     record(db, action="NOTIFY_ACK", actor_id=get_actor_id(db), entity_type="notification",
-           entity_id=n.id, detail={"ack": new.value, "note": body.note}, request=request)
+           entity_id=n.id, detail={"ack": new.value, "note": body.note,
+                                   "assets_synced": synced_assets}, request=request)
     db.commit()
     return notification_item(n)
 
@@ -216,12 +227,10 @@ async def upload_evidence(notification_id: int, request: Request,
 
 @router.get("/notifications/{notification_id}/evidence")
 def get_evidence(notification_id: int, db: Session = Depends(get_db)):
-    """조치 증빙 파일 열람(inline). 첨부 없으면 404."""
+    """조치 증빙 파일 열람 — 안전 타입만 inline, 그 외 첨부(파일명 헤더 안전화). 첨부 없으면 404."""
     import os
 
     n = db.get(Notification, notification_id)
     if not n or not n.ack_evidence_path or not os.path.exists(n.ack_evidence_path):
         raise HTTPException(404, "증빙 파일이 없습니다")
-    return FileResponse(n.ack_evidence_path, filename=n.ack_evidence_name or "evidence",
-                        headers={"Content-Disposition":
-                                 f"inline; filename=\"{n.ack_evidence_name or 'evidence'}\""})
+    return evidence_response(n.ack_evidence_path, n.ack_evidence_name)

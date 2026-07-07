@@ -66,9 +66,13 @@ def send_reminders(advisory_id: int, request: Request,
     """미회신/진행중 부서에 리마인드 발송. body: {department_ids?:[...]}."""
     adv = _adv(db, advisory_id)
     d_day = (adv.due_at - date.today()).days if adv.due_at else None
+    # D-표기 관례: 남은 3일 = D-3, 초과 3일 = D+3.
+    d_label = None if d_day is None else ("D-DAY" if d_day == 0 else (f"D-{d_day}" if d_day > 0 else f"D+{-d_day}"))
+    # 원발송 실패(FAILED) 부서는 '회신 미확인 리마인드' 대상이 아니라 재발송 대상.
     targets = db.scalars(select(Notification).where(
         Notification.advisory_id == advisory_id,
         Notification.ack_status.in_([enums.AckStatus.NONE, enums.AckStatus.IN_PROGRESS]),
+        Notification.status != enums.NotificationStatus.FAILED,
     )).all()
     only = set(body.get("department_ids") or [])
     if only:
@@ -84,7 +88,7 @@ def send_reminders(advisory_id: int, request: Request,
         dept = db.get(Department, n.department_id)
         msg = custom or (
             f"[조치기한 임박 알림] {adv.title or ''}\n근거 {adv.doc_no or ''} · 기한 {adv.due_at or ''}"
-            f"{f' (D{d_day:+d})' if d_day is not None else ''}\n"
+            f"{f' ({d_label})' if d_label else ''}\n"
             f"귀 부서 회신이 확인되지 않았습니다. 기한 내 조치 후 회신 바랍니다.")
         outcome = notify.dispatch(n.channels or ["MAIL"], dept.name if dept else "",
                                   dept.messenger_id if dept else None, dept.email if dept else None, msg)
@@ -104,6 +108,24 @@ def send_reminders(advisory_id: int, request: Request,
            entity_id=advisory_id, detail={"count": success_count, "failed": len(results) - success_count}, request=request)
     db.commit()
     return {"reminded": success_count, "results": results}
+
+
+# ── 수동 종결 (§운영 보완) ──
+@router.post("/advisories/{advisory_id}/close")
+def close_advisory(advisory_id: int, request: Request,
+                   body: dict = Body(default={}), db: Session = Depends(get_db)):
+    """권고문 수동 종결 — CVE 없는 일반 공지, 대상 자산 없음, 부분 발송 잔존 등
+    자동 완료(전 부서 발송)에 도달할 수 없는 권고문을 관리자가 명시적으로 마감한다."""
+    adv = _adv(db, advisory_id)
+    if adv.status == enums.AdvisoryStatus.COMPLETED:
+        return {"advisory_id": adv.id, "status": adv.status.value, "already_closed": True}
+    prev = adv.status.value
+    adv.status = enums.AdvisoryStatus.COMPLETED
+    record(db, action="ADVISORY_CLOSE", actor_id=get_actor_id(db), entity_type="advisory",
+           entity_id=adv.id, detail={"from": prev, "reason": (body.get("reason") or "").strip() or None},
+           request=request)
+    db.commit()
+    return {"advisory_id": adv.id, "status": adv.status.value, "from": prev}
 
 
 # ── 그룹웨어 게시판 연동 (§★★★) ──
@@ -135,27 +157,46 @@ def unpublish_board(advisory_id: int, request: Request, db: Session = Depends(ge
 
 
 @router.post("/webhooks/groupware/ack")
-def groupware_ack(payload: GroupwareAckWebhook, db: Session = Depends(get_db)):
-    """그룹웨어 댓글 회신 → ack 동기화. (게시판 회신과 시스템 상태 연결)"""
+def groupware_ack(payload: GroupwareAckWebhook, request: Request, db: Session = Depends(get_db)):
+    """그룹웨어 댓글 회신 → ack 동기화. (게시판 회신과 시스템 상태 연결)
+
+    부서에 미종료 발송이 여러 권고문에 걸쳐 있으면 advisory_id/doc_no 로 대상을 특정해야 한다 —
+    '가장 최근 것'을 임의로 고르면 엉뚱한 권고문이 종결될 수 있다.
+    """
     norm = groupware.parse_ack_webhook(payload.model_dump())
     if not norm:
         raise HTTPException(400, "해석할 수 없는 회신 payload")
     dept = db.scalar(select(Department).where(Department.name == norm["department"]))
     if not dept:
         raise HTTPException(404, f"부서 없음: {norm['department']}")
-    # 가장 최근 미종료 알림을 갱신.
-    n = db.scalar(select(Notification).where(
+
+    q = select(Notification).where(
         Notification.department_id == dept.id,
         Notification.ack_status.notin_([enums.AckStatus.DONE, enums.AckStatus.UNABLE]),
-    ).order_by(Notification.sent_at.desc()))
-    if not n:
+    )
+    if payload.advisory_id is not None:
+        q = q.where(Notification.advisory_id == payload.advisory_id)
+    elif payload.doc_no:
+        adv_ids = db.scalars(select(Advisory.id).where(Advisory.doc_no == payload.doc_no)).all()
+        if not adv_ids:
+            raise HTTPException(404, f"문서번호 없음: {payload.doc_no}")
+        q = q.where(Notification.advisory_id.in_(adv_ids))
+    candidates = db.scalars(q.order_by(Notification.sent_at.desc())).all()
+    if not candidates:
         raise HTTPException(404, "해당 부서의 미종료 발송 내역 없음")
-    n.ack_status = enums.AckStatus(norm["ack_status"])
-    n.ack_note = norm.get("note")
-    n.ack_by = norm.get("by")
-    n.ack_updated_at = datetime.now(timezone.utc)
-    if n.ack_status == enums.AckStatus.DONE:
-        n.status = enums.NotificationStatus.ACKED
+    open_advisories = {c.advisory_id for c in candidates}
+    if len(open_advisories) > 1:
+        raise HTTPException(409, detail={
+            "code": "AMBIGUOUS_ADVISORY",
+            "message": "해당 부서에 미종료 권고문이 여러 건입니다. advisory_id 또는 doc_no 로 지정하세요.",
+            "candidates": sorted(open_advisories),
+        })
+    n = candidates[0]
+    synced = remediation.apply_department_ack(
+        db, n, enums.AckStatus(norm["ack_status"]), norm.get("note"), norm.get("by"))
+    record(db, action="GROUPWARE_ACK", actor_id=None, entity_type="notification",
+           entity_id=n.id, detail={"department": dept.name, "ack": norm["ack_status"],
+                                   "assets_synced": synced}, request=request)
     db.commit()
     return {"ok": True, "notification_id": n.id, "ack_status": n.ack_status.value}
 

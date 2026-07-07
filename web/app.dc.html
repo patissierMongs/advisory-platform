@@ -211,7 +211,10 @@
                 <input type="date" value="{{ advisory.dueAtValue }}" onChange="{{ onDuePick }}" title="PDF에 기한이 없으면 직접 입력" style="font-size:12.5px; font-weight:600; color:#b42318; border:1px solid #d3dbe8; border-radius:7px; padding:5px 8px; background:#fff; font-family:inherit;">
               </div>
             </div>
-            <button onClick="{{ onPostBoard }}" style="{{ boardBtnStyle }}" title="내부 게시판(/board)에 권고문 공개 — 사내 누구나 열람·댓글 회신. (외부 그룹웨어 어댑터도 함께 시도)">{{ boardLabel }}</button>
+            <div style="display:flex; flex-direction:column; gap:6px; flex-shrink:0;">
+              <button onClick="{{ onPostBoard }}" style="{{ boardBtnStyle }}" title="내부 게시판(/board)에 권고문 공개 — 사내 누구나 열람·댓글 회신. 게시됨 상태에서 누르면 내림(댓글 보존)">{{ boardLabel }}</button>
+              <button onClick="{{ onCloseAdvisory }}" style="{{ closeBtnStyle }}" title="자동 완료(전 부서 발송)에 도달할 수 없는 권고문(CVE 없음·대상 자산 없음 등)을 수동으로 종결">{{ closeLabel }}</button>
+            </div>
           </div>
 
           <!-- stepper -->
@@ -453,6 +456,12 @@
                     </span>
                   </div>
                 </sc-for>
+                <sc-if value="{{ matchEmpty }}" hint-placeholder-val="">
+                  <div style="padding:34px 18px; text-align:center; color:#94a1b4; font-size:12.5px;">
+                    매칭된 자산이 없습니다 — 자산대장에 해당 제품·버전이 없거나 전부 오탐 제외되었습니다.<br>
+                    대상 자산이 없으면 발송 없이 <b>상단 컨텍스트 카드의 "처리 종결"</b>로 마무리할 수 있습니다.
+                  </div>
+                </sc-if>
               </div>
 
               <div style="margin-top:18px; display:flex; align-items:center; justify-content:space-between;">
@@ -859,7 +868,11 @@
 
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-top:18px; padding-top:16px; border-top:1px solid #eef1f5;">
                   <span style="font-size:12px; color:{{ importHintColor }};">{{ importHint }}</span>
-                  <div style="display:flex; gap:10px;">
+                  <div style="display:flex; gap:10px; align-items:center;">
+                    <select value="{{ importModeValue }}" onChange="{{ onImportMode }}" title="추가: 기존 자산 유지·같은 자산번호는 갱신 / 전체 교체: 새 대장에 없는 자산은 회수(RETIRED) 처리" style="font-family:inherit; font-size:12px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; background:#fff; color:#33415a;">
+                      <option value="append">추가·갱신(append)</option>
+                      <option value="replace">전체 교체(replace)</option>
+                    </select>
                     <button onClick="{{ closeImport }}" style="background:#fff; color:#5a6b86; border:1px solid #d3dbe8; border-radius:8px; padding:11px 18px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;">취소</button>
                     <button onClick="{{ doImport }}" disabled="{{ importDisabled }}" style="{{ importBtnStyle }}">{{ importTotalRows }}행 가져오기</button>
                   </div>
@@ -1202,6 +1215,8 @@ class Component extends DCLogic {
     cveQuery: '',
     cveSeverity: '',
     cveVisibleLimit: 50,
+    cveTotal: 0,
+    cvePage: 1,
     notifyStatus: null,
     uploadMeta: {
       source_org: '',
@@ -1219,7 +1234,19 @@ class Component extends DCLogic {
     const opt = { method, headers: {} };
     if (body && isForm) opt.body = body;
     else if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
-    return fetch('/api/v1' + path, opt).then(r => r.ok ? r.json().catch(() => ({})) : Promise.reject(r));
+    // 실패 시 서버 detail(JSON)을 파싱해 에러 객체에 실어 준다 — 게이트 409 등 구체 사유를 토스트로 표시.
+    return fetch('/api/v1' + path, opt).then(r => {
+      if (r.ok) return r.json().catch(() => ({}));
+      return r.json().catch(() => ({})).then(j => {
+        const d = j && j.detail;
+        const err = new Error((d && (d.message || d)) || ('HTTP ' + r.status));
+        err.status = r.status;
+        err.detail = d;
+        err.detailMessage = (d && typeof d === 'object' && d.message) ? d.message
+          : (typeof d === 'string' ? d : '');
+        return Promise.reject(err);
+      });
+    });
   }
 
   componentDidMount() {
@@ -1307,6 +1334,8 @@ class Component extends DCLogic {
         apiAdvisory: active || null,
         apiCveItems: cves.items || [],
         apiCveList: cveList.items || [],
+        cveTotal: cveList.total || 0,
+        cvePage: 1,
         apiAssets: assets.items || [],
         apiRecent: advs.items || [],
         apiHistory: history.items || [],
@@ -1506,9 +1535,58 @@ class Component extends DCLogic {
   // 그룹웨어 게시판 게시(§A3)
   _postBoard() {
     if (!this._advisoryId) return;
+    const published = this.state.boardPosted
+      || (this.state.apiAdvisory && this.state.apiAdvisory.board_published);
+    if (published) {
+      // 토글: 이미 게시됨 → 게시판에서 내림(댓글은 보존).
+      if (!window.confirm('게시판에서 이 권고문을 내릴까요? (댓글은 보존되며 다시 게시할 수 있습니다)')) return;
+      this.api('POST', '/advisories/' + this._advisoryId + '/board-unpublish')
+        .then(() => this.api('GET', '/advisories/' + this._advisoryId))
+        .then(adv => { this.setState({ boardPosted: false, apiAdvisory: adv }); if (this.flashToast) this.flashToast('게시판 내림', '목록에서 숨겨졌습니다'); })
+        .catch(e => { console.error('[board]', e); if (this.flashToast) this.flashToast('게시 내림 실패', (e && e.detailMessage) || ''); });
+      return;
+    }
     this.api('POST', '/advisories/' + this._advisoryId + '/board')
-      .then(r => { this.setState({ boardPosted: true }); if (this.flashToast) this.flashToast('게시판 게시', r.board_post_id); })
+      .then(r => Promise.all([Promise.resolve(r), this.api('GET', '/advisories/' + this._advisoryId)]))
+      .then(([r, adv]) => { this.setState({ boardPosted: true, apiAdvisory: adv }); if (this.flashToast) this.flashToast('게시판 게시', r.board_post_id); })
       .catch(e => console.error('[board]', e));
+  }
+
+  // 수동 종결 — CVE 없는 공지·대상 자산 없음 등 자동 완료 경로가 없는 권고문 마감.
+  _closeAdvisory() {
+    if (!this._advisoryId) return;
+    if (this.state.apiAdvisory && this.state.apiAdvisory.status === 'COMPLETED') return;
+    if (!window.confirm('이 권고문을 종결(완료) 처리할까요?')) return;
+    this.api('POST', '/advisories/' + this._advisoryId + '/close', {})
+      .then(() => this.api('GET', '/advisories/' + this._advisoryId))
+      .then(adv => { this.setState({ apiAdvisory: adv }); this._refreshBoard(); if (this.flashToast) this.flashToast('처리 종결', '완료 상태로 전환되었습니다'); })
+      .catch(e => { console.error('[close]', e); if (this.flashToast) this.flashToast('종결 실패', (e && e.detailMessage) || ''); });
+  }
+
+  // CVE DB 서버 검색 — 전체 DB 를 대상으로 질의(q·심각도), 페이지 append.
+  _cveSearchDebounced() {
+    clearTimeout(this._cveSearchTimer);
+    this._cveSearchTimer = setTimeout(() => this._cveSearch(1), 300);
+  }
+
+  _cveSearch(page) {
+    const p = page || 1;
+    const KO2EN = { '긴급': 'CRITICAL', '높음': 'HIGH', '중간': 'MEDIUM', '낮음': 'LOW' };
+    const q = (this.state.cveQuery || '').trim();
+    const sev = KO2EN[this.state.cveSeverity] || '';   // '미상'은 서버 enum 밖 → 클라이언트 필터만
+    let path = '/cves?page=' + p + '&size=200';
+    if (q) path += '&q=' + encodeURIComponent(q);
+    if (sev) path += '&severity=' + encodeURIComponent(sev);
+    this.api('GET', path)
+      .then(d => {
+        const items = d.items || [];
+        this.setState({
+          apiCveList: p === 1 ? items : (this.state.apiCveList || []).concat(items),
+          cveTotal: d.total || 0,
+          cvePage: p,
+        });
+      })
+      .catch(e => console.error('[cve search]', e));
   }
 
   // 활동 기록 — 액션 필터 변경 시 재조회(전체 이력·업로드 PDF 기록 포함).
@@ -1602,7 +1680,10 @@ class Component extends DCLogic {
       payload.all = true;
       payload.channels = ['MAIL', 'WEB_UI'];
     }
-    this.api('POST', '/advisories/' + this._advisoryId + '/notifications', payload)
+    // 오탐 제외 토글 PATCH 가 아직 서버에 반영 중이면 완료를 기다린다 —
+    // 발송이 먼저 도착하면 제외한 자산이 발송 대상에 포함되는 레이스가 생긴다.
+    Promise.allSettled(this._pendingMatchPatches || [])
+      .then(() => this.api('POST', '/advisories/' + this._advisoryId + '/notifications', payload))
       .then(r => Promise.all([
         Promise.resolve(r),
         this.api('GET', '/notifications'),
@@ -1624,7 +1705,10 @@ class Component extends DCLogic {
           else this.flashToast('발송 완료', sentOk + '개 부서 · SMTP 메일과 내부 기록 완료');
         }
       })
-      .catch(e => { console.error('[notify send]', e); if (this.flashToast) this.flashToast('발송 실패', '서버 응답을 확인하세요'); });
+      .catch(e => {
+        console.error('[notify send]', e);
+        if (this.flashToast) this.flashToast('발송 실패', (e && e.detailMessage) || '서버 응답을 확인하세요');
+      });
   }
 
   _testMail() {
@@ -1716,13 +1800,16 @@ class Component extends DCLogic {
       else if (sp && sp.sep) mapping[f.key] = { col: letter, sep: sp.sep, part: sp.part || 0 };
       else mapping[f.key] = letter;
     });
+    const mode = this.state.importMode === 'replace' ? 'replace' : 'append';
+    if (mode === 'replace'
+        && !window.confirm('전체 교체로 가져올까요?\n새 대장에 없는 기존 자산은 "회수(RETIRED)" 처리되어 이후 매칭에서 제외됩니다. (진행 중 조치 이력은 보존)')) return;
     this.api('POST', '/assets/import/' + id + '/commit', {
       mapping, header_row: this.state.importHeaderRow, header_rows: this.state.importHeaderRows || 1,
-      mode: 'append', on_warning: 'skip',
+      mode, on_warning: 'skip',
     })
-      .then(r => { this.setState({ lastImportResult: r }); if (this.flashToast) this.flashToast('가져오기 완료', r.committed + '행 적재' + (r.created_departments && r.created_departments.length ? (' · 부서 ' + r.created_departments.length + '개 생성') : '') + (r.warnings && r.warnings.length ? (' · 경고 ' + r.warnings.length + '건') : '')); return this.api('GET', '/assets?size=500'); })
+      .then(r => { this.setState({ lastImportResult: r }); if (this.flashToast) this.flashToast('가져오기 완료', r.committed + '행 적재' + (r.retired ? (' · 회수 ' + r.retired + '대') : '') + (r.created_departments && r.created_departments.length ? (' · 부서 ' + r.created_departments.length + '개 생성') : '') + (r.warnings && r.warnings.length ? (' · 경고 ' + r.warnings.length + '건') : '')); return this.api('GET', '/assets?size=500'); })
       .then(a => this.setState({ apiAssets: a.items || [], assetView: 'list', assetImported: true, importPreview: null }))
-      .catch(e => { console.error('[import]', e); if (this.flashToast) this.flashToast('가져오기 실패', '필수 매핑(부서·제품·담당자) 확인'); });
+      .catch(e => { console.error('[import]', e); if (this.flashToast) this.flashToast('가져오기 실패', (e && e.detailMessage) || '필수 매핑(부서·제품·담당자) 확인'); });
   }
 
   async _loadMatches() {
@@ -1753,17 +1840,29 @@ class Component extends DCLogic {
       this._matchesLoaded = false;   // 서버 매칭 로드 전까지는 클라이언트 추정 표시
       this._prev = Object.assign({}, P, { step: 3 });
       try { await this.api('POST', '/advisories/' + this._advisoryId + '/match'); await this._loadMatches(); this.forceUpdate(); }
-      catch (e) { /* 게이트 미충족 등 */ }
+      catch (e) {
+        // 게이트 미충족(409) 등 — 서버 사유를 사용자에게 그대로 보여준다(무피드백 방지).
+        if (this.flashToast) this.flashToast('매칭 실행 불가', (e && e.detailMessage) || '서버 응답을 확인하세요');
+      }
       this._busy.match = false;
       return;
     }
-    // ② 오탐 제외 토글: 서버 match PATCH
+    // ② 오탐 제외 토글: 서버 match PATCH — 진행 중 요청을 추적해 발송이 기다릴 수 있게 한다.
     const exKeys = new Set(Object.keys(S.excluded || {}).concat(Object.keys(P.excluded || {})));
     for (const k of exKeys) {
       const now = !!(S.excluded || {})[k], was = !!(P.excluded || {})[k];
       const mid = (this._matchIndex || {})[k];
       if (now !== was && mid) {
-        this.api('PATCH', '/matches/' + mid, { status: now ? 'EXCLUDED' : 'MATCHED', reason: '관제 검토' }).catch(() => {});
+        if (!this._pendingMatchPatches) this._pendingMatchPatches = [];
+        const p = this.api('PATCH', '/matches/' + mid, { status: now ? 'EXCLUDED' : 'MATCHED', reason: '관제 검토' })
+          .catch(e => {
+            // 실패 시 UI 를 서버 상태로 되돌린다(화면=제외, 서버=활성 발산 방지).
+            console.error('[match toggle]', e);
+            if (this.flashToast) this.flashToast('제외 반영 실패', '네트워크/서버 확인 후 다시 토글하세요');
+            this.setState(s => { const ex = Object.assign({}, s.excluded); if (was) ex[k] = true; else delete ex[k]; return { excluded: ex }; });
+          })
+          .finally(() => { this._pendingMatchPatches = (this._pendingMatchPatches || []).filter(x => x !== p); });
+        this._pendingMatchPatches.push(p);
       }
     }
     this._prev = { sent: Object.assign({}, S.sent), excluded: Object.assign({}, S.excluded), step: S.step };
@@ -1924,6 +2023,7 @@ class Component extends DCLogic {
         key: a.product_key,                          // cveDb().matchKey 와 동일 정규화 키
         ver: a.version_raw || a.version_norm || '', ip: a.ip || '—', owner: a.owner_name || '',
         team: a.owner_team || '', contact: a.owner_contact || '',
+        status: a.status || 'NORMAL',
       };
     });
     this._deptIndex = idx;                            // 발송 시 부서명→id 매핑
@@ -2221,10 +2321,18 @@ class Component extends DCLogic {
     };
     const pg = navMap[S.nav] || navMap.process;
 
-    const assetRows = this.assets().map(a => Object.assign({}, a, {
-      ownerSub: [a.team, a.contact].filter(Boolean).join(' · '),
-      statusLabel: '정상', statusStyle: 'font-size:11px; font-weight:700; padding:3px 10px; border-radius:6px; background:#e6f4f2; color:#0f766e;',
-    }));
+    const ASSET_ST = {
+      NORMAL: ['정상', 'background:#e6f4f2; color:#0f766e;'],
+      RETIRING: ['회수중', 'background:#fef3e2; color:#b45309;'],
+      RETIRED: ['회수', 'background:#eef1f5; color:#94a1b4;'],
+    };
+    const assetRows = this.assets().map(a => {
+      const st = ASSET_ST[a.status] || ASSET_ST.NORMAL;
+      return Object.assign({}, a, {
+        ownerSub: [a.team, a.contact].filter(Boolean).join(' · '),
+        statusLabel: st[0], statusStyle: 'font-size:11px; font-weight:700; padding:3px 10px; border-radius:6px; ' + st[1],
+      });
+    });
 
     // ----- 자산대장 가져오기 / 컬럼 매핑 -----
     const colMap = S.colMap;
@@ -2544,6 +2652,7 @@ class Component extends DCLogic {
       proceedBtnStyle: 'font-family:inherit; font-size:13px; font-weight:700; padding:11px 22px; border-radius:8px; border:none; ' + (canProceed ? 'background:#0f766e; color:#fff; cursor:pointer;' : 'background:#e3e8ef; color:#a3aebf; cursor:not-allowed;'),
 
       matches, matchTotal: allMatches.length, excludedCount, deptCount: deptNames.length,
+      matchEmpty: !!this._matchesLoaded && matches.length === 0,
       deptGroups,
       sendAll: () => this._sendDepartments(null),
       sendSummary: (sentCount === deptNames.length && deptNames.length > 0) ? ('전체 ' + deptNames.length + '개 부서 발송 완료 — 발송 이력에 기록되었습니다.') : (sentCount + ' / ' + deptNames.length + '개 부서 발송 완료'),
@@ -2563,15 +2672,24 @@ class Component extends DCLogic {
       onApplyFeed: () => this._applyFeed(),
       updateLog: updateLogV,
       cveTableRows,
-      cveTableTotal: apiRows.length,
+      cveTableTotal: Math.max(S.cveTotal || 0, apiRows.length),
       cveTableShown: cveTableRows.length,
       cveTableEmpty: !cveTableRows.length,
-      cveHasMore: apiRows.length > cveTableRows.length,
+      // 로드분 안에 더 있거나, 서버에 다음 페이지가 남았으면 '더보기' 노출.
+      cveHasMore: apiRows.length > cveTableRows.length
+        || ((S.apiCveList || []).length < (S.cveTotal || 0)),
       cveQuery: S.cveQuery || '',
       cveSeverity: S.cveSeverity || '',
-      onCveQuery: (e) => this.setState({ cveQuery: e.target.value, cveVisibleLimit: 50 }),
-      onCveSeverity: (e) => this.setState({ cveSeverity: e.target.value, cveVisibleLimit: 50 }),
-      onCveMore: () => this.setState(st => ({ cveVisibleLimit: (st.cveVisibleLimit || 50) + 50 })),
+      // 검색·필터는 서버 재조회(전체 DB 대상) — 최초 500건 밖 CVE 도 검색 가능해야 한다(NVD 전량 운영).
+      onCveQuery: (e) => { this.setState({ cveQuery: e.target.value, cveVisibleLimit: 50 }); this._cveSearchDebounced(); },
+      onCveSeverity: (e) => { this.setState({ cveSeverity: e.target.value, cveVisibleLimit: 50 }); this._cveSearchDebounced(); },
+      onCveMore: () => {
+        const st0 = this.state;
+        const loaded = (st0.apiCveList || []).length;
+        const nextLimit = (st0.cveVisibleLimit || 50) + 50;
+        this.setState({ cveVisibleLimit: nextLimit });
+        if (nextLimit > loaded && loaded < (st0.cveTotal || 0)) this._cveSearch((st0.cvePage || 1) + 1);
+      },
 
       recentDocs: this.recentDocs(),
       assetRows, assetTotal: this.assets().length,
@@ -2587,11 +2705,18 @@ class Component extends DCLogic {
       chExtractBadgeLabel: (S.apiAdvisory && S.apiAdvisory.channel_source === 'PDF') ? '접수경로 추출' : '접수경로 미추출',
       chExtractBadgeStyle: 'font-size:11px; border-radius:5px; padding:3px 9px; font-weight:600; '
         + ((S.apiAdvisory && S.apiAdvisory.channel_source === 'PDF') ? 'color:#0f766e; background:#e6f4f2;' : 'color:#b45309; background:#fff6e9;'),
-      // 게시판 게시(§A3)
+      // 게시판 게시(§A3) — 게시됨 상태에서 다시 누르면 내림(토글).
       onPostBoard: () => this._postBoard(),
-      boardLabel: (S.boardPosted || (S.apiAdvisory && S.apiAdvisory.board_post_id)) ? '게시판 게시됨 ✓' : '📋 게시판 게시',
+      boardLabel: (S.boardPosted || (S.apiAdvisory && S.apiAdvisory.board_published)) ? '게시판 게시됨 ✓ (누르면 내림)' : '📋 게시판 게시',
       boardBtnStyle: 'flex-shrink:0; font-family:inherit; font-size:12px; font-weight:600; padding:8px 13px; border-radius:8px; cursor:pointer; '
-        + ((S.boardPosted || (S.apiAdvisory && S.apiAdvisory.board_post_id)) ? 'background:#e6f4f2;color:#0f766e;border:1px solid #b8e0da;' : 'background:#fff;color:#7a5a9a;border:1px solid #e0d2f0;'),
+        + ((S.boardPosted || (S.apiAdvisory && S.apiAdvisory.board_published)) ? 'background:#e6f4f2;color:#0f766e;border:1px solid #b8e0da;' : 'background:#fff;color:#7a5a9a;border:1px solid #e0d2f0;'),
+      // 수동 종결 — 자동 완료(전 부서 발송)에 도달할 수 없는 권고문 마감.
+      onCloseAdvisory: () => this._closeAdvisory(),
+      closeLabel: (S.apiAdvisory && S.apiAdvisory.status === 'COMPLETED') ? '완료됨 ✓' : '처리 종결',
+      closeBtnStyle: 'flex-shrink:0; font-family:inherit; font-size:12px; font-weight:600; padding:8px 13px; border-radius:8px; '
+        + ((S.apiAdvisory && S.apiAdvisory.status === 'COMPLETED')
+          ? 'background:#eef1f5;color:#94a1b4;border:1px solid #dbe1ea;cursor:default;'
+          : 'background:#fff;color:#5a6b86;border:1px solid #d3dbe8;cursor:pointer;'),
       // asset import / column mapping
       assetListView: S.assetView === 'list',
       assetImportView: S.assetView === 'import',
@@ -2639,6 +2764,8 @@ class Component extends DCLogic {
       importHintColor: canImport ? '#0f766e' : '#b45309',
       importBtnStyle: 'font-family:inherit; font-size:13px; font-weight:700; padding:11px 22px; border-radius:8px; border:none; ' + (canImport ? 'background:#0f766e; color:#fff; cursor:pointer;' : 'background:#e3e8ef; color:#a3aebf; cursor:not-allowed;'),
       doImport: () => this._doRealImport(),
+      importModeValue: S.importMode === 'replace' ? 'replace' : 'append',
+      onImportMode: (e) => this.setState({ importMode: e.target.value }),
       importPlanRows,
       lastImportRows,
       hasLastImport: lastImportRows.length > 0,

@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import enums
-from ..models import Advisory, Notification
+from ..models import Advisory, Asset, Match, Notification
 
 _OPEN = (
     enums.AdvisoryStatus.NOTIFYING,
@@ -24,6 +24,42 @@ def _notifs(db: Session, advisory_id: int) -> list[Notification]:
     return db.scalars(
         select(Notification).where(Notification.advisory_id == advisory_id)
     ).all()
+
+
+def apply_department_ack(db: Session, n: Notification, ack_status: enums.AckStatus,
+                         note: str | None, by: str | None) -> int:
+    """부서 단위 회신을 Notification 과 해당 부서의 자산 매칭에 일관 적용.
+
+    부서 단위 선언(자산 미지정 회신·관리자 수동 변경·그룹웨어 웹훅)은 그 부서의
+    활성 매칭 전체에 전파한다 — 게시판(자산 기준)과 발송이력(부서 기준)의 상태가
+    엇갈리지 않게 하는 단일 규칙. 반환: 갱신된 매칭 수.
+    """
+    now = datetime.now(timezone.utc)
+    n.ack_status = ack_status
+    if note is not None:
+        n.ack_note = note
+    if by is not None:
+        n.ack_by = by
+    n.ack_updated_at = now
+    if ack_status == enums.AckStatus.DONE:
+        n.status = enums.NotificationStatus.ACKED
+    elif n.status == enums.NotificationStatus.ACKED:
+        n.status = enums.NotificationStatus.SENT   # 완료 정정 → 회신 종결 해제
+
+    matches = db.scalars(
+        select(Match).join(Asset, Match.asset_id == Asset.id)
+        .where(Match.advisory_id == n.advisory_id,
+               Match.status == enums.MatchStatus.MATCHED,
+               Asset.department_id == n.department_id)
+    ).all()
+    for m in matches:
+        m.ack_status = ack_status
+        if by is not None:
+            m.ack_by = by
+        if note is not None:
+            m.ack_note = note
+        m.ack_at = now
+    return len(matches)
 
 
 def advisory_remediation(db: Session, advisory: Advisory) -> dict:

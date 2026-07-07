@@ -111,7 +111,9 @@ def run_matching(db: Session, advisory: Advisory, actor_id: int | None = None) -
 
 
 def all_cves_found(advisory: Advisory) -> bool:
-    """발송/매칭 게이트: 추출된 모든 CVE 가 DB 조회 성공 상태인가."""
-    if not advisory.cves:
-        return False
+    """발송/매칭 게이트: 미해소(NOT_FOUND) CVE 가 없는가.
+
+    CVE 가 하나도 없는 권고문(일반 공지형)은 '미등록 CVE' 가 없으므로 게이트를 통과한다 —
+    매칭은 0건으로 끝나고, 발송 게이트(NO_ACTIVE_MATCH)와 종결 처리로 이어진다.
+    """
     return all(ac.lookup_status == enums.LookupStatus.FOUND for ac in advisory.cves)

@@ -35,6 +35,9 @@ class GroupwareAckWebhook(BaseModel):
     status: str                   # DONE | IN_PROGRESS | UNABLE (또는 한글)
     note: str | None = None
     by: str | None = None
+    # 대상 권고문 식별 — 미지정 시 해당 부서의 미종료 발송이 1건일 때만 처리(오귀속 방지).
+    advisory_id: int | None = None
+    doc_no: str | None = None
 
 
 class NotifyDept(BaseModel):

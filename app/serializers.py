@@ -201,6 +201,7 @@ def asset_item(a: Asset, *, dept_name: str | None = None) -> dict:
         "owner_team": a.owner_team,
         "owner_contact": a.owner_contact,
         "status": a.status.value,
+        "extra": a.extra or {},   # 사용자 정의(커스텀) 필드 — import 매핑에서 이름 키로 저장됨
     }
 
 

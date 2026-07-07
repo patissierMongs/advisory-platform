@@ -175,7 +175,7 @@ td.c{{text-align:center}} .mono{{font-family:Consolas,monospace}}
 <tr><td>문서번호</td><td>{e(advisory.doc_no or '-')}</td></tr>
 <tr><td>제목</td><td>{e(advisory.title or '-')}</td></tr>
 <tr><td>발신기관 / 접수일</td><td>{e(advisory.source_org or '-')} / {e(str(advisory.received_at or '-'))}</td></tr>
-<tr><td>조치기한</td><td>{e(str(advisory.due_at or '-'))} (D{rem['d_day']:+d}, {e(sla_ko)})</td></tr>
+<tr><td>조치기한</td><td>{e(str(advisory.due_at or '-'))} ({f"D{rem['d_day']:+d}, " if rem['d_day'] is not None else ''}{e(sla_ko)})</td></tr>
 </table>
 <h2>조치 요약</h2>
 <table><tr>

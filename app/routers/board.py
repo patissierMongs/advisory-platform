@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from .. import enums, serializers
 from ..audit import record
 from ..config import DATA_DIR, settings
-from ..core.files import safe_filename
+from ..core.files import evidence_response, safe_filename
 from ..db import get_db
 from ..models import Advisory, AdvisoryComment, Asset, Department, Match, Notification
 from ..schemas import AssetAckIn, CommentIn
@@ -389,6 +389,12 @@ def add_comment(advisory_id: int, body: CommentIn, request: Request, db: Session
     now = datetime.now(timezone.utc)
     ack_synced = None
     assets_updated = 0
+    if body.ack_status is not None and dept is None:
+        # 목록에 없는 부서명으로는 공식 회신(ack) 동기화가 불가 — 조용한 no-op 대신 안내.
+        raise HTTPException(400, detail={
+            "code": "UNKNOWN_DEPARTMENT",
+            "message": "조치상태 회신은 등록된 부서를 선택해야 반영됩니다. 부서 목록에서 선택하세요.",
+        })
     if body.ack_status is not None and dept is not None:
         # (1) 체크한 자산(match_ids)의 조치상태 갱신 — 부서 불일치 안전장치(이름은 무관).
         if body.match_ids:
@@ -414,6 +420,21 @@ def add_comment(advisory_id: int, body: CommentIn, request: Request, db: Session
                 m.ack_note = comment.body
                 m.ack_at = now
             assets_updated = len(rows)
+        else:
+            # 자산 미지정 상태 회신 = 부서 전체 선언 — 부서 활성 매칭 전체에 동일 적용.
+            # (부서 발송(Notification)만 갱신하면 게시판(자산 기준)과 발송이력(부서 기준)이
+            #  영구 불일치: 발송이력 '완료' vs 게시판 '미회신 N대'.)
+            dept_rows = db.scalars(
+                select(Match).join(Asset, Match.asset_id == Asset.id)
+                .where(Match.advisory_id == adv.id, Match.status == enums.MatchStatus.MATCHED,
+                       Asset.department_id == dept.id)
+            ).all()
+            for m in dept_rows:
+                m.ack_status = body.ack_status
+                m.ack_by = comment.author_name
+                m.ack_note = comment.body
+                m.ack_at = now
+            assets_updated = len(dept_rows)
 
         # (2) (이 권고문, 부서)의 가장 최근 발송 ack 동기화.
         #     자산 단위 회신(match_ids)에서 'DONE' 은 부서 전체 매칭 자산이 모두 DONE 일 때만
@@ -440,6 +461,8 @@ def add_comment(advisory_id: int, body: CommentIn, request: Request, db: Session
             n.ack_updated_at = now
             if sync_status == enums.AckStatus.DONE:
                 n.status = enums.NotificationStatus.ACKED
+            elif n.status == enums.NotificationStatus.ACKED:
+                n.status = enums.NotificationStatus.SENT   # 완료 정정(진행중/불가) → 종결 해제
             ack_synced = n.id
 
     record(db, action="BOARD_COMMENT", actor_id=None, entity_type="advisory",
@@ -574,14 +597,13 @@ async def upload_comment_evidence(comment_id: int, request: Request,
 
 @router.get("/comments/{comment_id}/evidence")
 def get_comment_evidence(comment_id: int, db: Session = Depends(get_db)):
-    """댓글 증빙 파일 열람(inline). 첨부 없으면 404."""
+    """댓글 증빙 파일 열람 — 안전 타입만 inline, 그 외 첨부(stored-XSS 차단). 첨부 없으면 404."""
     import os
 
     c = db.get(AdvisoryComment, comment_id)
     if not c or not c.evidence_path or not os.path.exists(c.evidence_path):
         raise HTTPException(404, "증빙 파일이 없습니다")
-    return FileResponse(c.evidence_path, filename=c.evidence_name or "evidence",
-                        headers={"Content-Disposition": f"inline; filename=\"{c.evidence_name or 'evidence'}\""})
+    return evidence_response(c.evidence_path, c.evidence_name)
 
 
 @router.delete("/comments/{comment_id}", status_code=204)
