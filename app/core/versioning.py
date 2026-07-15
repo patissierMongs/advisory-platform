@@ -19,7 +19,11 @@ _NUMS = re.compile(r"\d+")
 def normalize_version(raw: str | None) -> str:
     if raw is None:
         return ""
-    return str(raw).strip()
+    s = str(raw).strip()
+    # 'v124.0' 같은 접두 표기는 흔한 자산대장 관례 — 열거 규칙의 문자열 비교가 어긋나지 않게 제거.
+    if re.match(r"^[vV]\d", s):
+        s = s[1:]
+    return s
 
 
 def version_ordinal(v: str | None) -> tuple[int, ...] | None:
@@ -81,7 +85,18 @@ def version_matches(asset_version: str | None, rule) -> tuple[bool, bool]:
     # 열거 목록
     if isinstance(rule, list):
         norm = {normalize_version(x).lower() for x in rule}
-        return (av.lower() in norm), False
+        if av.lower() in norm:
+            return True, False
+        ao = version_ordinal(av)
+        if ao is None:
+            # '알 수 없음' 등 해석 불가 텍스트 — dict 규칙과 동일하게 보수적 후보(사람 검토).
+            # 문자열 불일치만으로 확정 미매칭 처리하면 취약 자산이 조용히 누락된다.
+            return True, True
+        # 표기만 다른 동일 버전('124.0' vs '124.0.6367.91' 아님 — 정확 서수 일치만) 재확인.
+        for x in rule:
+            if version_ordinal(normalize_version(x)) == ao:
+                return True, False
+        return False, False
 
     if isinstance(rule, dict):
         try:

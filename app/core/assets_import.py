@@ -22,6 +22,10 @@ FIELD_HINTS: dict[str, list[str]] = {
 }
 REQUIRED_FIELDS = ("department", "product_key")  # 버전은 선택 — 제품 셀에서 분리하거나 '*' 규칙으로 매칭
 
+# 시스템(고정) 필드 집합. 매핑 키가 여기에 없으면 '사용자 정의(선택) 필드'로 보고
+# Asset.extra 에 그 이름 그대로 저장한다(자유로운 열 추가). 레터 키 폴백과 구분된다.
+SYS_FIELDS = frozenset(FIELD_HINTS)
+
 
 def col_letter(idx0: int) -> str:
     """0-기반 컬럼 인덱스 → 엑셀 레터(A, B, … Z, AA)."""
@@ -225,15 +229,14 @@ def commit(
     def cell(row, field):
         return resolve_cell(row, specs.get(field))
 
-    if mode == "replace":
-        # 전체 교체: 기존 자산 제거(데모 정책). 운영은 부서/배치 단위 교체 권장.
-        for a in db.scalars(select(Asset)):
-            db.delete(a)
-        db.flush()
+    # replace: 하드 삭제는 진행 중 매칭(match.asset_id)·오탐기억(exclusion_rule.asset_id) FK 를
+    # 깨뜨려 커밋 전체가 실패한다. 새 대장에 없는 자산은 RETIRED 로 전환(매칭 엔진이 제외)하고,
+    # 재등장 자산은 upsert 로 NORMAL 복귀 — 진행 중 조치 데이터가 보존된다.
 
     warnings: list[dict] = []
     created_departments: list[str] = []
     committed = 0
+    batch_by_no: dict[str, Asset] = {}   # 이 커밋에서 처리한 자산번호 → Asset (파일 내 중복 감지)
     for rownum, row in enumerate(body, start=row_offset):  # 엑셀 실제 행번호
         if all(c in (None, "") for c in row):
             continue
@@ -278,20 +281,32 @@ def commit(
                 continue  # 부서 미상이면 적재 불가(매칭/발송 필수)
 
         asset_no = cell(row, "asset_no") or f"AUTO-{import_batch_id}-{rownum}"
-        # 매핑되지 않은 컬럼 → extra (분할 매핑의 원본 컬럼도 '사용됨'으로 제외)
+        # extra = 사용자 정의(선택) 필드(이름 키) + 매핑되지 않은 나머지 컬럼(레터 키 폴백).
         used_idx = {s[0] for s in specs.values()}
-        extra = {
-            col_letter(i): str(row[i]).strip()
-            for i in range(len(row))
-            if i not in used_idx and row[i] not in (None, "")
-        }
+        extra: dict[str, str] = {}
+        for field in specs:  # 시스템 필드가 아닌 매핑 = 사용자 정의 필드 → 입력한 이름으로 보존
+            if field in SYS_FIELDS:
+                continue
+            v = cell(row, field)
+            if v not in (None, ""):
+                extra[field] = v
+        for i in range(len(row)):  # 매핑되지 않은 컬럼은 레터 키로 보존(기존 동작)
+            if i not in used_idx and row[i] not in (None, ""):
+                extra.setdefault(col_letter(i), str(row[i]).strip())
 
-        existing = db.scalar(select(Asset).where(Asset.asset_no == asset_no))
-        if existing is None:
-            asset = Asset(asset_no=asset_no)
-            db.add(asset)
+        # 같은 파일 안의 중복 자산번호: autoflush=False 라 select 가 pending insert 를 못 봐
+        # UNIQUE 위반으로 커밋 전체가 죽는다 → 배치 내 캐시로 감지, 뒤 행이 갱신(최신 우선).
+        if asset_no in batch_by_no:
+            asset = batch_by_no[asset_no]
+            warnings.append({"row": rownum, "issue": "DUPLICATE_ASSET_NO", "value": asset_no})
         else:
-            asset = existing  # upsert(최신 배치 우선)
+            existing = db.scalar(select(Asset).where(Asset.asset_no == asset_no))
+            if existing is None:
+                asset = Asset(asset_no=asset_no)
+                db.add(asset)
+            else:
+                asset = existing  # upsert(최신 배치 우선)
+            batch_by_no[asset_no] = asset
         asset.department_id = depts[dept_name].id
         asset.product_raw = product_raw
         asset.product_key = normalize_product(product_part or product_raw)
@@ -306,6 +321,15 @@ def commit(
         asset.extra = extra or None
         committed += 1
 
+    retired = 0
+    if mode == "replace":
+        db.flush()
+        touched = {a.id for a in batch_by_no.values() if a.id is not None}
+        for a in db.scalars(select(Asset).where(Asset.status != enums.AssetStatus.RETIRED)):
+            if a.id not in touched:
+                a.status = enums.AssetStatus.RETIRED
+                retired += 1
+
     db.flush()
     return {"committed": committed, "warnings": warnings, "total_rows": len(body),
-            "created_departments": created_departments}
+            "created_departments": created_departments, "retired": retired}

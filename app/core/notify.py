@@ -106,7 +106,13 @@ def smtp_status() -> dict:
 
 
 def send_test_mail(to_addr: str) -> dict:
-    """SMTP 테스트 메일 발송. 비밀번호/본문 저장 없음."""
+    """SMTP 테스트 메일 발송. 비밀번호/본문 저장 없음.
+
+    실발송(dispatch)과 동일하게 MAIL_ENABLED 를 먼저 확인한다 — 채널 비활성 상태에서
+    테스트만 성공하면 '테스트 OK, 실발송 전부 실패'라는 오진을 낳는다.
+    """
+    if not settings.MAIL_ENABLED:
+        return {"ok": False, "info": "메일 채널 비활성(ADVISORY_MAIL_ENABLED=false) — 실발송도 실패로 기록됩니다"}
     body = (
         "[보안권고문 처리 시스템] SMTP 테스트 메일입니다.\n\n"
         "이 메일을 받았다면 시스템의 SMTP 발송 설정이 동작합니다."

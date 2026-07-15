@@ -54,7 +54,8 @@ def init_db() -> None:
 _ADDED_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "asset": [("owner_team", "VARCHAR(120)"), ("owner_contact", "VARCHAR(120)")],
     "advisory": [("extract_phase", "VARCHAR(20)"), ("error_message", "TEXT"),
-                 ("board_published_at", "DATETIME")],
+                 ("board_published_at", "DATETIME"),
+                 ("due_source", "VARCHAR(10)"), ("channel_source", "VARCHAR(10)")],
     "advisory_comment": [("evidence_path", "TEXT"), ("evidence_name", "VARCHAR(200)")],
     "match": [("ack_status", "VARCHAR(20) DEFAULT 'NONE' NOT NULL"), ("ack_by", "VARCHAR(80)"),
               ("ack_note", "TEXT"), ("ack_at", "DATETIME")],

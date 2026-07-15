@@ -17,7 +17,7 @@ from ..core.matching import all_cves_found
 from ..db import SessionLocal, get_db
 from ..deps import get_actor_id
 from ..models import Advisory, AdvisoryCve, Cve, Match
-from ..schemas import CveAddRequest
+from ..schemas import AdvisoryMetaPatch, CveAddRequest
 from ..serializers import advisory_brief, advisory_cve_item
 
 router = APIRouter(prefix="/api/v1", tags=["advisories"])
@@ -31,7 +31,7 @@ async def upload_advisory(
     request: Request,
     file: UploadFile = File(...),
     source_org: str = Form(""),
-    receive_channel: str = Form("NCST"),
+    receive_channel: str | None = Form(None),
     doc_no: str | None = Form(None),
     title: str | None = Form(None),
     due_at: str | None = Form(None),
@@ -46,11 +46,15 @@ async def upload_advisory(
     source_org = (source_org or "").strip()
     if not source_org:
         raise HTTPException(400, "출처기관은 필수입니다.")
-    try:
-        channel = enums.ReceiveChannel(receive_channel)
-    except ValueError as e:
-        allowed = ", ".join(c.value for c in enums.ReceiveChannel)
-        raise HTTPException(400, f"접수채널은 {allowed} 중 하나여야 합니다.") from e
+    # 접수경로(§9)는 본문 추출 우선이라 업로드 시 필수는 아니다. 단, 폼으로 값을 주면 유효해야 한다.
+    form_channel = None
+    rc = (receive_channel or "").strip()
+    if rc:
+        try:
+            form_channel = enums.ReceiveChannel(rc)
+        except ValueError as e:
+            allowed = ", ".join(c.value for c in enums.ReceiveChannel)
+            raise HTTPException(400, f"접수채널은 {allowed} 중 하나여야 합니다.") from e
 
     sha = extract.sha256_bytes(content)
     dup = db.scalar(select(Advisory).where(Advisory.file_sha256 == sha))
@@ -68,13 +72,34 @@ async def upload_advisory(
         path.write_bytes(content)
     text, pages = extract.extract_text_from_pdf(str(path))
 
+    # 조치기한(§8): 본문 추출 우선 → 폼 수동입력 → 미지정(관리자 입력 대기).
+    ext_due, _ = extract.extract_due_date(text)
+    form_due = _parse_date(due_at)
+    if ext_due is not None:
+        final_due, due_source = ext_due, "PDF"
+    elif form_due is not None:
+        final_due, due_source = form_due, "MANUAL"
+    else:
+        final_due, due_source = None, None
+
+    # 접수경로(§9): 본문 추출 우선 → 폼 수동선택(검증 완료) → 미지정. 기한과 동일 정책.
+    ext_ch, _ = extract.extract_receive_channel(text)
+    if ext_ch is not None:
+        final_ch, ch_source = enums.ReceiveChannel(ext_ch), "PDF"
+    elif form_channel is not None:
+        final_ch, ch_source = form_channel, "MANUAL"
+    else:
+        final_ch, ch_source = None, None
+
     adv = Advisory(
         doc_no=(doc_no or "").strip() or None,
         title=(title or "").strip() or (file.filename or "보안권고문").rsplit(".", 1)[0],
         source_org=source_org,
-        receive_channel=channel,
+        receive_channel=final_ch,
+        channel_source=ch_source,
         received_at=date.today(),
-        due_at=_parse_date(due_at),
+        due_at=final_due,
+        due_source=due_source,
         file_path=str(path),
         file_sha256=sha,
         page_count=pages,
@@ -86,6 +111,38 @@ async def upload_advisory(
     db.flush()
     record(db, action="ADVISORY_UPLOAD", actor_id=adv.uploaded_by,
            entity_type="advisory", entity_id=adv.id, detail={"sha256": sha, "force": force}, request=request)
+    db.commit()
+    return advisory_brief(adv)
+
+
+@router.patch("/advisories/{advisory_id}/meta")
+def update_meta(advisory_id: int, body: AdvisoryMetaPatch, request: Request,
+                db: Session = Depends(get_db)):
+    """조치기한·접수경로 관리자 수동 지정(§8·9) — 본문 미추출 시 직접 입력/수정.
+
+    전달한 필드만 갱신하며, 설정 시 출처를 'MANUAL' 로 표기한다(빈 값이면 미지정으로 비움).
+    """
+    adv = _get(db, advisory_id)
+    sent = body.model_fields_set
+    if "due_at" in sent:
+        d = _parse_date(body.due_at)
+        adv.due_at = d
+        adv.due_source = "MANUAL" if d else None
+    if "receive_channel" in sent:
+        ch = (body.receive_channel or "").strip()
+        if ch:
+            try:
+                adv.receive_channel = enums.ReceiveChannel(ch)
+            except ValueError:
+                raise HTTPException(400, "올바른 접수경로 값이 아닙니다(NCST·WEBMAIL·OFFICIAL_DOC).")
+            adv.channel_source = "MANUAL"
+        else:
+            adv.receive_channel = None
+            adv.channel_source = None
+    record(db, action="ADVISORY_META_EDIT", actor_id=get_actor_id(db), entity_type="advisory",
+           entity_id=adv.id, detail={"due_at": str(adv.due_at) if adv.due_at else None,
+                                     "channel": adv.receive_channel.value if adv.receive_channel else None},
+           request=request)
     db.commit()
     return advisory_brief(adv)
 
@@ -124,28 +181,50 @@ def _run_extract(advisory_id: int) -> None:
         adv.extract_phase = "regex"
         db.commit()
 
+        # 재시도 대비: 저장 텍스트가 비어 있으면 원본 PDF 에서 다시 추출을 시도한다.
+        if not text.strip() and adv.file_path:
+            text, _pages = extract.extract_text_from_pdf(adv.file_path)
+            if text.strip():
+                adv.extracted_text = text
+
+        # 스캔본(이미지) PDF: 텍스트가 없으면 '조용한 완료(CVE 0건)' 대신 실패로 안내하고
+        # 기존(수동 추가 포함) CVE 를 보존한다 — 재시도 버튼 노출 + OCR/수동 입력 유도.
+        if not text.strip():
+            adv.extract_phase = "failed"
+            adv.error_message = ("PDF에서 텍스트를 추출하지 못했습니다(스캔본·이미지 PDF 가능성). "
+                                 "OCR 결과를 확인해 CVE를 수동 추가하세요.")
+            if adv.status == enums.AdvisoryStatus.EXTRACTING:
+                adv.status = enums.AdvisoryStatus.UPLOADED
+            db.commit()
+            return
+
         results = extract._regex_candidates(text)
         warning = None
 
         # 재처리 대비: 기존 추출 CVE 와 연결된 매칭을 함께 정리(FK 고립 방지) 후 재적재.
+        # 수동 추가분(source_snippet='(수동 추가)')은 관리자 보정이므로 보존한다.
+        manual_codes = set()
         for ac in list(adv.cves):
+            if (ac.source_snippet or "") == "(수동 추가)":
+                manual_codes.add(ac.cve_id_text)
+                continue
             for mt in db.scalars(select(Match).where(Match.advisory_cve_id == ac.id)):
                 db.delete(mt)
             db.delete(ac)
+        results = [c for c in results if c["cve_id_text"] not in manual_codes]
         db.flush()
-        found = not_found = 0
         for c in results:
             cve = db.scalar(select(Cve).where(Cve.cve_id == c["cve_id_text"]))
-            if cve:
-                found += 1
-            else:
-                not_found += 1
             db.add(AdvisoryCve(
                 advisory_id=adv.id, cve_id_text=c["cve_id_text"],
                 cve_ref_id=cve.id if cve else None,
                 lookup_status=enums.LookupStatus.FOUND if cve else enums.LookupStatus.NOT_FOUND,
                 extraction_confidence=c.get("confidence"), source_snippet=c.get("source_snippet"),
             ))
+        db.flush()
+        db.refresh(adv)
+        # 상태 판정은 보존된 수동 CVE 를 포함한 전체 기준.
+        not_found = sum(1 for ac in adv.cves if ac.lookup_status == enums.LookupStatus.NOT_FOUND)
         adv.status = (enums.AdvisoryStatus.NEEDS_CVE_UPDATE if not_found
                       else enums.AdvisoryStatus.EXTRACTED)
         adv.extract_phase = "done"
@@ -199,7 +278,9 @@ def add_cve(advisory_id: int, body: CveAddRequest, request: Request, db: Session
     m = extract.CVE_RE.search(body.cve_id.replace(" ", "-"))
     if not m:
         raise HTTPException(400, "올바른 CVE 코드 형식이 아닙니다.")
-    code = m.group(0).upper()
+    # 표준형으로 정규화 — 'CVE_2026_1234' 같은 변형이 그대로 저장되면 CVE DB(cve_id 표준형)와
+    # 영원히 불일치해 피드를 적용해도 게이트가 풀리지 않는다(백그라운드 추출과 동일 규칙).
+    code = f"CVE-{m.group(1)}-{m.group(2)}"
     if any(ac.cve_id_text == code for ac in adv.cves):
         raise HTTPException(409, "이미 추출된 CVE입니다.")
     cve = db.scalar(select(Cve).where(Cve.cve_id == code))
@@ -239,7 +320,11 @@ def delete_cve(ac_id: int, request: Request, db: Session = Depends(get_db)):
 def _reeval_status(adv: Advisory) -> None:
     """추출 CVE 변경 후 advisory 상태 재평가(게이트)."""
     if not adv.cves:
-        adv.status = enums.AdvisoryStatus.UPLOADED
+        # 발송 이후 단계(NOTIFYING/COMPLETED/ARCHIVED)는 강등하지 않는다 —
+        # 마지막 CVE 삭제로 발송된 권고문이 SLA/리마인드 대상에서 이탈하는 것 방지.
+        if adv.status not in (enums.AdvisoryStatus.NOTIFYING, enums.AdvisoryStatus.COMPLETED,
+                              enums.AdvisoryStatus.ARCHIVED):
+            adv.status = enums.AdvisoryStatus.UPLOADED
         return
     if any(ac.lookup_status == enums.LookupStatus.NOT_FOUND for ac in adv.cves):
         adv.status = enums.AdvisoryStatus.NEEDS_CVE_UPDATE

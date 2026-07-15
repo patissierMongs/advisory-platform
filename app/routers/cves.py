@@ -25,7 +25,9 @@ def list_cves(
     stmt = select(Cve).order_by(Cve.published_at.desc().nullslast(), Cve.id.desc())
     if q:
         like = f"%{q}%"
-        stmt = stmt.where(or_(Cve.cve_id.ilike(like), Cve.product_name.ilike(like)))
+        # UI 검색창 안내('CVE, 제품, 출처 검색')와 일치 — 출처·제품키도 포함.
+        stmt = stmt.where(or_(Cve.cve_id.ilike(like), Cve.product_name.ilike(like),
+                              Cve.product_key.ilike(like), Cve.source.ilike(like)))
     if severity:
         stmt = stmt.where(Cve.severity == enums.Severity(severity))
     if source:

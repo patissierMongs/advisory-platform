@@ -23,9 +23,15 @@ def _xlsx_bytes() -> io.BytesIO:
 
 
 def _clear_assets():
+    """자산 관련 테이블 정리 — FK 자식(match·exclusion_rule → asset → asset_import) 순서 준수."""
     from sqlalchemy import delete
 
+    from app.models import Asset, ExclusionRule, Match
+
     with SessionLocal() as db:
+        db.execute(delete(Match))
+        db.execute(delete(ExclusionRule))
+        db.execute(delete(Asset))
         db.execute(delete(AssetImport))
         db.commit()
 
