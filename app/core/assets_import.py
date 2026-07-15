@@ -118,6 +118,10 @@ def detect_header_row(grid: list[list], max_scan: int = 15) -> int:
 
     필드 별칭 매칭 수 + 텍스트 밀도가 높고, 숫자/날짜(데이터 냄새)가 적은 행을 고른다.
     제목행(텍스트 1개)·데이터행(숫자 다수)을 자연스럽게 배제.
+
+    중복 텍스트는 1개로 접어 센다 — 가로 병합된 제목행은 forward-fill 로 같은 문구가
+    전 컬럼에 복제되는데, 제목에 '부서' 같은 별칭 단어가 들어 있으면 복제 수만큼
+    점수가 부풀어 진짜 헤더행을 이기는 오탐이 생긴다(현장 대장에서 실제 발생).
     """
     all_hints = [h for hints in FIELD_HINTS.values() for h in hints]
     best_idx, best_score = 0, -10 ** 9
@@ -125,9 +129,10 @@ def detect_header_row(grid: list[list], max_scan: int = 15) -> int:
         texts = [str(c).strip().lower() for c in row if c not in (None, "")]
         if not texts:
             continue
-        hint_hits = sum(1 for t in texts if any(h in t for h in all_hints))
-        numericish = sum(1 for t in texts if t.replace(".", "").replace("-", "").replace("/", "").isdigit())
-        score = hint_hits * 3 + len(texts) - numericish * 2
+        uniq = list(dict.fromkeys(texts))
+        hint_hits = sum(1 for t in uniq if any(h in t for h in all_hints))
+        numericish = sum(1 for t in uniq if t.replace(".", "").replace("-", "").replace("/", "").isdigit())
+        score = hint_hits * 3 + len(uniq) - numericish * 2
         if score > best_score:
             best_score, best_idx = score, i
     return best_idx

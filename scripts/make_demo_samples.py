@@ -186,6 +186,136 @@ FEED = {
 }
 
 
+# ── 확장 CVE 피드 — 데모 권고문 CVE 12건을 '포함'하는 슈퍼셋(총 30건) ──
+# 영향버전 규칙의 모든 형태(열거 리스트 / lt·lte / range / "*")를 고르게 섞어
+# 매칭 엔진·버전 비교기 데모까지 커버한다. 자산대장 샘플의 제품군과 맞물린다.
+EXTRA_CVES = [
+    {"cve_id": "CVE-2026-70001", "product_name": "Microsoft Windows 10", "product_key": "windows_10",
+     "affected_versions": ["21H2", "22H2"], "severity": "높음", "cvss_score": 7.8,
+     "description": "그래픽 구성요소 권한 상승", "published_at": "2026-06-10", "source": "국가정보원"},
+    {"cve_id": "CVE-2026-70002", "product_name": "Microsoft Windows 11", "product_key": "windows_11",
+     "affected_versions": {"lte": "23H2"}, "severity": "긴급", "cvss_score": 9.1,
+     "description": "원격 데스크톱 RCE", "published_at": "2026-06-10", "source": "국가정보원"},
+    {"cve_id": "CVE-2026-70003", "product_name": "Microsoft Windows Server", "product_key": "windows_server",
+     "affected_versions": ["2019", "2022"], "severity": "높음", "cvss_score": 8.1,
+     "description": "AD 인증 우회", "published_at": "2026-06-11", "source": "국가정보원"},
+    {"cve_id": "CVE-2026-70004", "product_name": "Microsoft Office", "product_key": "microsoft_office",
+     "affected_versions": "*", "severity": "중간", "cvss_score": 6.5,
+     "description": "매크로 보안 경고 우회(전 버전)", "published_at": "2026-06-12", "source": "NCSC"},
+    {"cve_id": "CVE-2026-70005", "product_name": "한컴오피스", "product_key": "hancom_office",
+     "affected_versions": ["2020", "2022"], "severity": "중간", "cvss_score": 6.1,
+     "description": "HWPX 파서 정보 유출", "published_at": "2026-06-13", "source": "KISA"},
+    {"cve_id": "CVE-2026-70006", "product_name": "Google Chrome", "product_key": "google_chrome",
+     "affected_versions": {"lt": "125"}, "severity": "높음", "cvss_score": 8.8,
+     "description": "WebGPU 힙 오버플로", "published_at": "2026-06-14", "source": "NCTI"},
+    {"cve_id": "CVE-2026-70007", "product_name": "Microsoft Edge", "product_key": "edge",
+     "affected_versions": {"lt": "126"}, "severity": "중간", "cvss_score": 6.5,
+     "description": "SmartScreen 우회", "published_at": "2026-06-14", "source": "NCTI"},
+    {"cve_id": "CVE-2026-70008", "product_name": "Java SE", "product_key": "java_se",
+     "affected_versions": {"range": ["11", "17.0.11"]}, "severity": "높음", "cvss_score": 7.5,
+     "description": "직렬화 역직렬화 RCE", "published_at": "2026-06-15", "source": "금융보안원"},
+    {"cve_id": "CVE-2026-70009", "product_name": "Adobe Acrobat", "product_key": "adobe_acrobat",
+     "affected_versions": ["DC 2021", "DC 2022"], "severity": "높음", "cvss_score": 7.8,
+     "description": "JavaScript API 샌드박스 이탈", "published_at": "2026-06-16", "source": "KISA"},
+    {"cve_id": "CVE-2026-70010", "product_name": "OpenSSL", "product_key": "openssl",
+     "affected_versions": {"lt": "3.0.14"}, "severity": "높음", "cvss_score": 7.4,
+     "description": "세션 재사용 검증 결함", "published_at": "2026-06-17", "source": "NCSC"},
+    {"cve_id": "CVE-2026-70011", "product_name": "Apache HTTP Server", "product_key": "apache_httpd",
+     "affected_versions": {"lt": "2.4.60"}, "severity": "긴급", "cvss_score": 9.8,
+     "description": "mod_proxy 요청 밀반입 RCE", "published_at": "2026-06-18", "source": "NCSC"},
+    {"cve_id": "CVE-2026-70012", "product_name": "nginx", "product_key": "nginx",
+     "affected_versions": {"lt": "1.25.4"}, "severity": "중간", "cvss_score": 6.5,
+     "description": "HTTP/3 QUIC 메모리 누수", "published_at": "2026-06-18", "source": "NCSC"},
+    {"cve_id": "CVE-2026-70013", "product_name": "Linux Kernel", "product_key": "linux_kernel",
+     "affected_versions": {"lt": "6.8"}, "severity": "높음", "cvss_score": 7.8,
+     "description": "netfilter UAF 권한 상승", "published_at": "2026-06-19", "source": "KISA"},
+    {"cve_id": "CVE-2026-70014", "product_name": "Ubuntu", "product_key": "ubuntu",
+     "affected_versions": {"range": ["20.04", "24.04"]}, "severity": "중간", "cvss_score": 6.4,
+     "description": "needrestart 로컬 권한 상승", "published_at": "2026-06-19", "source": "KISA"},
+    {"cve_id": "CVE-2026-70015", "product_name": "Microsoft Windows 11", "product_key": "windows_11",
+     "affected_versions": ["23H2"], "severity": "중간", "cvss_score": 5.5,
+     "description": "탐색기 정보 노출", "published_at": "2026-06-20", "source": "국가정보원"},
+    {"cve_id": "CVE-2026-70016", "product_name": "Microsoft Office", "product_key": "microsoft_office",
+     "affected_versions": ["2019", "2021"], "severity": "높음", "cvss_score": 7.8,
+     "description": "Outlook 미리보기 RCE", "published_at": "2026-06-20", "source": "국가정보원"},
+    {"cve_id": "CVE-2026-70017", "product_name": "Google Chrome", "product_key": "google_chrome",
+     "affected_versions": {"lte": "126.0.6478.126"}, "severity": "긴급", "cvss_score": 9.6,
+     "description": "ANGLE 타입 혼동(실공격)", "published_at": "2026-06-21", "source": "NCTI"},
+    {"cve_id": "CVE-2026-70018", "product_name": "Adobe Acrobat", "product_key": "adobe_acrobat",
+     "affected_versions": "*", "severity": "낮음", "cvss_score": 3.3,
+     "description": "북마크 스크립트 경고 미표시(전 버전)", "published_at": "2026-06-21", "source": "KISA"},
+]
+
+# ── 자산관리대장 엣지케이스 샘플 — '복잡한 현장 취합본'을 일부러 재현 ──
+# 검증 포인트: 제목행+빈행+2단 병합 헤더 / 부서 세로 병합 / 제품+버전 한 셀 /
+# v접두·H차수·'알 수 없음' 버전 / 파일 내 중복 자산번호(최신 행 우선) / 부서·제품·버전
+# 누락 경고 / 숫자 자산번호 / 담당자 통합 셀(구분자 분할 시연) / 미매핑 컬럼(extra 보존).
+ASSET_TITLE = "2026 상반기 전사 자산관리대장 — 정보보호팀 취합본 (부서 제출 원본 병합)"
+ASSET_HEAD_TOP = ["자산번호", "사용부서", "시스템 정보", None, "담당자 정보", None, None, "IP 주소", "구매년도", "비고"]
+ASSET_HEAD_SUB = [None, None, "제품/OS", "버전", "이름", "소속팀", "연락처", None, None, None]
+ASSET_ROWS: list[list] = [
+    ["A-1001", "재무팀", "Windows 11", "23H2", "김영수", "재무1셀", "010-1111-0001", "10.10.1.11", 2023, None],
+    ["A-1002", "재무팀", "Windows 11 22H2", None, "이수진", "재무1셀", "010-1111-0002", "10.10.1.12", 2022, "제품 셀에 버전 포함"],
+    ["A-1003", "재무팀", "MS Office", "2021", "박지훈", "재무2셀", "010-1111-0003", "10.10.1.13", 2021, None],
+    ["A-2001", "개발팀", "Google Chrome", "v124.0.6367.91", "최민아", "플랫폼셀", "010-2222-0001", "10.20.3.21", 2024, "v접두 버전"],
+    ["A-2001", "개발팀", "Google Chrome", "v126.0.6478.100", "최민아", "플랫폼셀", "010-2222-0001", "10.20.3.21", 2024, "중복 자산번호 — 이 행(최신)이 남아야 함"],
+    ["A-2002", "개발팀", "Chrome 122.x", None, "한도윤", "플랫폼셀", "010-2222-0002", "10.20.3.22", None, None],
+    ["A-2003", "개발팀", "Java SE", "17.0.11", "정우석", "백엔드셀", "010-2222-0003", "10.20.3.23", 2020, None],
+    ["A-3001", "총무팀", "한글 2022", None, "김보라", "총무셀", "010-3333-0001", "10.30.1.5", 2022, None],
+    ["A-3002", "  총무팀  ", "한컴오피스", "2024", "오세훈", "총무셀", "010-3333-0002", "10.30.1.6", 2024, "부서명 앞뒤 공백"],
+    ["A-3003", "총무팀", "AhnLab V3 Lite", "4.0", "김보라", "총무셀", "010-3333-0001", "10.30.1.7", None, "공용 PC(담당자 중복)"],
+    [20250001, "인사팀", "Microsoft Edge", "126.0.2592.87", "유하늘", "인사셀", "02-555-0100", "10.40.2.31", 2025, "자산번호가 숫자 셀"],
+    ["A-5001", "서버운영팀", "OpenSSL", "3.0.13", "백승호", "인프라셀", "010-5555-0001", "10.50.0.10", None, None],
+    ["A-5002", "서버운영팀", "Windows Server 2022", None, "백승호", "인프라셀", "010-5555-0001", "10.50.0.0/24", None, "IP 대역 표기"],
+    ["A-5003", "서버운영팀", "Apache HTTPD", "2.4.58", "문지영", "인프라셀", "010-5555-0002", "10.50.0.11", None, None],
+    [None, None, None, None, None, None, None, None, None, None],   # 중간 빈 행
+    ["A-6001", "감사실", "Windows 10 22H2", None, "신재민", "감사셀", "010-6666-0001", "10.60.1.2", 2019, None],
+    ["A-6002", "감사실", "Adobe Acrobat", "DC 2022", "신재민 / 감사셀 / 010-6666-0001", None, None, "10.60.1.3", None, "담당자 통합 셀 — '구분자 분할'로 나눠보기"],
+    ["A-7001", "미래전략TF", "Ubuntu", "22.04", "장예린", None, None, "10.70.9.9", None, "신설 부서(자동 생성)"],
+    ["A-7002", "미래전략TF", "리눅스 커널", "알 수 없음", "장예린", None, None, "10.70.9.10", None, "버전 해석불가 → 후보 매칭"],
+    ["A-8001", None, "Windows 11", "23H2", "무명씨", None, None, "10.80.1.1", None, "부서 누락 → 적재 제외 경고"],
+    ["A-8002", "품질보증팀", None, None, "나검수", "QA셀", "010-8888-0002", "10.80.1.2", None, "제품 누락 경고"],
+    ["A-8003", "품질보증팀", "사내개발 ERP 클라이언트", "7.3.1", "나검수", "QA셀", "010-8888-0002", "10.80.1.3", None, "사전에 없는 제품(슬러그 키)"],
+    [None, None, None, None, None, None, None, None, None, "※ 하반기 도입 예정 장비는 별도 시트 참조"],  # 비고만 있는 행
+    ["A-9001", "대외협력팀", "Microsoft Office", None, "하은성", None, "02-555-0200", None, None, "버전 누락(적재는 됨 — '*'·전체 규칙 매칭)"],
+]
+
+FEED_EXTENDED_NAME = "cve_feed_extended_2026-07.json"
+ASSET_XLSX_NAME = "자산관리대장_엣지케이스_샘플.xlsx"
+
+
+def build_extended_feed() -> Path:
+    """확장 피드 — 데모 권고문 피드(12건)를 포함하는 슈퍼셋(총 30건)."""
+    dst = BASE / "samples" / FEED_EXTENDED_NAME
+    payload = {"source": "DEMO-EXTENDED",
+               "cves": FEED["cves"] + EXTRA_CVES}
+    dst.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return dst
+
+
+def build_asset_xlsx() -> Path:
+    from openpyxl import Workbook
+
+    dst = BASE / "samples" / ASSET_XLSX_NAME
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "자산대장"
+    ws.append([ASSET_TITLE])
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=10)
+    ws.append([None] * 10)                       # 빈 행(제목과 헤더 분리 — 현장 흔한 형태)
+    ws.append(ASSET_HEAD_TOP)                    # 3행: 상단 헤더
+    ws.append(ASSET_HEAD_SUB)                    # 4행: 하단 헤더
+    ws.merge_cells("C3:D3")                      # 시스템 정보(가로 병합)
+    ws.merge_cells("E3:G3")                      # 담당자 정보(가로 병합)
+    for col in ("A", "B", "H", "I", "J"):        # 단일 라벨은 세로 병합(2단 헤더)
+        ws.merge_cells(f"{col}3:{col}4")
+    for row in ASSET_ROWS:
+        ws.append(row)
+    ws.merge_cells("B5:B7")                      # 재무팀 — 부서 셀 세로 병합(같은 부서 여러 자산)
+    wb.save(dst)
+    return dst
+
+
 def build() -> Path:
     if OUT.exists():
         shutil.rmtree(OUT)
@@ -210,18 +340,30 @@ def build() -> Path:
         "   업로드 직후 '출처 지정' 패널에서 후보 클릭 선택(복수 가능)·일괄/개별 적용을 시험하세요.\n\n"
         "2) 각 권고문 '처리 →' STEP2 에서 DB 미등록 CVE 의 직접 등록 폼과\n"
         "   PDF 색상 하이라이트(제품·버전·날짜 — 폼 필드 색과 동일)를 확인하세요.\n\n"
-        "3) 일괄 해제하려면 cve_feed_demo.json 을 CVE 데이터베이스 탭에서 반입·적용하세요.\n"
-        "   이 파일은 위 PDF 들의 CVE 코드 전체를 커버합니다.\n",
+        "3) 일괄 해제하려면 CVE 데이터베이스 탭에 피드 파일을 드래그&드롭(또는 파일 선택)해\n"
+        "   반입·적용하세요.\n"
+        "   - cve_feed_demo.json                 : 위 PDF 들의 CVE 12건 (최소 세트)\n"
+        "   - samples/cve_feed_extended_2026-07.json : 위 12건을 포함한 확장 30건 —\n"
+        "     열거/미만(lt·lte)/범위(range)/전체(*) 등 영향버전 규칙 전 형태 포함\n\n"
+        "4) 자산 매칭까지 보려면 samples/자산관리대장_엣지케이스_샘플.xlsx 를\n"
+        "   자산관리대장 탭에서 가져오세요 — 헤더 시작행 3, 헤더 행 수 2 로 지정.\n"
+        "   제목행·2단 병합 헤더·부서 세로 병합·제품+버전 한 셀·v접두/'알 수 없음' 버전·\n"
+        "   파일 내 중복 자산번호·부서/제품/버전 누락·담당자 통합 셀 같은 현장 엣지케이스가\n"
+        "   기대대로(경고·최신 행 우선·자동 분리·후보 매칭) 처리되는지 확인하는 용도입니다.\n",
         encoding="utf-8")
     return OUT
 
 
 def make_zip(zip_path: Path) -> Path:
     zip_path.parent.mkdir(parents=True, exist_ok=True)
+    extras = [BASE / "samples" / FEED_EXTENDED_NAME, BASE / "samples" / ASSET_XLSX_NAME]
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
         for p in sorted(OUT.rglob("*")):
             if p.is_file():
                 z.write(p, Path("demo_advisories") / p.relative_to(OUT))
+        for p in extras:
+            if p.exists():
+                z.write(p, p.name)
     return zip_path
 
 
@@ -232,6 +374,10 @@ if __name__ == "__main__":
     out = build()
     n = sum(1 for _ in out.rglob("*.pdf"))
     print(f"[demo-samples] {out} — PDF {n}건 + cve_feed_demo.json")
+    fx = build_extended_feed()
+    print(f"[demo-samples] {fx} — CVE {len(FEED['cves']) + len(EXTRA_CVES)}건(데모 12건 포함 슈퍼셋)")
+    ax = build_asset_xlsx()
+    print(f"[demo-samples] {ax} — 자산 {sum(1 for r in ASSET_ROWS if any(c not in (None, '') for c in r))}행(엣지케이스)")
     if args.zip:
         zp = make_zip(Path(args.zip))
         print(f"[demo-samples] zip: {zp} ({zp.stat().st_size:,} bytes)")

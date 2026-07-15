@@ -66,6 +66,10 @@
         <span style="font-size:12px; color:#8a98ab; font-weight:500;">{{ pageSub }}</span>
       </div>
       <div style="display:flex; align-items:center; gap:14px;">
+        <button onClick="{{ onOpenBoardTab }}" title="내부 게시판 새 탭으로 열기 — 사내 누구나(무인증) 공개 권고문 열람·회신" style="display:flex; align-items:center; gap:7px; background:#fff; border:1px solid #d3dbe8; border-radius:8px; padding:6px 12px; font-size:12px; color:#43536b; font-weight:600; cursor:pointer; font-family:inherit;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M5 4h14v16H5z" stroke="#5a6b86" stroke-width="1.7" stroke-linejoin="round"/><path d="M8 8h8M8 12h8M8 16h5" stroke="#5a6b86" stroke-width="1.7" stroke-linecap="round"/></svg>
+          게시판 ↗
+        </button>
         <div style="display:flex; align-items:center; gap:7px; background:#f4f6f9; border:1px solid #e3e8ef; border-radius:8px; padding:6px 11px;">
           <span style="width:7px; height:7px; border-radius:50%; background:#0f766e;"></span>
           <span style="font-size:12px; color:#43536b; font-weight:600;">로컬 처리 · 오프라인</span>
@@ -664,12 +668,12 @@
             <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:22px;">
               <h3 style="margin:0 0 4px; font-size:14px; font-weight:700; color:#15294a;">CVE 피드 갱신</h3>
               <p style="margin:0 0 16px; font-size:12.5px; color:#8a98ab;">최신 취약점 피드 파일을 반입하면 미등록 CVE가 자동으로 채워집니다.</p>
-              <div style="border:2px dashed #c4d0de; border-radius:12px; background:#f7f9fc; padding:30px 20px; text-align:center;">
+              <div onDragOver="{{ onFeedDragOver }}" onDrop="{{ onFeedDrop }}" style="border:2px dashed #c4d0de; border-radius:12px; background:#f7f9fc; padding:30px 20px; text-align:center;">
                 <div style="width:48px; height:48px; margin:0 auto 12px; border-radius:13px; background:#e6f4f2; display:flex; align-items:center; justify-content:center;">
                   <svg width="23" height="23" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5 5 5" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round"/></svg>
                 </div>
                 <div style="font-size:13px; font-weight:600; color:#3a4a63;">피드 파일을 끌어다 놓으세요</div>
-                <div style="font-size:11.5px; color:#94a1b4; margin-top:4px;">JSON · CSV · NVD / KISA KrCERT 형식</div>
+                <div style="font-size:11.5px; color:#94a1b4; margin-top:4px;">JSON · CSV(.gz 포함) · NVD / KISA KrCERT 형식 · 드래그&드롭 또는 파일 선택</div>
                 <button onClick="{{ onStageFeed }}" style="margin-top:14px; background:#fff; color:#0f766e; border:1px solid #b8e0da; border-radius:8px; padding:8px 18px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">파일 선택</button>
               </div>
               <sc-if value="{{ feedStaged }}" hint-placeholder-val="">
@@ -1830,17 +1834,23 @@ class Component extends DCLogic {
   }
 
   // CVE 피드 실 업로드(§4.3) — 사용자가 반입한 피드 파일(NVD/CSV/내부 JSON)을 업로드·적용.
+  _stageFeedFile(f) {
+    if (!f) return;
+    if (!/\.(json|csv)(\.gz)?$/i.test(f.name)) {
+      if (this.flashToast) this.flashToast('피드 형식 오류', 'JSON · CSV(.gz 포함) 파일만 반입할 수 있습니다');
+      return;
+    }
+    const fd = new FormData(); fd.append('file', f);
+    this.api('POST', '/cve-feeds', fd, true)
+      .then(imp => this.setState({ feedStaged: true, feedImportId: imp.import_id, feedFileName: f.name,
+        feedSummary: '신규 ' + (imp.added_count || 0) + '건 · 갱신 ' + (imp.updated_count || 0) + '건 · ' + (imp.status === 'VALIDATED' ? '형식 검증 완료' : (imp.status || '')) }))
+      .catch(() => { if (this.flashToast) this.flashToast('피드 형식 오류', 'NVD JSON · CSV · 내부 JSON 만 지원합니다'); });
+  }
+
   _pickFeedFile() {
     const inp = document.createElement('input');
-    inp.type = 'file'; inp.accept = '.json,.csv';
-    inp.onchange = () => {
-      const f = inp.files && inp.files[0]; if (!f) return;
-      const fd = new FormData(); fd.append('file', f);
-      this.api('POST', '/cve-feeds', fd, true)
-        .then(imp => this.setState({ feedStaged: true, feedImportId: imp.import_id, feedFileName: f.name,
-          feedSummary: '신규 ' + (imp.added_count || 0) + '건 · 갱신 ' + (imp.updated_count || 0) + '건 · ' + (imp.status === 'VALIDATED' ? '형식 검증 완료' : (imp.status || '')) }))
-        .catch(() => { if (this.flashToast) this.flashToast('피드 형식 오류', 'NVD JSON · CSV · 내부 JSON 만 지원합니다'); });
-    };
+    inp.type = 'file'; inp.accept = '.json,.csv,.gz';
+    inp.onchange = () => this._stageFeedFile(inp.files && inp.files[0]);
     inp.click();
   }
   _applyFeed() {
@@ -2649,10 +2659,10 @@ class Component extends DCLogic {
   navItemsData() {
     const S = this.state;
     const unresolved = this.enrichRows().filter(r => !r.found).length;
+    // 게시판은 사이드바에서 제외 — 헤더 우측 상단('로컬 처리' 좌측) 바로가기로 이동(§UI).
     const items = [
       { id: 'dashboard', label: '대시보드', icon: this.icon('grid') },
       { id: 'process', label: '권고문 처리', icon: this.icon('doc') },
-      { id: 'board', label: '게시판', icon: this.icon('board') },
       { id: 'cvedb', label: 'CVE 데이터베이스', icon: this.icon('db'), badge: unresolved ? String(unresolved) : null },
       { id: 'assets', label: '자산관리대장', icon: this.icon('server') },
       { id: 'history', label: '발송 이력', icon: this.icon('send') },
@@ -2663,11 +2673,8 @@ class Component extends DCLogic {
       const active = S.nav === it.id;
       return Object.assign({}, it, {
         onClick: () => {
-          if (it.id === 'board') window.location.href = '/board';
-          else {
-            this.setState({ nav: it.id });
-            if (it.id === 'settings') this._loadSettingsConfigs();
-          }
+          this.setState({ nav: it.id });
+          if (it.id === 'settings') this._loadSettingsConfigs();
         },
         style: 'display:flex; align-items:center; gap:11px; width:100%; border:none; cursor:pointer; font-family:inherit; font-size:13.5px; font-weight:' + (active ? '700' : '500') + '; padding:10px 12px; border-radius:9px; text-align:left; '
           + (active ? 'background:#15385c; color:#fff;' : 'background:transparent; color:#9fb1c6;'),
@@ -3340,7 +3347,18 @@ class Component extends DCLogic {
       feedFileName: S.feedFileName || '피드 파일',
       feedSummary: S.feedSummary || '',
       onStageFeed: () => this._pickFeedFile(),
+      // 피드 갱신도 드래그&드롭(§UI) — 여러 개 드롭 시 첫 파일만 스테이징(단건 검증→적용 흐름).
+      onFeedDragOver: (e) => { e.preventDefault(); try { e.dataTransfer.dropEffect = 'copy'; } catch (x) {} },
+      onFeedDrop: (e) => {
+        e.preventDefault();
+        const fs = (e.dataTransfer && e.dataTransfer.files) ? Array.from(e.dataTransfer.files) : [];
+        if (!fs.length) return;
+        if (fs.length > 1 && this.flashToast) this.flashToast('피드는 한 번에 1개', '첫 파일만 검증 대기로 올립니다');
+        this._stageFeedFile(fs[0]);
+      },
       onApplyFeed: () => this._applyFeed(),
+      // 게시판 바로가기 — 헤더 우측 상단('로컬 처리' 좌측), 사이드바에서는 제거(§UI).
+      onOpenBoardTab: () => window.open('/board', '_blank'),
       updateLog: updateLogV,
       cveTableRows,
       cveTableTotal: Math.max(S.cveTotal || 0, apiRows.length),
