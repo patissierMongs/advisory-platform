@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from .. import enums, serializers
 from ..audit import record
 from ..config import DATA_DIR, settings
-from ..core.files import evidence_response, safe_filename
+from ..core.files import evidence_list, evidence_response, safe_filename
 from ..db import get_db
 from ..models import Advisory, AdvisoryComment, Asset, Department, Match, Notification
 from ..schemas import AssetAckIn, CommentIn
@@ -560,21 +560,35 @@ def asset_ack(advisory_id: int, body: AssetAckIn, request: Request, db: Session 
 
 @router.post("/comments/{comment_id}/evidence", status_code=201)
 async def upload_comment_evidence(comment_id: int, request: Request,
-                                  file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """댓글 증빙 첨부(무인증). 조치상태 회신 댓글이면 해당 부서 발송이력 ack 증빙으로 동기화."""
+                                  file: list[UploadFile] = File(...), db: Session = Depends(get_db)):
+    """댓글 증빙 첨부(무인증, 다중 파일). 조치상태 회신 댓글이면 부서 발송이력 ack 증빙으로 동기화.
+
+    담당자가 댓글을 여러 개 달아도 전부 가치 있는 데이터가 되도록, 발송이력 쪽 증빙은
+    덮어쓰지 않고 누적(append)한다 — 이전 댓글의 첨부가 사라지지 않는다(§증빙).
+    """
     c = db.get(AdvisoryComment, comment_id)
     if not c:
         raise HTTPException(404, "댓글 없음")
-    content = await file.read()
-    if len(content) > settings.max_upload_bytes:
-        raise HTTPException(413, f"파일 크기 초과(최대 {settings.MAX_UPLOAD_MB}MB)")
-    display_name = safe_filename(file.filename, default="evidence")
-    path = EVIDENCE_DIR / f"comment{comment_id}_{display_name}"
-    path.write_bytes(content)
-    c.evidence_path = str(path)
-    c.evidence_name = display_name
+    new_entries: list[dict] = []
+    seq = len(c.evidence_files or [])
+    for f in file:
+        content = await f.read()
+        if len(content) > settings.max_upload_bytes:
+            raise HTTPException(413, f"파일 크기 초과(최대 {settings.MAX_UPLOAD_MB}MB)")
+        display_name = safe_filename(f.filename, default="evidence")
+        path = EVIDENCE_DIR / f"comment{comment_id}_{seq}_{display_name}"
+        path.write_bytes(content)
+        new_entries.append({"path": str(path), "name": display_name})
+        seq += 1
+    if not new_entries:
+        raise HTTPException(400, "첨부 파일이 없습니다.")
+    c.evidence_files = (c.evidence_files or []) + new_entries
+    # 구형 단일 컬럼 = 첫 파일(하위 호환 표시용). 이미 있으면 유지.
+    if not c.evidence_path:
+        c.evidence_path = new_entries[0]["path"]
+        c.evidence_name = new_entries[0]["name"]
 
-    # 조치상태 회신 + 부서 식별 가능 → (이 권고문, 부서) 최신 발송이력 증빙으로 동기화.
+    # 조치상태 회신 + 부서 식별 가능 → (이 권고문, 부서) 최신 발송이력 증빙에 '누적'.
     synced = None
     if c.ack_status is not None and c.author_department_id is not None:
         n = db.scalar(
@@ -584,27 +598,33 @@ async def upload_comment_evidence(comment_id: int, request: Request,
             .order_by(Notification.id.desc())
         )
         if n is not None:
-            n.ack_evidence_path = str(path)
-            n.ack_evidence_name = display_name
+            base = evidence_list(n.ack_evidence_files, n.ack_evidence_path, n.ack_evidence_name)
+            known = {e["path"] for e in base}
+            n.ack_evidence_files = base + [e for e in new_entries if e["path"] not in known]
+            if not n.ack_evidence_path:
+                n.ack_evidence_path = new_entries[0]["path"]
+                n.ack_evidence_name = new_entries[0]["name"]
             synced = n.id
 
     record(db, action="BOARD_COMMENT_EVIDENCE", actor_id=None, entity_type="advisory",
-           entity_id=c.advisory_id, detail={"comment_id": comment_id, "file": display_name,
-                                            "ack_synced_notification": synced}, request=request)
+           entity_id=c.advisory_id,
+           detail={"comment_id": comment_id, "files": [e["name"] for e in new_entries],
+                   "ack_synced_notification": synced}, request=request)
     db.commit()
     db.refresh(c)
     return {"comment": serializers.comment_item(c), "ack_synced_notification": synced}
 
 
 @router.get("/comments/{comment_id}/evidence")
-def get_comment_evidence(comment_id: int, db: Session = Depends(get_db)):
-    """댓글 증빙 파일 열람 — 안전 타입만 inline, 그 외 첨부(stored-XSS 차단). 첨부 없으면 404."""
+def get_comment_evidence(comment_id: int, i: int = 0, db: Session = Depends(get_db)):
+    """댓글 증빙 파일 열람(?i=순번) — 안전 타입만 inline, 그 외 첨부. 첨부 없으면 404."""
     import os
 
     c = db.get(AdvisoryComment, comment_id)
-    if not c or not c.evidence_path or not os.path.exists(c.evidence_path):
+    files = evidence_list(c.evidence_files, c.evidence_path, c.evidence_name) if c else []
+    if not (0 <= i < len(files)) or not os.path.exists(files[i]["path"]):
         raise HTTPException(404, "증빙 파일이 없습니다")
-    return evidence_response(c.evidence_path, c.evidence_name)
+    return evidence_response(files[i]["path"], files[i]["name"])
 
 
 @router.delete("/comments/{comment_id}", status_code=204)

@@ -12,7 +12,7 @@ from .. import enums
 from ..audit import record
 from ..config import DATA_DIR, settings
 from ..core import notify, remediation
-from ..core.files import evidence_response, safe_filename
+from ..core.files import evidence_list, evidence_response, safe_filename
 from ..db import get_db
 from ..deps import get_actor_id
 from ..models import Advisory, Department, Match, Notification
@@ -205,32 +205,44 @@ def ack(notification_id: int, body: AckPatch, request: Request, db: Session = De
 
 @router.post("/notifications/{notification_id}/evidence")
 async def upload_evidence(notification_id: int, request: Request,
-                          file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """조치 증빙 파일 업로드(§★★★★★)."""
+                          file: list[UploadFile] = File(...), db: Session = Depends(get_db)):
+    """조치 증빙 파일 업로드(§★★★★★, 다중) — 기존 첨부에 '누적'(관리자 추가 업로드)."""
     n = db.get(Notification, notification_id)
     if not n:
         raise HTTPException(404, "발송 내역 없음")
-    content = await file.read()
-    if len(content) > settings.max_upload_bytes:
-        raise HTTPException(413, f"파일 크기 초과(최대 {settings.MAX_UPLOAD_MB}MB)")
-    # 온디스크 경로는 sanitize(traversal 차단), 표시용 원본명은 보존.
-    path = EVIDENCE_DIR / f"notif{notification_id}_{safe_filename(file.filename)}"
-    path.write_bytes(content)
-    n.ack_evidence_path = str(path)
-    n.ack_evidence_name = file.filename
+    base = evidence_list(n.ack_evidence_files, n.ack_evidence_path, n.ack_evidence_name)
+    new_entries: list[dict] = []
+    seq = len(base)
+    for f in file:
+        content = await f.read()
+        if len(content) > settings.max_upload_bytes:
+            raise HTTPException(413, f"파일 크기 초과(최대 {settings.MAX_UPLOAD_MB}MB)")
+        # 온디스크 경로는 sanitize(traversal 차단), 표시용 원본명은 보존.
+        display_name = safe_filename(f.filename, default="evidence")
+        path = EVIDENCE_DIR / f"notif{notification_id}_{seq}_{display_name}"
+        path.write_bytes(content)
+        new_entries.append({"path": str(path), "name": display_name})
+        seq += 1
+    if not new_entries:
+        raise HTTPException(400, "첨부 파일이 없습니다.")
+    n.ack_evidence_files = base + new_entries
+    if not n.ack_evidence_path:
+        n.ack_evidence_path = new_entries[0]["path"]
+        n.ack_evidence_name = new_entries[0]["name"]
     db.flush()
     record(db, action="NOTIFY_EVIDENCE", actor_id=get_actor_id(db), entity_type="notification",
-           entity_id=n.id, detail={"file": file.filename}, request=request)
+           entity_id=n.id, detail={"files": [e["name"] for e in new_entries]}, request=request)
     db.commit()
     return notification_item(n)
 
 
 @router.get("/notifications/{notification_id}/evidence")
-def get_evidence(notification_id: int, db: Session = Depends(get_db)):
-    """조치 증빙 파일 열람 — 안전 타입만 inline, 그 외 첨부(파일명 헤더 안전화). 첨부 없으면 404."""
+def get_evidence(notification_id: int, i: int = 0, db: Session = Depends(get_db)):
+    """조치 증빙 파일 열람(?i=순번) — 안전 타입만 inline, 그 외 첨부. 첨부 없으면 404."""
     import os
 
     n = db.get(Notification, notification_id)
-    if not n or not n.ack_evidence_path or not os.path.exists(n.ack_evidence_path):
+    files = evidence_list(n.ack_evidence_files, n.ack_evidence_path, n.ack_evidence_name) if n else []
+    if not (0 <= i < len(files)) or not os.path.exists(files[i]["path"]):
         raise HTTPException(404, "증빙 파일이 없습니다")
-    return evidence_response(n.ack_evidence_path, n.ack_evidence_name)
+    return evidence_response(files[i]["path"], files[i]["name"])

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from .. import enums, serializers
 from ..audit import record
+from ..core.files import evidence_list
 from ..db import get_db
 from ..models import Advisory, Asset, MessageTemplate, Notification
 from ..schemas import MessageTemplateIn
@@ -75,6 +76,7 @@ def history_advisories(db: Session = Depends(get_db)):
         for n in sorted(ns, key=lambda x: (x.department.name if x.department else "")):
             counts[n.ack_status.value] = counts.get(n.ack_status.value, 0) + 1
             n_owners = sorted({owners.get(aid) for aid in (n.asset_ids or [])} - {None, "자동배포"})
+            ev_files = evidence_list(n.ack_evidence_files, n.ack_evidence_path, n.ack_evidence_name)
             depts.append({
                 "notification_id": n.id,
                 "department_id": n.department_id,
@@ -86,8 +88,10 @@ def history_advisories(db: Session = Depends(get_db)):
                 "ack_note": n.ack_note,
                 "ack_by": n.ack_by,
                 "ack_updated_at": serializers._d(n.ack_updated_at),
-                "evidence": n.ack_evidence_name,
-                "has_evidence": n.ack_evidence_path is not None,
+                "evidence": ev_files[0]["name"] if ev_files else None,   # 하위 호환(첫 파일)
+                "has_evidence": bool(ev_files),
+                # 다중 증빙 — 열람 URL 은 …/notifications/{id}/evidence?i={i}
+                "evidence_files": [{"name": f["name"], "i": idx} for idx, f in enumerate(ev_files)],
                 "asset_count": len(n.asset_ids or []),
                 "status": n.status.value,
                 "reminder_count": n.reminder_count,

@@ -189,7 +189,11 @@ window.resetFilter = function(){ FILTER.q=""; FILTER.excludeDone=true; renderLis
 
 function rowHtml(a){
   return `<div class="card row" onclick="location.hash='#/a/${a.id}'">
-    <div class="ttl">${esc(a.title||a.doc_no||"제목 없음")}</div>
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <div class="ttl" style="flex:1;min-width:0">${esc(a.title||a.doc_no||"제목 없음")}</div>
+      <a class="btn-ghost" style="flex-shrink:0;font-size:11.5px;padding:4px 10px" href="/admin#/a/${a.id}"
+         onclick="event.stopPropagation()" title="관리자 화면에서 이 권고문 PDF 분석(추출·조회·매칭)으로 이동">🔍 PDF 분석</a>
+    </div>
     <div class="meta">
       ${sevBadge(a.max_severity,a.max_severity_ko)}
       ${slaBadge(a.sla_status)}
@@ -287,9 +291,10 @@ async function renderDetail(id){
         ${c.is_admin?`<span class="chip" style="background:#e8effb;color:#2f5bd0">관리자</span>`:""}
         ${c.ack_status?`<span class="ack ack-${c.ack_status}">${ACK_KO[c.ack_status]||c.ack_status}</span>`:""}
         <span class="when"> · ${fmtDate(c.created_at)} ${esc((c.created_at||"").slice(11,16))}</span>
-        ${c.has_evidence?`<button class="btn-ghost" style="position:absolute;right:0;top:0;font-size:11.5px;padding:4px 10px" data-name="${esc(c.evidence||"증빙 파일")}" onclick="openEvidence(${c.id}, this.dataset.name)">📎 첨부 보기</button>`:""}
         <div class="body">${esc(c.body)}</div>
-        ${c.has_evidence?`<a class="evlink" href="${API}/comments/${c.id}/evidence" target="_blank" rel="noopener">📎 ${esc(c.evidence||"증빙 파일")}</a>`:""}
+        ${(c.evidence_files||[]).length?`<div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:6px">${
+          c.evidence_files.map(f=>`<button class="evlink" style="border:none;cursor:pointer;font-family:inherit" data-name="${esc(f.name)}" onclick="openEvidence(${c.id}, ${f.i}, this.dataset.name)" title="클릭하여 팝업으로 열람">📎 ${esc(f.name)}</button>`).join("")
+        }</div>`:""}
       </div>`).join("") : `<div class="muted" style="font-size:12.5px;padding:8px 0">아직 댓글이 없습니다. 첫 회신을 남겨주세요.</div>`;
 
     const deptOpts = DEPTS.map(x=>`<option value="${esc(x.name)}">`).join("");
@@ -297,7 +302,10 @@ async function renderDetail(id){
     app.innerHTML = `
       <div class="back" onclick="location.hash='#/'">← 목록</div>
       <div class="card">
-        <div class="ttl" style="font-size:17px">${esc(a.title||a.doc_no||"제목 없음")}</div>
+        <div style="display:flex;align-items:flex-start;gap:10px">
+          <div class="ttl" style="font-size:17px;flex:1;min-width:0">${esc(a.title||a.doc_no||"제목 없음")}</div>
+          <a class="btn-ghost" style="flex-shrink:0" href="/admin#/a/${id}" title="관리자 화면에서 이 권고문 PDF 분석(추출·조회·매칭)으로 이동">🔍 PDF 분석</a>
+        </div>
         <div class="meta" style="margin-bottom:6px">
           ${sevBadge(a.max_severity,a.max_severity_ko)} ${slaBadge(a.sla_status)}
           ${a.d_day!=null?`<span class="chip">${dday(a.d_day)}</span>`:""}
@@ -311,7 +319,7 @@ async function renderDetail(id){
         </div>
         ${impactLine(a)}
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-          <a class="btn-ghost" href="${API}/advisories/${id}/file" target="_blank" rel="noopener">📄 원문 PDF 새 탭으로</a>
+          <a class="btn-ghost" href="${API}/advisories/${id}/file">📄 원문 PDF 열기</a>
           <button class="btn-ghost" onclick="togglePdf(${id})">📄 여기서 보기 / 닫기</button>
         </div>
         <div id="pdfbox"></div><!-- 원문 인라인 뷰어는 기본으로 펼침(§UI) — 아래 렌더 직후 togglePdf 호출 -->
@@ -346,9 +354,9 @@ async function renderDetail(id){
               <option value="DONE">조치완료</option>
               <option value="UNABLE">조치불가</option>
             </select></div>
-          <div><label class="f">증빙 파일 (선택 — 패치 결과 캡처 등)</label>
+          <div><label class="f">증빙 파일 (선택 — 여러 개 선택 가능)</label>
             <label class="filebtn"><span id="c_fname">📎 파일 선택</span>
-              <input id="c_file" type="file" style="display:none" onchange="onFilePick(this)"></label>
+              <input id="c_file" type="file" multiple style="display:none" onchange="onFilePick(this)"></label>
           </div>
         </div>
         <div style="text-align:right;margin-top:12px"><button class="btn" id="c_submit" onclick="submitComment(${id})">댓글 등록</button></div>
@@ -376,22 +384,22 @@ async function submitComment(id){
   if(matched) payload.department_id = matched.id; else if(deptName) payload.department_name = deptName;
   if(checkedIds.length) payload.match_ids = checkedIds;
   const fileInput = document.getElementById("c_file");
-  const file = fileInput && fileInput.files && fileInput.files[0];
+  const files = (fileInput && fileInput.files) ? [...fileInput.files] : [];
   const btn = document.getElementById("c_submit"); btn.disabled = true; btn.textContent = "등록 중…";
   try{
     const res = await api("/advisories/"+id+"/comments", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-    if(file){
+    if(files.length){
       btn.textContent = "증빙 업로드 중…";
-      const fd = new FormData(); fd.append("file", file);
+      const fd = new FormData(); files.forEach(f=>fd.append("file", f));   // 다중 첨부(§증빙)
       await api("/comments/"+res.comment.id+"/evidence", {method:"POST", body:fd});
     }
     renderDetail(id);
   }catch(e){ errEl.innerHTML = `<div class="err">${esc(e.message)}</div>`; btn.disabled=false; btn.textContent="댓글 등록"; }
 }
 window.onFilePick = function(inp){
-  const f = inp.files && inp.files[0];
+  const fs = inp.files ? [...inp.files] : [];
   const lbl = document.getElementById("c_fname");
-  if(lbl) lbl.textContent = f ? "📎 "+f.name : "📎 파일 선택";
+  if(lbl) lbl.textContent = fs.length ? ("📎 "+fs[0].name+(fs.length>1?` 외 ${fs.length-1}개`:"")) : "📎 파일 선택";
 };
 
 window.toggleAllAck = function(box){
@@ -407,10 +415,11 @@ window.togglePdf = function(id){
   box.dataset.open = "1";
 };
 
-// 댓글 증빙 팝업(§UI) — 새 탭 대신 게시판 안에서 바로 확인. 안전 타입만 inline 서빙됨.
-window.openEvidence = function(cid, name){
+// 댓글 증빙 팝업(§UI·§증빙) — 파일명 클릭 → 게시판 안 팝업으로 확인(순번 i 지원).
+window.openEvidence = function(cid, i, name){
   const old = document.getElementById("evmodal");
   if(old) old.remove();
+  const url = `${API}/comments/${cid}/evidence?i=${i||0}`;
   const wrap = document.createElement("div");
   wrap.id = "evmodal";
   wrap.style.cssText = "position:fixed;inset:0;background:rgba(15,29,46,.55);display:flex;align-items:center;justify-content:center;z-index:80;padding:36px";
@@ -420,10 +429,10 @@ window.openEvidence = function(cid, name){
         <span style="font-size:13px;font-weight:700;color:#15294a">📎 ${esc(name||"증빙 파일")}</span>
         <button class="btn-ghost" style="padding:5px 12px" onclick="document.getElementById('evmodal').remove()">닫기 ✕</button>
       </div>
-      <iframe src="${API}/comments/${cid}/evidence" title="증빙 파일"
+      <iframe src="${url}" title="증빙 파일"
         style="width:100%;height:70vh;border:none;background:#525659"></iframe>
       <div style="display:flex;justify-content:flex-end;gap:8px;padding:11px 18px;border-top:1px solid var(--line)">
-        <a class="btn-ghost" href="${API}/comments/${cid}/evidence" target="_blank" rel="noopener">새 탭에서 열기</a>
+        <a class="btn-ghost" href="${url}">원본 열기</a>
       </div>
     </div>`;
   wrap.addEventListener("click", ()=>wrap.remove());

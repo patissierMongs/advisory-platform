@@ -66,9 +66,9 @@
         <span style="font-size:12px; color:#8a98ab; font-weight:500;">{{ pageSub }}</span>
       </div>
       <div style="display:flex; align-items:center; gap:14px;">
-        <button onClick="{{ onOpenBoardTab }}" title="내부 게시판 새 탭으로 열기 — 사내 누구나(무인증) 공개 권고문 열람·회신" style="display:flex; align-items:center; gap:7px; background:#fff; border:1px solid #d3dbe8; border-radius:8px; padding:6px 12px; font-size:12px; color:#43536b; font-weight:600; cursor:pointer; font-family:inherit;">
+        <button onClick="{{ onOpenBoardTab }}" title="내부 게시판으로 이동 — 사내 누구나(무인증) 공개 권고문 열람·회신" style="display:flex; align-items:center; gap:7px; background:#fff; border:1px solid #d3dbe8; border-radius:8px; padding:6px 12px; font-size:12px; color:#43536b; font-weight:600; cursor:pointer; font-family:inherit;">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M5 4h14v16H5z" stroke="#5a6b86" stroke-width="1.7" stroke-linejoin="round"/><path d="M8 8h8M8 12h8M8 16h5" stroke="#5a6b86" stroke-width="1.7" stroke-linecap="round"/></svg>
-          게시판 ↗
+          게시판
         </button>
         <div style="display:flex; align-items:center; gap:7px; background:#f4f6f9; border:1px solid #e3e8ef; border-radius:8px; padding:6px 11px;">
           <span style="width:7px; height:7px; border-radius:50%; background:#0f766e;"></span>
@@ -215,6 +215,15 @@
                         </sc-if>
                         <button onClick="{{ a.onProcess }}" style="background:#0f766e; color:#fff; border:none; border-radius:8px; padding:7px 13px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap;">처리 →</button>
                       </div>
+                    </div>
+                    <!-- 처리 단계 진행 막대(§UI) — 접수→CVE 추출→DB 조회→자산 매칭→발송·완료 -->
+                    <div style="display:flex; align-items:center; gap:10px; margin-top:12px; padding-top:11px; border-top:1px solid #f2f5f9;">
+                      <div style="flex:1; display:flex; gap:4px;">
+                        <sc-for list="{{ a.stageSegs }}" as="sg" hint-placeholder-count="5">
+                          <span title="{{ sg.title }}" style="{{ sg.style }}"></span>
+                        </sc-for>
+                      </div>
+                      <span style="font-size:10.5px; font-weight:700; color:#5a6b86; flex-shrink:0;">{{ a.stageNow }}</span>
                     </div>
                   </div>
                 </sc-for>
@@ -1106,8 +1115,13 @@
                         <button onClick="{{ h.ackProg.onClick }}" style="{{ h.ackProg.style }}">{{ h.ackProg.label }}</button>
                         <button onClick="{{ h.ackUnable.onClick }}" style="{{ h.ackUnable.style }}">{{ h.ackUnable.label }}</button>
                       </span>
-                      <span style="display:flex; justify-content:center;">
-                        <button onClick="{{ h.onEvidence }}" style="{{ h.evidenceStyle }}" title="조치 증빙 파일 업로드">{{ h.evidenceLabel }}</button>
+                      <span style="display:flex; justify-content:center; align-items:flex-start; gap:5px;">
+                        <span style="display:flex; flex-direction:column; gap:3px; min-width:0;">
+                          <sc-for list="{{ h.evFiles }}" as="ef" hint-placeholder-count="1">
+                            <button onClick="{{ ef.onOpen }}" style="{{ ef.style }}" title="클릭하여 열람: {{ ef.name }}">📎 {{ ef.name }}</button>
+                          </sc-for>
+                        </span>
+                        <button onClick="{{ h.onEvidence }}" title="증빙 추가 업로드(여러 파일 선택 가능) — 기존 첨부에 누적" style="flex-shrink:0; font-family:inherit; font-size:11px; font-weight:700; width:22px; height:22px; border-radius:6px; cursor:pointer; background:#fff; color:#5a6b86; border:1px solid #d3dbe8; padding:0;">＋</button>
                       </span>
                       <span style="display:flex; justify-content:flex-end;">
                         <button onClick="{{ h.onOpenPdf }}" style="display:flex; align-items:center; gap:4px; background:#fff; color:#b42318; border:1px solid #f3c9c4; border-radius:7px; padding:5px 8px; font-size:11px; font-weight:600; cursor:pointer; font-family:inherit;">
@@ -1366,6 +1380,24 @@
     </div>
   </sc-if>
 
+  <!-- ===== 증빙 열람 모달(§증빙) ===== -->
+  <sc-if value="{{ evModalOpen }}" hint-placeholder-val="">
+    <div onClick="{{ closeEv }}" style="position:fixed; inset:0; background:rgba(15,29,46,.55); display:flex; align-items:center; justify-content:center; z-index:82; padding:40px;">
+      <div onClick="{{ stopProp }}" style="width:860px; max-width:100%; max-height:92vh; background:#fff; border-radius:14px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 24px 70px rgba(0,0,0,.35);">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 18px; border-bottom:1px solid #eef1f5; background:#fafbfd;">
+          <span style="font-size:13px; font-weight:700; color:#15294a;">📎 {{ evModalName }}</span>
+          <button onClick="{{ closeEv }}" style="width:30px; height:30px; border-radius:7px; background:#fff; border:1px solid #e1e7ef; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="#5a6b86" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div style="flex:1; min-height:0; background:#525659;">{{ evModalFrame }}</div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; padding:11px 18px; border-top:1px solid #eef1f5;">
+          <button onClick="{{ closeEv }}" style="background:#0f766e; color:#fff; border:none; border-radius:8px; padding:9px 20px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;">닫기</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
   <!-- ===== TOAST ===== -->
   <sc-if value="{{ toastOpen }}" hint-placeholder-val="">
     <div style="position:fixed; right:24px; bottom:24px; z-index:90; width:360px; background:#fff; border:1px solid #e1e7ef; border-left:4px solid {{ toastAccent }}; border-radius:11px; box-shadow:0 14px 40px rgba(15,29,46,.22); padding:15px 17px;">
@@ -1410,6 +1442,7 @@ class Component extends DCLogic {
     assetImported: false,
     toast: null,
     pdfModal: null,
+    evModal: null,         // 증빙 열람 모달 {url, name} (§증빙)
     reportModal: null,     // 조치결과 보고서 웹 모달 {advisoryId}
     pdfView: null,         // STEP2 원문 뷰어 {available, scale, pages, boxes}
     pdfPage: 0,
@@ -1487,7 +1520,9 @@ class Component extends DCLogic {
   componentDidMount() {
     this._prev = { sent: {}, excluded: {}, step: this.state.step };
     this._busy = {};
-    this.load();
+    // 딥링크(§UI): /admin#/a/{id} → 해당 권고문 분석(상세)으로 직행 — 게시판 '분석' 바로가기용.
+    const dl = /^#\/a\/(\d+)/.exec(window.location.hash || '');
+    this.load().then(() => { if (dl) this._openDetail(Number(dl[1])); });
     this._startPolling();
   }
 
@@ -1500,6 +1535,15 @@ class Component extends DCLogic {
     if (this._pollTimer) return;
     this._pollTimer = setInterval(() => {
       const S = this.state;
+      // 발송 이력 실시간 반영(§UI) — 탭이 열려 있는 동안 5초 주기로 이력·롤업·댓글수 갱신.
+      if (S.nav === 'history') {
+        this._histTick = (this._histTick || 0) + 1;
+        if (this._histTick % 2 === 0) {
+          this._refreshHistory();
+          this._loadCommentCounts().then(m => this.setState({ apiCommentCounts: m }));
+        }
+        return;
+      }
       if (S.nav !== 'process') return;
       const recent = S.apiRecent || [];
       const anyProcessing = recent.some(a => a.status === 'EXTRACTING' || ['queued', 'regex'].indexOf(a.extract_phase) >= 0);
@@ -1625,7 +1669,7 @@ class Component extends DCLogic {
 
   _report(kind, advisoryId) {
     const id = advisoryId || this.state.historySel || this.state.advPick || this._advisoryId;
-    if (id) window.open('/api/v1/advisories/' + id + '/report.' + kind, '_blank');
+    if (id) window.location.href = '/api/v1/advisories/' + id + '/report.' + kind;   // 현재 창(§UI) — xlsx 는 다운로드로 페이지 유지
   }
 
   // 발송이력 우측 상세 행 — 선택 권고문(롤업)의 부서별 조치현황을 행 데이터로.
@@ -1649,9 +1693,15 @@ class Component extends DCLogic {
         dept: d.department || '-', owner: d.owner || '-', assets: (d.asset_count || 0) + '대',
         status: st[0], statusStyle: 'font-size:11px; font-weight:700; padding:3px 10px; border-radius:6px; ' + m[st[1]],
         ackDone: ackBtn('DONE', '완료'), ackProg: ackBtn('IN_PROGRESS', '진행'), ackUnable: ackBtn('UNABLE', '불가'),
-        evidenceLabel: d.has_evidence ? '📎 ✓' : '📎 증빙',
-        evidenceStyle: 'font-family:inherit; font-size:11px; font-weight:600; padding:5px 8px; border-radius:7px; cursor:pointer; '
-          + (d.has_evidence ? 'background:#e6f4f2;color:#0f766e;border:1px solid #b8e0da;' : 'background:#fff;color:#5a6b86;border:1px solid #d3dbe8;'),
+        // 증빙(§증빙): 업로드된 파일명 목록(클릭=열람 모달, 세로 나열) + 우측 '＋' 추가 업로드.
+        hasEvFiles: (d.evidence_files || []).length > 0,
+        evFiles: (d.evidence_files || []).map(f => ({
+          name: f.name,
+          style: 'display:block; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; '
+            + 'font-family:inherit; font-size:10.5px; font-weight:600; padding:3px 8px; border-radius:6px; cursor:pointer; '
+            + 'background:#e6f4f2; color:#0f766e; border:1px solid #b8e0da;',
+          onOpen: () => this._openEvidence(d.notification_id, f.i, f.name),
+        })),
         onEvidence: () => this._uploadEvidence(d.notification_id),
         onOpenPdf: () => this._openPdf(adv.id, adv.title || adv.doc_no, adv.doc_no),
         onOpenBoard: () => this._openBoard(adv.board_published ? adv.id : null),
@@ -1708,7 +1758,7 @@ class Component extends DCLogic {
       onRemind: () => this._remind(sel),
       onReportXlsx: () => this._report('xlsx', sel),
       onReportHtml: () => this._openReport(sel),
-      onOpenHistoryConsole: () => window.open('/admin/history', '_blank'),
+      onOpenHistoryConsole: () => { window.location.href = '/admin/history'; },   // 현재 창(§UI)
     };
   }
 
@@ -1730,7 +1780,7 @@ class Component extends DCLogic {
   _openBoard(advisoryId) {
     if (!advisoryId) { if (this.flashToast) this.flashToast('게시판 미게시', '아직 게시판에 공개되지 않은 권고문입니다'); return; }
     this._markSeen(advisoryId);
-    window.open('/board#/a/' + advisoryId, '_blank');
+    window.location.href = '/board#/a/' + advisoryId;   // 현재 창(§UI)
   }
 
   // 신규 댓글 추적 — localStorage 에 권고문별 '확인한 댓글 수' 저장.
@@ -1881,21 +1931,30 @@ class Component extends DCLogic {
       .catch(() => { if (this.flashToast) this.flashToast('피드 적용 실패', '다시 시도하세요'); });
   }
 
-  // 조치 증빙 파일 업로드(§A4) — 임시 file input 으로 OS 파일선택 → multipart 업로드.
+  // 조치 증빙 파일 업로드(§A4·§증빙) — 다중 선택, 기존 첨부에 누적(관리자 추가 업로드).
   _uploadEvidence(notifId) {
     const inp = document.createElement('input');
     inp.type = 'file';
+    inp.multiple = true;
     inp.onchange = () => {
-      const f = inp.files && inp.files[0];
-      if (!f) return;
+      const fs = inp.files ? Array.from(inp.files) : [];
+      if (!fs.length) return;
       const fd = new FormData();
-      fd.append('file', f);
+      fs.forEach(f => fd.append('file', f));
       this.api('POST', '/notifications/' + notifId + '/evidence', fd, true)
         .then(() => this._refreshHistory())
-        .then(() => { if (this.flashToast) this.flashToast('증빙 업로드', f.name); })
+        .then(() => { if (this.flashToast) this.flashToast('증빙 추가', fs.length + '개 파일 누적 첨부'); })
         .catch(e => console.error('[evidence]', e));
     };
     inp.click();
+  }
+
+  // 증빙 열람 모달(§증빙) — 파일명 클릭 → 페이지 이탈 없이 확인.
+  _openEvidence(notifId, fileIndex, name) {
+    this.setState({ evModal: {
+      url: '/api/v1/notifications/' + notifId + '/evidence?i=' + fileIndex,
+      name: name || '증빙 파일',
+    } });
   }
 
   _setUploadMeta(key, value) {
@@ -3139,6 +3198,32 @@ class Component extends DCLogic {
       else if (a.status === 'NEEDS_CVE_UPDATE') { bg = '#fef3e2'; fg = '#b45309'; }
       else if (a.status === 'EXTRACTED' || a.status === 'MATCHED' || a.status === 'NOTIFYING' || a.status === 'COMPLETED') { bg = '#e6f4f2'; fg = '#0f766e'; }
       const showSummary = !processing && (phase === 'done' || a.status === 'EXTRACTED' || a.status === 'NEEDS_CVE_UPDATE' || a.status === 'MATCHED' || a.status === 'NOTIFYING' || a.status === 'COMPLETED');
+      // ── 처리 단계 진행 막대(§UI) — 카드 하단 5구간 색상 막대로 어디까지 왔는지 표시.
+      // 구간: 접수 → CVE 추출 → DB 조회 → 자산 매칭 → 발송·완료.
+      const STAGE_LABELS = ['접수', 'CVE 추출', 'DB 조회', '자산 매칭', '발송·완료'];
+      let done = 1, active = -1, blocked = -1, errAt = -1;
+      if (processing) { done = 1; active = 2; }
+      else if (isErr) { done = 1; errAt = 2; }
+      else if (a.status === 'UPLOADED') { done = 1; }
+      else if (a.status === 'NEEDS_CVE_UPDATE') { done = 2; blocked = 3; }
+      else if (a.status === 'EXTRACTED') { done = 3; }
+      else if (a.status === 'MATCHED') { done = 4; }
+      else if (a.status === 'NOTIFYING') { done = 4; active = 5; }
+      else if (a.status === 'COMPLETED' || a.status === 'ARCHIVED') { done = 5; }
+      const stageSegs = STAGE_LABELS.map((label, si) => {
+        const num = si + 1;
+        let color = '#e3e8ef';                                   // 미도달(회색)
+        if (num <= done) color = '#0f766e';                      // 완료(청록)
+        if (num === active) color = '#7a5a9a';                   // 진행 중(보라)
+        if (num === blocked) color = '#e8a33d';                  // 대기·차단(호박)
+        if (num === errAt) color = '#d9544a';                    // 실패(빨강)
+        return { title: 'STEP ' + num + ' · ' + label,
+                 style: 'flex:1; height:5px; border-radius:3px; background:' + color + ';' };
+      });
+      const stageNow = errAt > 0 ? (STAGE_LABELS[errAt - 1] + ' 실패')
+        : blocked > 0 ? (STAGE_LABELS[blocked - 1] + ' 대기')
+        : active > 0 ? (STAGE_LABELS[active - 1] + ' 진행 중')
+        : done >= 5 ? '완료' : (STAGE_LABELS[done - 1] + ' 완료');
       return {
         id: a.id, title: a.title || '보안권고문', docNo: a.doc_no || '-', source: a.source_org || '발신기관',
         received: this._fmtDate(a.received_at), due: a.due_at ? this._fmtDate(a.due_at) : '-',
@@ -3148,6 +3233,8 @@ class Component extends DCLogic {
         cveSummary: showSummary ? ('CVE ' + (a.extracted || 0) + '건 · 조회 ' + (a.found || 0) + ' · 미등록 ' + (a.not_found || 0)) : '',
         cardStyle: 'background:#fff; border:1px solid ' + (isErr ? '#f3c9c4' : '#e1e7ef') + '; border-radius:12px; padding:15px 18px;',
         canRetry: isErr,
+        stageSegs,
+        stageNow,
         onOpenPdf: () => this._openPdf(a.id, a.title, a.doc_no),
         onRetry: () => this._retryExtract(a.id),
         onProcess: () => this._openDetail(a.id),
@@ -3393,7 +3480,7 @@ class Component extends DCLogic {
       },
       onApplyFeed: () => this._applyFeed(),
       // 게시판 바로가기 — 헤더 우측 상단('로컬 처리' 좌측), 사이드바에서는 제거(§UI).
-      onOpenBoardTab: () => window.open('/board', '_blank'),
+      onOpenBoardTab: () => { window.location.href = '/board'; },   // 현재 창(§UI)
       updateLog: updateLogV,
       cveTableRows,
       cveTableTotal: Math.max(S.cveTotal || 0, apiRows.length),
@@ -3497,17 +3584,26 @@ class Component extends DCLogic {
       // 조치결과 보고서 웹 모달(§4) — 엑셀과 동일 설계 HTML 보고서를 인라인 표시.
       reportModalOpen: !!S.reportModal,
       reportModalSrc: S.reportModal ? ('/api/v1/advisories/' + S.reportModal.advisoryId + '/report.html') : '',
-      reportXlsx: () => { const m = this.state.reportModal; if (m) window.open('/api/v1/advisories/' + m.advisoryId + '/report.xlsx', '_blank'); },
-      reportOpenNew: () => { const m = this.state.reportModal; if (m) window.open('/api/v1/advisories/' + m.advisoryId + '/report.html', '_blank'); },
+      reportXlsx: () => { const m = this.state.reportModal; if (m) window.location.href = '/api/v1/advisories/' + m.advisoryId + '/report.xlsx'; },
+      reportOpenNew: () => { const m = this.state.reportModal; if (m) window.location.href = '/api/v1/advisories/' + m.advisoryId + '/report.html'; },
       closeReport: () => this.setState({ reportModal: null }),
+
+      // 증빙 열람 모달(§증빙)
+      evModalOpen: !!S.evModal,
+      evModalName: S.evModal ? S.evModal.name : '',
+      evModalFrame: S.evModal ? React.createElement('iframe', {
+        src: S.evModal.url, title: '증빙 파일',
+        style: { width: '100%', height: '70vh', border: 'none', display: 'block' },
+      }) : null,
+      closeEv: () => this.setState({ evModal: null }),
 
       // pdf viewer modal — 실제 PDF 임베드 + 다운로드/새탭
       pdfModalOpen: !!S.pdfModal,
       pdfTitle: S.pdfModal ? S.pdfModal.title : '',
       pdfDocNo: S.pdfModal ? S.pdfModal.docNo : '',
       pdfModalFrame,
-      pdfDownload: () => { const m = this.state.pdfModal; if (m) window.open('/api/v1/advisories/' + m.advisoryId + '/file?download=1', '_blank'); },
-      pdfOpenNew: () => { const m = this.state.pdfModal; if (m) window.open('/api/v1/advisories/' + m.advisoryId + '/file', '_blank'); },
+      pdfDownload: () => { const m = this.state.pdfModal; if (m) window.location.href = '/api/v1/advisories/' + m.advisoryId + '/file?download=1'; },
+      pdfOpenNew: () => { const m = this.state.pdfModal; if (m) window.location.href = '/api/v1/advisories/' + m.advisoryId + '/file'; },
       closePdf: () => this.setState({ pdfModal: null }),
       stopProp: (e) => { e.stopPropagation(); },
 

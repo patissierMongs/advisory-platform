@@ -209,11 +209,36 @@ function ackPicker(d){
   </select>`;
 }
 function evCell(d, kind){
-  // kind: 'notif' → 발송이력 증빙(GET /notifications/{id}/evidence)
-  const view = d.has_evidence ? `<a class="ev" href="${API}/notifications/${d.notification_id}/evidence" target="_blank" rel="noopener">📎 ${esc(d.evidence||"증빙")}</a>` : `<span class="pill">없음</span>`;
-  const up = `<label class="ghost" style="margin-left:6px">⬆ 첨부<input type="file" style="display:none" onchange="uploadEvidence(${d.notification_id},this)"></label>`;
-  return view + up;
+  // 증빙(§증빙): 업로드된 파일명 목록(클릭=팝업 열람, 세로 나열) + 우측 '＋' 추가 업로드(다중·누적).
+  const files = (d.evidence_files||[]).map(f =>
+    `<button class="ev" style="border:none;font-family:inherit;display:block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left" data-name="${esc(f.name)}" onclick="openEvidence(${d.notification_id}, ${f.i}, this.dataset.name)" title="클릭하여 열람: ${esc(f.name)}">📎 ${esc(f.name)}</button>`).join("");
+  const view = files ? `<div style="display:flex;flex-direction:column;gap:3px">${files}</div>` : `<span class="pill">없음</span>`;
+  const up = `<label class="ghost" style="flex-shrink:0" title="증빙 추가 업로드(여러 파일 선택 가능) — 기존 첨부에 누적">＋<input type="file" multiple style="display:none" onchange="uploadEvidence(${d.notification_id},this)"></label>`;
+  return `<div style="display:flex;align-items:flex-start;gap:6px">${view}${up}</div>`;
 }
+
+// 증빙 팝업 열람 — 페이지 이탈 없이 확인(안전 타입만 inline 서빙).
+window.openEvidence = function(nid, i, name){
+  const old = document.getElementById("evmodal");
+  if(old) old.remove();
+  const url = `${API}/notifications/${nid}/evidence?i=${i||0}`;
+  const wrap = document.createElement("div");
+  wrap.id = "evmodal";
+  wrap.style.cssText = "position:fixed;inset:0;background:rgba(15,29,46,.55);display:flex;align-items:center;justify-content:center;z-index:80;padding:36px";
+  wrap.innerHTML = `
+    <div style="width:860px;max-width:100%;max-height:92vh;background:#fff;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.35)" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--line);background:#fafbfd">
+        <span style="font-size:13px;font-weight:700">📎 ${esc(name||"증빙 파일")}</span>
+        <button class="ghost" onclick="document.getElementById('evmodal').remove()">닫기 ✕</button>
+      </div>
+      <iframe src="${url}" title="증빙 파일" style="width:100%;height:70vh;border:none;background:#525659"></iframe>
+      <div style="display:flex;justify-content:flex-end;padding:11px 18px;border-top:1px solid var(--line)">
+        <a class="ghost" href="${url}">원본 열기</a>
+      </div>
+    </div>`;
+  wrap.addEventListener("click", ()=>wrap.remove());
+  document.body.appendChild(wrap);
+};
 
 function presetBox(advId){
   const opts = TEMPLATES.map(t=>`<option value="${t.id}">${esc(t.title)}</option>`).join("");
@@ -248,8 +273,8 @@ function renderAdvDetail(a){
         ${a.source_org?`<span>· ${esc(a.source_org)}</span>`:""}
         ${a.receive_channel?`<span>· ${CH[a.receive_channel]||a.receive_channel}</span>`:""}
         <span>· 기한 ${fmtDate(a.due_at)} ${a.d_day!=null?`(${dday(a.d_day)})`:""}</span>
-        <a class="ev" href="${API}/advisories/${a.id}/file" target="_blank" rel="noopener">📄 원문 PDF</a>
-        ${a.board_published?`<a class="ev" href="/board#/a/${a.id}" target="_blank" rel="noopener">💬 게시판</a>`:`<span class="pill">게시판 미게시</span>`}
+        <a class="ev" href="${API}/advisories/${a.id}/file">📄 원문 PDF</a>
+        ${a.board_published?`<a class="ev" href="/board#/a/${a.id}">💬 게시판</a>`:`<span class="pill">게시판 미게시</span>`}
       </div>
       <div style="margin-top:13px;font-weight:700">조치 현황 — 완료 ${a.done}/${a.dept_total} (${a.done_rate}%) · 회신 ${a.responded_rate}%</div>
       ${barHtml(a)}
@@ -319,11 +344,11 @@ window.changeAck = async function(nid, status, selEl){
 };
 
 window.uploadEvidence = async function(nid, inp){
-  const f = inp.files && inp.files[0]; if(!f) return;
-  const fd = new FormData(); fd.append("file", f);
+  const fs = inp.files ? [...inp.files] : []; if(!fs.length) return;
+  const fd = new FormData(); fs.forEach(f=>fd.append("file", f));   // 다중 첨부·누적(§증빙)
   try{
     await api(`/notifications/${nid}/evidence`, {method:"POST", body:fd});
-    toast("증빙을 첨부했습니다.");
+    toast(`증빙 ${fs.length}개를 추가했습니다.`);
     await boot();
   }catch(e){ alert(e.message); }
 };
@@ -377,6 +402,14 @@ window.resend = async function(advId){
 };
 
 boot();
+
+// 실시간 반영(§UI) — 10초 주기로 조용히 재조회. 입력 중이거나 증빙 팝업이 열려 있으면 건너뛴다.
+setInterval(async ()=>{
+  if(document.getElementById("evmodal")) return;
+  const ae = document.activeElement;
+  if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+  try{ const h = await api("/history/advisories"); ADVS = h.items; render(); }catch(e){ /* 다음 주기에 재시도 */ }
+}, 10000);
 </script>
 </body>
 </html>

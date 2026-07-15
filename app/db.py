@@ -58,8 +58,10 @@ _ADDED_COLUMNS: dict[str, list[tuple[str, str]]] = {
                  ("due_source", "VARCHAR(10)"), ("channel_source", "VARCHAR(10)"),
                  ("source_origin", "VARCHAR(20)"), ("source_candidates", "JSON"),
                  ("rel_path", "TEXT")],
-    "advisory_comment": [("evidence_path", "TEXT"), ("evidence_name", "VARCHAR(200)")],
+    "advisory_comment": [("evidence_path", "TEXT"), ("evidence_name", "VARCHAR(200)"),
+                         ("evidence_files", "JSON")],
     "cve": [("is_manual", "BOOLEAN DEFAULT 0 NOT NULL")],
+    "notification": [("ack_evidence_files", "JSON")],
     "match": [("ack_status", "VARCHAR(20) DEFAULT 'NONE' NOT NULL"), ("ack_by", "VARCHAR(80)"),
               ("ack_note", "TEXT"), ("ack_at", "DATETIME")],
 }

@@ -125,7 +125,8 @@ def test_comment_evidence_upload_syncs_and_sanitizes_filename(client, fixture_id
         n = db.get(Notification, nid)
         saved = Path(c.evidence_path)
         assert saved.parent == EVIDENCE_DIR
-        assert saved.name == f"comment{cid}_evidence_.txt"
+        # 다중 첨부 도입으로 순번이 붙는다: comment{id}_{순번}_{안전화된 이름}
+        assert saved.name == f"comment{cid}_0_evidence_.txt"
         assert c.evidence_name == "evidence_.txt"
         assert n.ack_evidence_path == c.evidence_path
         assert n.ack_evidence_name == "evidence_.txt"

@@ -32,13 +32,29 @@ def evidence_response(path: str, display_name: str | None):
 
     증빙 업로드는 확장자 제한이 없으므로(운영 편의) 임의 HTML 을 사이트 오리진에서
     inline 서빙하면 stored-XSS 벡터가 된다. 표시명은 safe_filename 으로 헤더 안전화.
+
+    Content-Disposition 은 직접 조립하지 않는다 — 한글 파일명을 그대로 넣으면 헤더
+    latin-1 인코딩에서 500 이 난다(현장 재현). filename/content_disposition_type 을
+    FileResponse 에 맡기면 스타레트가 RFC 5987(filename*=UTF-8'') 로 안전 처리한다.
     """
     from fastapi.responses import FileResponse
 
     name = safe_filename(display_name, default="evidence")
     ext = PurePosixPath(name.lower()).suffix
     disposition = "inline" if ext in _INLINE_SAFE_EXT else "attachment"
-    return FileResponse(path, filename=name, headers={
-        "Content-Disposition": f'{disposition}; filename="{name}"',
-        "X-Content-Type-Options": "nosniff",
-    })
+    return FileResponse(path, filename=name, content_disposition_type=disposition,
+                        headers={"X-Content-Type-Options": "nosniff"})
+
+
+def evidence_list(files_json, legacy_path: str | None, legacy_name: str | None) -> list[dict]:
+    """증빙 파일 목록 정규화 — 다중 첨부(JSON 리스트) 우선, 없으면 구형 단일 컬럼 폴백.
+
+    반환: [{"path", "name"}] (표시 순서 = 업로드 순서).
+    """
+    out: list[dict] = []
+    for e in (files_json or []):
+        if isinstance(e, dict) and e.get("path"):
+            out.append({"path": e["path"], "name": e.get("name") or "evidence"})
+    if not out and legacy_path:
+        out.append({"path": legacy_path, "name": legacy_name or "evidence"})
+    return out

@@ -210,8 +210,10 @@ class AdvisoryComment(TimestampMixin, Base):
     ack_status: Mapped[enums.AckStatus | None] = mapped_column(_enum(enums.AckStatus))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # 관리자 작성 표식
     # 증빙 첨부(조치 결과 스크린샷·문서 등). 조치상태 회신 시 발송이력 ack 증빙으로 동기화.
+    # evidence_files: 다중 첨부 [{path, name}] — path/name 단일 컬럼은 첫 파일(하위 호환).
     evidence_path: Mapped[str | None] = mapped_column(Text)
     evidence_name: Mapped[str | None] = mapped_column(String(200))
+    evidence_files: Mapped[list | None] = mapped_column(JSON)
 
     advisory: Mapped["Advisory"] = relationship(back_populates="comments")
     department: Mapped["Department | None"] = relationship()
@@ -273,8 +275,10 @@ class Notification(TimestampMixin, Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(80), unique=True)
     # ── 조치 회신 루프(§★★★★★) ──
     ack_note: Mapped[str | None] = mapped_column(Text)            # 회신 코멘트(불가 사유 등)
-    ack_evidence_path: Mapped[str | None] = mapped_column(Text)   # 증빙 파일 경로
+    ack_evidence_path: Mapped[str | None] = mapped_column(Text)   # 증빙 파일 경로(첫 파일 — 하위 호환)
     ack_evidence_name: Mapped[str | None] = mapped_column(String(200))
+    # 다중 증빙 [{path, name}] — 담당자 댓글 여러 건의 첨부가 전부 누적된다(덮어쓰지 않음).
+    ack_evidence_files: Mapped[list | None] = mapped_column(JSON)
     ack_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ack_by: Mapped[str | None] = mapped_column(String(80))        # 회신 부서 담당자
     # ── 리마인드(§★★★★) ──

@@ -146,6 +146,9 @@ def board_advisory_item(a: Advisory, *, comment_count: int | None = None) -> dic
 
 
 def comment_item(c: AdvisoryComment) -> dict:
+    from .core.files import evidence_list
+
+    files = evidence_list(c.evidence_files, c.evidence_path, c.evidence_name)
     return {
         "id": c.id,
         "advisory_id": c.advisory_id,
@@ -156,8 +159,10 @@ def comment_item(c: AdvisoryComment) -> dict:
         "ack_status": c.ack_status.value if c.ack_status else None,
         "ack_status_ko": enums.ACK_KO.get(c.ack_status) if c.ack_status else None,
         "is_admin": c.is_admin,
-        "evidence": c.evidence_name,
-        "has_evidence": c.evidence_path is not None,
+        "evidence": files[0]["name"] if files else None,       # 하위 호환(첫 파일)
+        "has_evidence": bool(files),
+        # 다중 증빙 — 열람 URL 은 …/comments/{id}/evidence?i={i}
+        "evidence_files": [{"name": f["name"], "i": idx} for idx, f in enumerate(files)],
         "created_at": _d(c.created_at),
     }
 
@@ -241,6 +246,9 @@ def match_item(m: Match) -> dict:
 
 
 def notification_item(n: Notification) -> dict:
+    from .core.files import evidence_list
+
+    files = evidence_list(n.ack_evidence_files, n.ack_evidence_path, n.ack_evidence_name)
     return {
         "id": n.id,
         "advisory_id": n.advisory_id,
@@ -255,7 +263,8 @@ def notification_item(n: Notification) -> dict:
         "ack_note": n.ack_note,
         "ack_by": n.ack_by,
         "ack_updated_at": _d(n.ack_updated_at),
-        "evidence": n.ack_evidence_name,
+        "evidence": files[0]["name"] if files else None,       # 하위 호환(첫 파일)
+        "evidence_files": [{"name": f["name"], "i": idx} for idx, f in enumerate(files)],
         "reminded_at": _d(n.reminded_at),
         "reminder_count": n.reminder_count,
         "sent_at": _d(n.sent_at),
