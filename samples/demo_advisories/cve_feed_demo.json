@@ -1,0 +1,164 @@
+{
+  "source": "DEMO-BUNDLE",
+  "cves": [
+    {
+      "cve_id": "CVE-2026-53770",
+      "product_name": "Microsoft Windows 11",
+      "product_key": "windows_11",
+      "affected_versions": [
+        "22H2",
+        "23H2"
+      ],
+      "severity": "높음",
+      "cvss_score": 7.8,
+      "description": "Windows 커널 권한 상승",
+      "published_at": "2026-07-06",
+      "source": "국가정보원"
+    },
+    {
+      "cve_id": "CVE-2026-53771",
+      "product_name": "Microsoft Windows Server",
+      "product_key": "windows_server",
+      "affected_versions": [
+        "2022"
+      ],
+      "severity": "긴급",
+      "cvss_score": 9.8,
+      "description": "SMB 원격 코드 실행",
+      "published_at": "2026-07-06",
+      "source": "국가정보원"
+    },
+    {
+      "cve_id": "CVE-2026-53718",
+      "product_name": "Microsoft Office",
+      "product_key": "microsoft_office",
+      "affected_versions": [
+        "2021"
+      ],
+      "severity": "높음",
+      "cvss_score": 7.8,
+      "description": "Excel 메모리 손상",
+      "published_at": "2026-07-06",
+      "source": "국가정보원"
+    },
+    {
+      "cve_id": "CVE-2026-53800",
+      "product_name": "Microsoft Windows 10",
+      "product_key": "windows_10",
+      "affected_versions": [
+        "22H2"
+      ],
+      "severity": "긴급",
+      "cvss_score": 9.0,
+      "description": "Win32k 권한 상승(실공격 확인)",
+      "published_at": "2026-07-09",
+      "source": "국가정보원"
+    },
+    {
+      "cve_id": "CVE-2026-61001",
+      "product_name": "한컴오피스",
+      "product_key": "hancom_office",
+      "affected_versions": [
+        "2022",
+        "2024"
+      ],
+      "severity": "높음",
+      "cvss_score": 8.1,
+      "description": "HWP 포스트스크립트 필터 코드 실행",
+      "published_at": "2026-07-03",
+      "source": "KISA"
+    },
+    {
+      "cve_id": "CVE-2026-61002",
+      "product_name": "한컴오피스",
+      "product_key": "hancom_office",
+      "affected_versions": [
+        "2022",
+        "2024"
+      ],
+      "severity": "중간",
+      "cvss_score": 6.5,
+      "description": "HWP OLE 개체 파싱 오버플로",
+      "published_at": "2026-07-03",
+      "source": "KISA"
+    },
+    {
+      "cve_id": "CVE-2026-61010",
+      "product_name": "AhnLab V3",
+      "product_key": "ahnlab_v3",
+      "affected_versions": [
+        "4.0"
+      ],
+      "severity": "중간",
+      "cvss_score": 6.7,
+      "description": "V3 엔진 로컬 권한 상승",
+      "published_at": "2026-07-04",
+      "source": "KISA"
+    },
+    {
+      "cve_id": "CVE-2026-62001",
+      "product_name": "Google Chrome",
+      "product_key": "google_chrome",
+      "affected_versions": {
+        "lte": "126.0.6478.126"
+      },
+      "severity": "긴급",
+      "cvss_score": 9.6,
+      "description": "V8 타입 혼동(0-day)",
+      "published_at": "2026-07-08",
+      "source": "NCSC"
+    },
+    {
+      "cve_id": "CVE-2026-62002",
+      "product_name": "Microsoft Edge",
+      "product_key": "edge",
+      "affected_versions": {
+        "lte": "126.0.2592.87"
+      },
+      "severity": "높음",
+      "cvss_score": 8.8,
+      "description": "샌드박스 이탈",
+      "published_at": "2026-07-08",
+      "source": "NCSC"
+    },
+    {
+      "cve_id": "CVE-2026-63001",
+      "product_name": "Java SE",
+      "product_key": "java_se",
+      "affected_versions": {
+        "lte": "17.0.11"
+      },
+      "severity": "높음",
+      "cvss_score": 8.1,
+      "description": "JNDI 원격 클래스 로딩",
+      "published_at": "2026-07-07",
+      "source": "금융보안원"
+    },
+    {
+      "cve_id": "CVE-2026-64001",
+      "product_name": "Adobe Acrobat",
+      "product_key": "adobe_acrobat",
+      "affected_versions": [
+        "DC 2022"
+      ],
+      "severity": "높음",
+      "cvss_score": 7.8,
+      "description": "PDF 폰트 파싱 UAF",
+      "published_at": "2026-07-05",
+      "source": "KISA"
+    },
+    {
+      "cve_id": "CVE-2026-64002",
+      "product_name": "OpenSSL",
+      "product_key": "openssl",
+      "affected_versions": {
+        "lte": "3.0.13"
+      },
+      "severity": "중간",
+      "cvss_score": 5.9,
+      "description": "TLS 핸드셰이크 버퍼 오버리드",
+      "published_at": "2026-07-05",
+      "source": "-"
+    }
+  ]
+}

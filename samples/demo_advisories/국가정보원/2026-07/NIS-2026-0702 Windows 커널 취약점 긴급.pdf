@@ -1,0 +1,40 @@
+%PDF-1.4
+1 0 obj
+<</Type/Catalog/Pages 2 0 R>>
+endobj
+2 0 obj
+<</Type/Pages/Kids[3 0 R]/Count 1>>
+endobj
+3 0 obj
+<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1 5 0 R>>>>/Contents 4 0 R>>
+endobj
+4 0 obj
+<</Length 334>>
+stream
+BT /F1 11 Tf 50 760 Td 14 TL
+(URGENT Security Advisory  2026.7.9) Tj T*
+(Doc: NIS-2026-0702) Tj T*
+() Tj T*
+(Affected: Microsoft Windows 10 22H2 / Windows 11 23H2) Tj T*
+() Tj T*
+(CVE-2026-53800  Win32k Elevation of Privilege \(exploited in the wild\)) Tj T*
+() Tj T*
+(Workaround: disable legacy input service until patched.) Tj T*
+ET
+endstream
+endobj
+5 0 obj
+<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000054 00000 n 
+0000000105 00000 n 
+0000000217 00000 n 
+0000000600 00000 n 
+trailer<</Size 6/Root 1 0 R>>
+startxref
+663
+%%EOF
