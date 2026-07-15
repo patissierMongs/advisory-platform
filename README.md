@@ -37,6 +37,7 @@ chmod +x start.sh && ./start.sh
 (개발 PC에서 굳이 PyPI로 온라인 설치하려면 `ADVISORY_ONLINE_INSTALL=1` 을 명시해야 합니다.)
 
 > **대안 — 올인원 번들**: `python build_allinone.py` 로 임베디드 Python + 의존성까지 포함한 zip을 만들면,
+> (빌드 호스트 OS·파이썬 버전 무관 — Linux/Mac 에서도 타깃 cp312/win_amd64 휠을 교차 해석해 동일 산출물)
 > 타깃은 Python 설치도 `vendor/wheels` 준비도 없이 압축만 풀고 `start.bat` 으로 바로 실행합니다(외부망 0).
 
 브라우저에서 **http://localhost:8000** 접속 → 기본 실행은 운영 기준으로 빈 SQLite DB에서 시작합니다.

@@ -3,14 +3,20 @@
 구성: Windows 임베디드 Python 3.12 + 의존성 사전설치(runtime/site) + 앱 + web + 샘플.
 타깃 요건: Windows x64. (Python 불필요. 외부망 0.)
 
-Usage: py -3.12 build_allinone.py
+Usage: py build_allinone.py          (Windows / Linux / Mac 어디서든 — 타깃은 항상 Windows x64)
 Output: ../advisory-platform_allinone.zip
+
+빌드 호스트가 비-Windows 여도 된다: 휠은 어차피 임베디드 런타임(cp312/win_amd64) 기준으로
+받는다. 유일한 걸림돌인 uvicorn[standard]→uvloop(유닉스 전용 마커가 '호스트' 기준으로 평가됨)는
+비-Windows 호스트에서 extras 를 Windows 타깃과 동일한 집합으로 풀어써서 회피한다.
 """
 from __future__ import annotations
 
+import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -27,6 +33,7 @@ OUT = ROOT.parent / "advisory-platform_allinone.zip"
 PREFIX = "advisory-platform"
 
 INCLUDE_TOP = {"app", "web", "samples", "scripts", "docs", "nvd_powershell_sync",
+               "config",   # 설정 기본값(config/defaults/*.json) — 최초 기동 시 data/config/ 로 시드
                "README.md", "requirements.txt", "smoke_test.py"}
 SKIP_DIR = {".venv", "__pycache__", "data", ".claude", ".git", "_cache",
             "_advisory_allinone_stage"}
@@ -83,6 +90,33 @@ def place_python(app: Path, embed_zip: Path) -> None:
     log(f"patched {pth.name}: + ..\\site + ..\\..")
 
 
+def _target_requirements() -> Path:
+    """설치용 요구사항 파일 경로 — 비-Windows 호스트면 uvloop 마커 문제를 우회한 사본을 만든다.
+
+    uvicorn[standard] 의 uvloop 의존성 마커(sys_platform != 'win32')는 '빌드 호스트' 기준으로
+    평가된다. Linux/Mac 호스트에서는 uvloop(win_amd64 휠 없음)을 요구하게 되어 해석이 실패하므로,
+    extras 를 Windows 타깃에서 실제 설치되는 집합(colorama·httptools·python-dotenv·pyyaml·
+    watchfiles·websockets — uvloop 제외)으로 풀어쓴 요구사항으로 대체한다. Windows 호스트는
+    원본 requirements.txt 그대로(마커가 알아서 uvloop 를 제외).
+    """
+    src = ROOT / "requirements.txt"
+    if platform.system() == "Windows":
+        return src
+    lines = []
+    for raw in src.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if line.lower().startswith("uvicorn[standard]"):
+            lines.append(line.replace("[standard]", "", 1))
+            lines += ["colorama", "httptools", "python-dotenv", "pyyaml",
+                      "watchfiles", "websockets"]
+        else:
+            lines.append(raw)
+    tmp = Path(tempfile.mkstemp(suffix="-allinone-req.txt")[1])
+    tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    log(f"non-Windows host — uvicorn[standard] 를 Windows 타깃 집합으로 풀어씀: {tmp}")
+    return tmp
+
+
 def install_site(app: Path) -> None:
     site = app / "runtime" / "site"
     site.mkdir(parents=True)
@@ -99,7 +133,7 @@ def install_site(app: Path) -> None:
         "--implementation", "cp",
         "--abi", PYABI,
         "--platform", PYPLAT,
-        "-r", str(ROOT / "requirements.txt"),
+        "-r", str(_target_requirements()),
     ])
     for pc in site.rglob("__pycache__"):
         shutil.rmtree(pc, ignore_errors=True)
@@ -146,24 +180,15 @@ def zip_bundle(app: Path) -> int:
 
 
 def _check_build_host() -> None:
-    """빌드 호스트 사전 점검.
+    """빌드 호스트 사전 점검 — 버전·OS 모두 무관.
 
-    · 파이썬 '버전'은 무관하다 — install_site 가 임베디드 cp312/win_amd64 휠을 명시적으로 받으므로
-      빌드 PC에 3.11 등 다른 버전이 깔려 PATH 로 실행돼도 타깃과 ABI 가 일치한다.
-    · 다만 'OS'는 Windows 여야 한다 — requirements 의 uvicorn[standard] → uvloop(유닉스 전용)이
-      비-Windows 호스트에서 환경 마커(sys_platform)상 요구돼 cross-OS 휠 해석이 실패하기 때문.
-      (Windows 호스트에서는 sys_platform=='win32' 라 uvloop 이 마커로 제외되어 정상 해석된다.)
+    · 파이썬 '버전' 무관: install_site 가 임베디드 cp312/win_amd64 휠을 명시적으로 받는다.
+    · 'OS'도 무관: 비-Windows 호스트의 uvicorn[standard]→uvloop 마커 문제는
+      _target_requirements 가 extras 를 Windows 타깃 집합으로 풀어써 우회한다.
+      (타깃은 언제나 Windows x64 — 산출물은 동일하다.)
     """
-    import platform
-
     if platform.system() != "Windows":
-        sys.exit(
-            "이 올인원 빌더는 Windows 에서 실행해야 합니다(임베디드 런타임=Windows, "
-            "uvicorn[standard]→uvloop 마커 때문).\n"
-            "  · 빌드 PC 의 파이썬 '버전'은 상관없습니다(타깃 cp312 휠을 따로 받음).\n"
-            "  · Windows 에서  py build_allinone.py  로 실행하세요.\n"
-            "  · 휠 해석/메커니즘만 비-Windows 에서 점검하려면 scripts/verify_bundle_wheels.py 를 사용하세요."
-        )
+        log(f"non-Windows build host({platform.system()}) — 타깃(win_amd64) 휠 교차 해석으로 진행")
 
 
 def main() -> None:
