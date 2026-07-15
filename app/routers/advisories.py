@@ -12,12 +12,12 @@ from sqlalchemy.orm import Session
 from .. import enums
 from ..audit import record
 from ..config import UPLOAD_DIR, settings
-from ..core import extract
+from ..core import appconfig, extract, gate_extract, source_detect
 from ..core.matching import all_cves_found
 from ..db import SessionLocal, get_db
 from ..deps import get_actor_id
 from ..models import Advisory, AdvisoryCve, Cve, Match
-from ..schemas import AdvisoryMetaPatch, CveAddRequest
+from ..schemas import AdvisoryMetaPatch, CveAddRequest, SourceBatchPatch
 from ..serializers import advisory_brief, advisory_cve_item
 
 router = APIRouter(prefix="/api/v1", tags=["advisories"])
@@ -31,6 +31,7 @@ async def upload_advisory(
     request: Request,
     file: UploadFile = File(...),
     source_org: str = Form(""),
+    rel_path: str | None = Form(None),
     receive_channel: str | None = Form(None),
     doc_no: str | None = Form(None),
     title: str | None = Form(None),
@@ -43,9 +44,9 @@ async def upload_advisory(
         raise HTTPException(413, f"파일 크기 초과(최대 {settings.MAX_UPLOAD_MB}MB)")
     if not content[:5].startswith(b"%PDF"):
         raise HTTPException(400, "PDF 파일이 아닙니다(매직바이트 불일치).")
+    # 출처(§출처): 직접 입력은 더 이상 필수가 아니다 — 업로드 후 자동 탐지가 기본.
     source_org = (source_org or "").strip()
-    if not source_org:
-        raise HTTPException(400, "출처기관은 필수입니다.")
+    rel_path = (rel_path or "").strip() or None
     # 접수경로(§9)는 본문 추출 우선이라 업로드 시 필수는 아니다. 단, 폼으로 값을 주면 유효해야 한다.
     form_channel = None
     rc = (receive_channel or "").strip()
@@ -91,10 +92,24 @@ async def upload_advisory(
     else:
         final_ch, ch_source = None, None
 
+    # 출처(§출처): 상위 폴더명 → 폴더명 → 파일명 → 본문 순으로 자동 탐지.
+    # 후보 목록은 항상 저장(화면에서 나열·클릭 선택). 직접 입력이 있으면 MANUAL 우선,
+    # 탐지 성공이면 최우선 후보로 자동 지정, 실패면 '-'(관리자가 이후 지정 가능).
+    candidates = source_detect.detect_sources(rel_path, file.filename, text)
+    if source_org:
+        final_src, src_origin = source_org, "MANUAL"
+    elif candidates:
+        final_src, src_origin = candidates[0]["name"], candidates[0]["origin"]
+    else:
+        final_src, src_origin = "-", None
+
     adv = Advisory(
         doc_no=(doc_no or "").strip() or None,
         title=(title or "").strip() or (file.filename or "보안권고문").rsplit(".", 1)[0],
-        source_org=source_org,
+        source_org=final_src,
+        source_origin=src_origin,
+        source_candidates=candidates,
+        rel_path=rel_path,
         receive_channel=final_ch,
         channel_source=ch_source,
         received_at=date.today(),
@@ -115,15 +130,44 @@ async def upload_advisory(
     return advisory_brief(adv)
 
 
+@router.patch("/advisories/source-batch")
+def update_source_batch(body: SourceBatchPatch, request: Request, db: Session = Depends(get_db)):
+    """출처 일괄 지정(§출처) — 업로드 배치 전체에 선택 후보/직접 입력을 한번에 적용.
+
+    복수 출처 선택 시 ', ' 로 연결해 복수 출처로 기록한다. 빈 목록이면 '-' 로 지정.
+    """
+    sources = [s.strip() for s in body.sources if s and s.strip()]
+    joined = ", ".join(dict.fromkeys(sources)) or "-"
+    items = []
+    for aid in body.ids:
+        adv = db.get(Advisory, aid)
+        if not adv:
+            continue
+        adv.source_org = joined
+        adv.source_origin = "MANUAL" if joined != "-" else None
+        items.append(adv)
+    record(db, action="ADVISORY_SOURCE_BATCH", actor_id=get_actor_id(db), entity_type="advisory",
+           entity_id=None, detail={"ids": body.ids, "source": joined}, request=request)
+    db.commit()
+    return {"applied": len(items), "source_org": joined,
+            "items": [advisory_brief(a) for a in items]}
+
+
 @router.patch("/advisories/{advisory_id}/meta")
 def update_meta(advisory_id: int, body: AdvisoryMetaPatch, request: Request,
                 db: Session = Depends(get_db)):
-    """조치기한·접수경로 관리자 수동 지정(§8·9) — 본문 미추출 시 직접 입력/수정.
+    """조치기한·접수경로·출처 관리자 수동 지정(§8·9·출처) — 본문 미추출 시 직접 입력/수정.
 
     전달한 필드만 갱신하며, 설정 시 출처를 'MANUAL' 로 표기한다(빈 값이면 미지정으로 비움).
     """
     adv = _get(db, advisory_id)
     sent = body.model_fields_set
+    if "source_org" in sent:
+        # 출처는 항상 값을 가진다 — 비우면 '-'(미탐지 표기)로 지정(§출처).
+        src = ", ".join(dict.fromkeys(
+            s.strip() for s in (body.source_org or "").split(",") if s.strip()))
+        adv.source_org = src or "-"
+        adv.source_origin = "MANUAL" if src else None
     if "due_at" in sent:
         d = _parse_date(body.due_at)
         adv.due_at = d
@@ -355,10 +399,45 @@ def get_file(advisory_id: int, download: bool = Query(False), db: Session = Depe
                         headers={"Content-Disposition": disp})
 
 
+@router.get("/advisories/{advisory_id}/gate")
+def gate_info(advisory_id: int, db: Session = Depends(get_db)):
+    """CVE 게이트 보조(§게이트) — DB 미등록 CVE 별 수동 등록 폼 기본값(본문 자동 추출).
+
+    제품·버전·날짜 제안과 매칭 근거(카테고리별 색)를 반환한다. 색은 product_catalog
+    설정 파일의 값 그대로 — STEP2 PDF 하이라이트와 항상 동일하다.
+    """
+    adv = _get(db, advisory_id)
+    catalog = appconfig.get_config("product_catalog")
+    missing = [ac.cve_id_text for ac in adv.cves
+               if ac.lookup_status == enums.LookupStatus.NOT_FOUND]
+    ga = gate_extract.analyze(adv.extracted_text or "", missing, catalog)
+    src = adv.source_org if (adv.source_org and adv.source_org != "-") else None
+    items = [{"cve_id": code,
+              "suggest": dict(ga["items"].get(code) or {}, source=src)} for code in missing]
+    return {
+        "items": items,
+        "colors": ga["colors"],
+        "products": ga["products"],       # 본문에서 매칭된 제품(근거 칩 — PDF 와 동일 색)
+        "versions": ga["versions"],
+        "dates": ga["dates"],
+        # 카탈로그 전체(빠른 선택·인라인 편집용) — 파일: data/config/product_catalog.json
+        "catalog": {
+            "products": [{"key": p.get("key"), "label": p.get("label"),
+                          "color": p.get("color"), "patterns": p.get("patterns", [])}
+                         for p in catalog.get("products", [])],
+            "version_patterns": catalog.get("version_patterns", []),
+        },
+    }
+
+
 @router.get("/advisories/{advisory_id}/pdf-view")
 def pdf_view(advisory_id: int, scale: float = Query(2.0, ge=1.0, le=4.0),
              db: Session = Depends(get_db)):
-    """STEP2 원문 뷰어용 — 페이지 크기(px)와 추출 CVE 의 강조 박스. 렌더 불가 시 available=false."""
+    """STEP2 원문 뷰어용 — 페이지 크기(px)와 강조 박스. 렌더 불가 시 available=false.
+
+    강조 대상: 추출 CVE(항상) + 게이트 활성 시(미등록 CVE 존재) 제품·버전·날짜 자동
+    매칭 문자열. 색은 product_catalog 설정과 동일 — 게이트 폼 근거 칩과 항상 같은 색.
+    """
     adv = _get(db, advisory_id)
     if not adv.file_path:
         raise HTTPException(404, "원본 PDF 없음")
@@ -366,14 +445,34 @@ def pdf_view(advisory_id: int, scale: float = Query(2.0, ge=1.0, le=4.0),
 
     if not os.path.exists(adv.file_path):
         raise HTTPException(404, "원본 PDF 파일이 저장소에 없음")
-    terms = [ac.cve_id_text for ac in adv.cves]
+    try:
+        catalog = appconfig.get_config("product_catalog")
+    except ValueError:
+        catalog = {}
+    colors = (catalog.get("colors") or {}) if isinstance(catalog, dict) else {}
+    cve_color = colors.get("cve", "#e8a33d")
+    terms: list[dict] = [{"term": ac.cve_id_text, "category": "cve", "color": cve_color}
+                         for ac in adv.cves]
+    legend = [{"category": "cve", "label": "추출된 CVE", "color": cve_color}]
+    missing = [ac.cve_id_text for ac in adv.cves
+               if ac.lookup_status == enums.LookupStatus.NOT_FOUND]
+    if missing and catalog:
+        ga = gate_extract.analyze(adv.extracted_text or "", missing, catalog)
+        terms += ga["highlight_terms"]
+        for p in ga["products"]:
+            legend.append({"category": "product", "label": p["label"], "color": p["color"]})
+        if ga["versions"]:
+            legend.append({"category": "version", "label": "버전 표기", "color": ga["colors"]["version"]})
+        if ga["dates"]:
+            legend.append({"category": "date", "label": "날짜 표기", "color": ga["colors"]["date"]})
     try:
         from ..core import pdf_render
 
         view = pdf_render.pdf_view(adv.file_path, terms, scale=scale)
     except Exception:  # noqa: BLE001 — 렌더러 부재/손상 PDF 시 텍스트 폴백 유지
-        return {"available": False, "scale": scale, "pages": [], "boxes": []}
+        return {"available": False, "scale": scale, "pages": [], "boxes": [], "legend": legend}
     view["available"] = bool(view["pages"])
+    view["legend"] = legend
     return view
 
 
@@ -427,7 +526,8 @@ def list_advisories(
     if status:
         q = q.where(Advisory.status == enums.AdvisoryStatus(status))
     if source_org:
-        q = q.where(Advisory.source_org == source_org)
+        # 복수 출처(', ' 연결) 지원 — 부분 일치로 조회(§출처).
+        q = q.where(Advisory.source_org.ilike(f"%{source_org}%"))
     total = db.scalar(select(func.count()).select_from(q.subquery()))
     rows = db.scalars(q.limit(size).offset((page - 1) * size)).all()
     return {"total": total, "items": [advisory_brief(a) for a in rows]}

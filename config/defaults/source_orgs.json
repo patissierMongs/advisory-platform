@@ -1,0 +1,16 @@
+{
+  "_comment": "보안권고문 배포 기관(출처) 목록 — 관리자 화면(설정 탭) 또는 이 파일을 직접 수정하면 즉시 반영됩니다. aliases 는 폴더명·파일명·본문에서 함께 탐지되는 별칭입니다.",
+  "organizations": [
+    { "name": "국가정보원", "aliases": ["국정원", "NIS"] },
+    { "name": "NCSC", "aliases": ["국가사이버안보센터", "국가사이버안전센터"] },
+    { "name": "NCTI", "aliases": ["국가사이버위협정보"] },
+    { "name": "KISA", "aliases": ["한국인터넷진흥원", "KrCERT", "보호나라"] },
+    { "name": "금융보안원", "aliases": ["FSEC"] },
+    { "name": "과학기술정보통신부", "aliases": ["과기정통부", "MSIT"] },
+    { "name": "행정안전부", "aliases": ["행안부", "MOIS"] },
+    { "name": "국토교통부", "aliases": ["국토부", "MOLIT"] },
+    { "name": "교육부", "aliases": [] },
+    { "name": "국방부", "aliases": ["사이버작전사령부"] },
+    { "name": "CISA", "aliases": [] }
+  ]
+}

@@ -12,6 +12,8 @@ data/*.log
 .claude/settings.local.json
 data/render/
 data/.cve_feeds_loaded
+# 런타임 설정 파일(웹/파일 편집 대상) — 기본값은 config/defaults/ 에서 시드
+data/config/
 .env
 
 # 빌드/런타임 산출물 · 대용량 재생성 가능 데이터

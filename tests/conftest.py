@@ -26,12 +26,17 @@ def _init_db():
 
 @pytest.fixture(autouse=True)
 def _clean_tables():
-    """각 테스트 전 cve/cve_feed_import 를 비워 격리. (FK: cve → cve_feed_import 자식 먼저)"""
-    from sqlalchemy import delete
+    """각 테스트 전 cve/cve_feed_import 를 비워 격리. (FK: cve → cve_feed_import 자식 먼저)
+
+    advisory_cve.cve_ref_id 가 cve 를 참조할 수 있어(게이트 수동 등록·피드 재평가)
+    삭제 전 참조를 끊는다 — 링크만 초기화, 추출 CVE 행 자체는 보존.
+    """
+    from sqlalchemy import delete, update
 
     from app.db import SessionLocal
-    from app.models import Cve, CveFeedImport
+    from app.models import AdvisoryCve, Cve, CveFeedImport
     with SessionLocal() as db:
+        db.execute(update(AdvisoryCve).values(cve_ref_id=None))
         db.execute(delete(Cve))
         db.execute(delete(CveFeedImport))
         db.commit()

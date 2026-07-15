@@ -74,15 +74,28 @@ def render_page_png(pdf_path: str, page_index: int, scale: float = 2.0) -> bytes
     return png
 
 
-def pdf_view(pdf_path: str, terms: list[str], scale: float = 2.0) -> dict:
+def pdf_view(pdf_path: str, terms: list, scale: float = 2.0) -> dict:
     """페이지 크기(px)와 강조 대상 문자열들의 화면 박스를 계산.
 
-    반환: {scale, pages:[{index,width,height}], boxes:[{term,page,x,y,w,h}]}.
+    terms: list[str] 또는 list[{term, color, category}] — 색·카테고리는 박스에 그대로
+    실려 프론트 오버레이가 카테고리별 색으로 칠한다(게이트 폼 칩과 동일 색 보장).
+    반환: {scale, pages:[{index,width,height}], boxes:[{term,page,x,y,w,h,color,category}]}.
     좌표는 렌더 PNG 와 동일한 px 기준(원점 좌상단). 스캔본(텍스트 0)은 boxes 빈 배열.
     """
     import pypdfium2 as pdfium
 
-    uniq = list(dict.fromkeys(t for t in terms if t))  # 순서보존 중복제거
+    norm: list[dict] = []
+    for t in terms:
+        if isinstance(t, str):
+            norm.append({"term": t, "color": None, "category": None})
+        elif isinstance(t, dict) and t.get("term"):
+            norm.append({"term": t["term"], "color": t.get("color"), "category": t.get("category")})
+    seen: set[str] = set()
+    uniq: list[dict] = []   # 순서보존 중복제거(먼저 온 카테고리/색 우선)
+    for t in norm:
+        if t["term"] and t["term"] not in seen:
+            seen.add(t["term"])
+            uniq.append(t)
     pages: list[dict] = []
     boxes: list[dict] = []
     with _LOCK:
@@ -96,7 +109,8 @@ def pdf_view(pdf_path: str, terms: list[str], scale: float = 2.0) -> dict:
                     continue
                 tp = page.get_textpage()
                 try:
-                    for term in uniq:
+                    for entry in uniq:
+                        term = entry["term"]
                         searcher = tp.search(term, match_case=False, match_whole_word=False)
                         try:
                             m = searcher.get_next()
@@ -106,6 +120,8 @@ def pdf_view(pdf_path: str, terms: list[str], scale: float = 2.0) -> dict:
                                     left, bottom, right, top = tp.get_rect(ri)
                                     boxes.append({
                                         "term": term,
+                                        "category": entry["category"],
+                                        "color": entry["color"],
                                         "page": pi,
                                         "x": round(left * scale),
                                         "y": round((h_pt - top) * scale),   # 좌하단원점 → 좌상단원점

@@ -60,6 +60,9 @@ def advisory_brief(a: Advisory, *, match_count: int | None = None) -> dict:
         "doc_no": a.doc_no,
         "title": a.title,
         "source_org": a.source_org,
+        "source_origin": a.source_origin,           # 자동 탐지 위치 | MANUAL | None(§출처)
+        "source_candidates": a.source_candidates or [],  # 탐지 후보 [{name,origin,matched}]
+        "rel_path": a.rel_path,
         "receive_channel": a.receive_channel.value if a.receive_channel else None,
         "channel_source": a.channel_source,   # PDF | MANUAL | None — 접수경로 출처(§9)
         "received_at": _d(a.received_at),

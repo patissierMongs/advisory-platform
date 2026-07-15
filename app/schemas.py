@@ -25,9 +25,32 @@ class AdvisoryMetaPatch(BaseModel):
     """관리자 수동 지정(§8·9) — 본문에서 추출되지 않은 조치기한·접수경로를 직접 입력.
 
     전달한 필드만 갱신(부분 수정). 빈 값/None 으로 보내면 해당 항목을 '미지정'으로 비운다.
+    출처(source_org)는 빈 값이면 '-' 로 지정된다(출처는 항상 값을 가진다 — §출처).
     """
     due_at: str | None = None              # 'YYYY-MM-DD'
     receive_channel: str | None = None     # NCST | WEBMAIL | OFFICIAL_DOC
+    source_org: str | None = None          # 출처(복수는 쉼표 구분) — 개별 수동 지정
+
+
+class SourceBatchPatch(BaseModel):
+    """출처 일괄 지정(§출처) — 업로드 배치 전체에 탐지 후보 선택/직접 입력을 한번에 적용."""
+    ids: list[int]                          # 대상 권고문 id 목록
+    sources: list[str]                      # 출처 목록(복수 선택 = 복수 출처로 기록)
+
+
+class CveUpsertRequest(BaseModel):
+    """CVE DB 수동 등록(§게이트) — 미등록 CVE 를 작업 화면에서 직접 등록해 게이트 해제.
+
+    모든 필드는 선택 — 빈칸으로 두거나 작성할 수 있다. 기본값은 본문 자동 추출 제안.
+    """
+    cve_id: str
+    source: str | None = None               # 배포 기관
+    product_name: str | None = None         # 대상(제품)
+    product_key: str | None = None          # 미지정 시 product_name 정규화
+    affected_versions: list[str] | None = None  # 버전 목록(비우면 전체)
+    severity: str | None = None             # CRITICAL|HIGH|MEDIUM|LOW
+    published_at: str | None = None         # 'YYYY-MM-DD'
+    description: str | None = None
 
 
 class GroupwareAckWebhook(BaseModel):

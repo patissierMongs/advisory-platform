@@ -131,7 +131,14 @@ class Advisory(TimestampMixin, Base):
     __tablename__ = "advisory"
     doc_no: Mapped[str | None] = mapped_column(String(120))
     title: Mapped[str | None] = mapped_column(String(400))
-    source_org: Mapped[str | None] = mapped_column(String(80))
+    # 출처(복수면 ', ' 로 연결). 자동 탐지 실패 시 '-' — 관리자가 언제든 변경 가능.
+    source_org: Mapped[str | None] = mapped_column(String(200))
+    # 출처 지정 경위: PARENT_FOLDER|FOLDER|FILENAME|CONTENT(자동 탐지 위치) | MANUAL | None
+    source_origin: Mapped[str | None] = mapped_column(String(20))
+    # 자동 탐지된 출처 후보 [{name, origin, matched}] — 화면에서 나열·클릭 선택(복수 가능).
+    source_candidates: Mapped[list | None] = mapped_column(JSON)
+    # 폴더째 업로드 시 상대경로(상위폴더/폴더/파일명) — 출처 탐지 근거 보존.
+    rel_path: Mapped[str | None] = mapped_column(Text)
     receive_channel: Mapped[enums.ReceiveChannel | None] = mapped_column(_enum(enums.ReceiveChannel))
     received_at: Mapped[date | None] = mapped_column(Date)
     due_at: Mapped[date | None] = mapped_column(Date)

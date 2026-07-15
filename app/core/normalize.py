@@ -1,14 +1,17 @@
 """제품 정규화 (명세서 §4.6-1).
 
 자산대장의 원문 제품/OS 문자열과 CVE 피드의 제품명을 동일한 `product_key`로 변환한다.
-별칭 사전은 운영 중 추가 가능하도록 모듈 상수로 관리하며, DB 설정 테이블로 옮길 수 있다.
+별칭 사전은 설정 파일(product_aliases — data/config/product_aliases.json)로 관리한다.
+웹(설정 탭)에서 편집하거나 파일을 직접 수정하면 즉시 반영된다(§설정-파일 원칙).
 """
 from __future__ import annotations
 
 import re
 
-# canonical product_key -> 별칭(소문자 부분일치) 목록
-PRODUCT_ALIASES: dict[str, list[str]] = {
+from . import appconfig
+
+# 설정 파일 로드 실패 시 폴백(부팅 안전) — 원본은 config/defaults/product_aliases.json.
+_FALLBACK_ALIASES: dict[str, list[str]] = {
     "windows_11": ["windows 11", "win11", "win 11", "windows11", "window 11"],
     "windows_10": ["windows 10", "win10", "win 10", "windows10", "window 10"],
     "windows_server": ["windows server", "win server", "winsrv", "windows srv"],
@@ -27,12 +30,34 @@ PRODUCT_ALIASES: dict[str, list[str]] = {
     "nginx": ["nginx"],
 }
 
-# 별칭 → key 역인덱스 (긴 별칭 우선 매칭).
-_ALIAS_INDEX: list[tuple[str, str]] = sorted(
-    ((alias, key) for key, aliases in PRODUCT_ALIASES.items() for alias in aliases),
-    key=lambda t: len(t[0]),
-    reverse=True,
-)
+_INDEX_CACHE: tuple[int, list[tuple[str, str]]] | None = None  # (사전 해시, 역인덱스)
+
+
+def _aliases() -> dict[str, list[str]]:
+    try:
+        cfg = appconfig.get_config("product_aliases")
+        aliases = cfg.get("aliases")
+        if isinstance(aliases, dict) and aliases:
+            return aliases
+    except Exception:  # noqa: BLE001 — 설정 파일 손상이 정규화 자체를 막지 않게
+        pass
+    return _FALLBACK_ALIASES
+
+
+def _alias_index() -> list[tuple[str, str]]:
+    """별칭 → key 역인덱스(긴 별칭 우선). 설정 내용이 바뀌면 재구축."""
+    global _INDEX_CACHE
+    aliases = _aliases()
+    fingerprint = hash(tuple(sorted((k, tuple(v)) for k, v in aliases.items())))
+    if _INDEX_CACHE and _INDEX_CACHE[0] == fingerprint:
+        return _INDEX_CACHE[1]
+    index = sorted(
+        ((str(alias).lower(), key) for key, vals in aliases.items() for alias in vals),
+        key=lambda t: len(t[0]),
+        reverse=True,
+    )
+    _INDEX_CACHE = (fingerprint, index)
+    return index
 
 
 def normalize_product(raw: str | None) -> str:
@@ -40,7 +65,7 @@ def normalize_product(raw: str | None) -> str:
     if not raw:
         return ""
     text = raw.strip().lower()
-    for alias, key in _ALIAS_INDEX:
+    for alias, key in _alias_index():
         if alias in text:
             return key
     # 폴백: 영숫자/한글만 남겨 슬러그. (사전 미등록 제품도 키 일관성 유지)
@@ -64,7 +89,7 @@ def split_product_version(raw: str | None) -> tuple[str, str]:
         return "", ""
     text = str(raw).strip()
     low = text.lower()
-    for alias, _key in _ALIAS_INDEX:  # 길이 내림차순 → 첫 매칭이 최장
+    for alias, _key in _alias_index():  # 길이 내림차순 → 첫 매칭이 최장
         i = low.find(alias)
         if i != -1:
             product = text[: i + len(alias)].strip()
@@ -78,10 +103,12 @@ def split_product_version(raw: str | None) -> tuple[str, str]:
 
 
 def register_alias(product_key: str, alias: str) -> None:
-    """운영 중 별칭 추가(메모리). DB 영속화는 설정 테이블로 확장."""
+    """운영 중 별칭 추가 — 설정 파일(product_aliases)에 영속 저장, 즉시 반영."""
     alias = alias.strip().lower()
-    PRODUCT_ALIASES.setdefault(product_key, [])
-    if alias not in PRODUCT_ALIASES[product_key]:
-        PRODUCT_ALIASES[product_key].append(alias)
-        _ALIAS_INDEX.append((alias, product_key))
-        _ALIAS_INDEX.sort(key=lambda t: len(t[0]), reverse=True)
+    if not alias:
+        return
+    aliases = {k: list(v) for k, v in _aliases().items()}
+    aliases.setdefault(product_key, [])
+    if alias not in aliases[product_key]:
+        aliases[product_key].append(alias)
+        appconfig.save_config("product_aliases", {"aliases": aliases})

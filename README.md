@@ -95,9 +95,12 @@ advisory-platform/
 
 | 도메인 | 엔드포인트 |
 |---|---|
-| 권고문 | `POST /advisories` · `POST /advisories/:id/extract` · `GET /advisories/:id/cves` · `GET /advisories/:id/file` |
+| 권고문 | `POST /advisories`(+`rel_path` 폴더 업로드) · `POST /advisories/:id/extract` · `GET /advisories/:id/cves` · `GET /advisories/:id/file` |
+| **출처 지정** | 업로드 시 자동 탐지(상위 폴더명→폴더명→파일명→본문) · `PATCH /advisories/source-batch`(일괄) · `PATCH /advisories/:id/meta`(개별, `source_org`) |
 | CVE 피드 | `POST /cve-feeds` → `POST /cve-feeds/:id/apply` · `GET /cve-feeds` |
-| CVE DB | `GET /cves` · `GET /cves/stats` |
+| CVE DB | `GET /cves` · `GET /cves/stats` · `POST /cves`(게이트 화면 수동 등록 — 모든 필드 선택) |
+| **게이트 보조** | `GET /advisories/:id/gate`(미등록 CVE 별 제품·버전·날짜 자동 추출 제안 + 하이라이트 색) |
+| **설정 파일** | `GET /config` · `GET /config/:name` · `PUT /config/:name` — 원본은 `data/config/*.json`, 웹 편집·직접 수정 모두 즉시 반영 |
 | 자산 | `GET /assets` · `POST /assets/import/preview` → `:id/commit` |
 | 매칭 | `POST /advisories/:id/match` · `GET /advisories/:id/matches` · `PATCH /matches/:id` |
 | 발송 | `GET /advisories/:id/notification-preview` · `POST /advisories/:id/notifications` · `GET /notifications` |
@@ -115,6 +118,9 @@ advisory-platform/
 ## 화면 두 갈래 — 관리자 / 내부 게시판
 
 - **`/admin`** — 기존 SPA. 관제 인원이 권고문 업로드·CVE 추출·자산 매칭·발송·조치추적을 수행.
+  - **업로드** — 파일 drag&drop 에 더해 **폴더째 재귀 업로드**(드롭·폴더 선택 모두). 출처는 직접 입력 대신 **상위 폴더명→폴더명→파일명→본문** 순으로 자동 탐지되고, 업로드 직후 패널에서 탐지 후보를 클릭 선택(복수 = 복수 출처 기록)해 **일괄/개별** 적용. 미탐지는 `'-'`, 언제든 변경 가능.
+  - **STEP2 게이트** — DB 미등록 CVE 를 나열하고 **화면 이탈 없이 직접 등록**(배포 기관·대상·버전·날짜 — 전부 선택 입력, 기본값은 본문 자동 추출). 자동 매칭된 제품·버전·날짜는 원문 PDF 에 **카테고리별 색으로 강조**되며 폼 필드 색과 항상 동일. 제품·버전 패턴 리스트도 같은 화면에서 인라인 편집(즉시 저장·실시간 반영).
+  - **설정 탭** — 출처기관 목록·제품 카탈로그·제품 별칭 등 **모든 설정을 파일(`data/config/*.json`)로 관리하고 웹에서 편집**. 파일을 직접 고쳐도 재시작 없이 다음 요청부터 반영.
   - **발송 이력 탭** — 권고문별 마스터/디테일(부서별 조치현황·신규 댓글 배지·조치불가 사유·보고서 모달·리마인드).
   - **`/admin/history`** — 발송이력·조치관리 **독립 콘솔**(권고문별/부서별 피벗 · 발송 문구 프리셋 · 미회신 부서 재발송). 발송 이력 탭의 "조치관리 콘솔 ↗"로 연결.
 - **`/board`** — 사내 누구나(무인증) 들어와 **공개된 보안권고문을 게시글처럼 열람하고 댓글로 회신**하는 내부 게시판. 루트 `/` 는 게시판으로 이동.

@@ -12,7 +12,7 @@ from .config import WEB_DIR, settings
 from .db import SessionLocal, init_db
 from .routers import (
     advisories, assets, audit, board, cve_feeds, cves, dashboard, departments, history, matches,
-    notifications, remediation,
+    notifications, remediation, settings_files,
 )
 
 
@@ -94,7 +94,7 @@ app.add_middleware(
 )
 
 for r in (advisories, cve_feeds, cves, assets, matches, notifications, departments, dashboard,
-          remediation, audit, board, history):
+          remediation, audit, board, history, settings_files):
     app.include_router(r.router)
 
 

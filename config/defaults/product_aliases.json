@@ -1,0 +1,20 @@
+{
+  "_comment": "제품 정규화 별칭 사전(§4.6-1) — 자산대장 원문 제품/OS 문자열과 CVE 피드 제품명을 동일한 product_key 로 변환합니다. 관리자 화면(설정 탭) 또는 이 파일을 직접 수정하면 즉시 반영됩니다.",
+  "aliases": {
+    "windows_11": ["windows 11", "win11", "win 11", "windows11", "window 11"],
+    "windows_10": ["windows 10", "win10", "win 10", "windows10", "window 10"],
+    "windows_server": ["windows server", "win server", "winsrv", "windows srv"],
+    "microsoft_office": ["microsoft office", "ms office", "office", "msoffice", "오피스"],
+    "google_chrome": ["google chrome", "chrome", "크롬"],
+    "hancom_office": ["한컴오피스", "한컴 오피스", "hancom office", "hancom", "hwp", "한글"],
+    "adobe_acrobat": ["adobe acrobat", "acrobat reader", "acrobat", "adobe reader", "어도비 아크로뱃"],
+    "edge": ["microsoft edge", "msedge", "edge", "엣지"],
+    "ahnlab_v3": ["ahnlab v3", "v3 lite", "v3 365", "안랩 v3"],
+    "linux_kernel": ["linux kernel", "리눅스 커널", "linux"],
+    "ubuntu": ["ubuntu", "우분투"],
+    "ibm_aix": ["aix"],
+    "openssl": ["openssl"],
+    "apache_httpd": ["apache httpd", "apache http server", "httpd", "apache"],
+    "nginx": ["nginx"]
+  }
+}

@@ -7,15 +7,19 @@ from app.models import Advisory
 from app.seed import _minimal_pdf
 
 
-def test_upload_requires_source_org(client):
-    pdf = _minimal_pdf(["missing source", "CVE-2099-1000"])
+def test_upload_without_source_falls_back_to_dash(client):
+    """출처 미입력 + 탐지 불가 → '-' 자동 지정(§출처). 업로드는 더 이상 막히지 않는다."""
+    pdf = _minimal_pdf(["no org mentioned here", "CVE-2099-1000"])
     r = client.post(
         "/api/v1/advisories",
-        files={"file": ("missing-source.pdf", io.BytesIO(pdf), "application/pdf")},
+        files={"file": ("nothing-here.pdf", io.BytesIO(pdf), "application/pdf")},
         data={"receive_channel": "NCST"},
     )
-    assert r.status_code == 400
-    assert "출처기관" in r.text
+    assert r.status_code == 201
+    body = r.json()
+    assert body["source_org"] == "-"
+    assert body["source_origin"] is None
+    assert body["source_candidates"] == []
 
 
 def test_upload_rejects_invalid_receive_channel(client):

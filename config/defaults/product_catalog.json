@@ -1,0 +1,34 @@
+{
+  "_comment": "CVE 게이트(미등록 CVE 수동 등록) 화면의 제품 필수 리스트·버전 패턴·하이라이트 색상. 관리자 화면(설정 탭·STEP2 인라인 편집) 또는 이 파일을 직접 수정하면 즉시 반영됩니다. color 는 폼 필드와 PDF 강조 영역에 항상 동일하게 쓰입니다.",
+  "products": [
+    { "key": "windows", "label": "Microsoft Windows", "color": "#2f5bd0",
+      "patterns": ["Microsoft\\s+Windows", "MS\\s*Windows", "Windows\\s*(?:Server(?:\\s*\\d{4})?|1[01]|8(?:\\.1)?|7)?", "윈도우즈?"] },
+    { "key": "office", "label": "Microsoft Office", "color": "#c2660c",
+      "patterns": ["Microsoft\\s+Office", "MS\\s*Office", "Office\\s*20\\d{2}", "Excel", "PowerPoint", "Outlook", "엑셀", "파워포인트", "아웃룩"] },
+    { "key": "hancom", "label": "한컴오피스", "color": "#0f766e",
+      "patterns": ["한컴\\s*오피스", "한글과컴퓨터", "아래아\\s*한글", "한글\\s*20\\d{2}", "HWP", "Hancom"] },
+    { "key": "v3", "label": "V3", "color": "#d0357f",
+      "patterns": ["AhnLab\\s*V3", "V3\\s*(?:Lite|365|IS)?", "안랩"] },
+    { "key": "chrome", "label": "Google Chrome", "color": "#b42318",
+      "patterns": ["Google\\s*Chrome", "Chrome", "크롬"] },
+    { "key": "edge", "label": "Microsoft Edge", "color": "#0e7490",
+      "patterns": ["Microsoft\\s*Edge", "Edge", "엣지"] },
+    { "key": "java", "label": "Java", "color": "#8a5a2a",
+      "patterns": ["Java(?:\\s*SE)?", "JRE", "JDK", "자바"] },
+    { "key": "acrobat", "label": "Adobe Acrobat", "color": "#6d28d9",
+      "patterns": ["Adobe\\s*Acrobat", "Acrobat\\s*(?:Reader|DC)?", "Adobe\\s*Reader", "어도비"] }
+  ],
+  "version_patterns": [
+    { "name": "연차수(윈도우)", "pattern": "\\b\\d{2}H[12]\\b" },
+    { "name": "점버전", "pattern": "\\b\\d+(?:\\.\\d+){1,3}\\b" },
+    { "name": "v접두", "pattern": "\\bv\\d+(?:\\.\\d+)*\\b" },
+    { "name": "연도판", "pattern": "\\b20\\d{2}\\b" },
+    { "name": "서비스팩", "pattern": "\\bSP\\d\\b" }
+  ],
+  "colors": {
+    "cve": "#e8a33d",
+    "version": "#7a5a9a",
+    "date": "#2e9e5b",
+    "source": "#b42318"
+  }
+}
