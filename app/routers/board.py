@@ -455,16 +455,29 @@ def add_comment(advisory_id: int, body: CommentIn, request: Request, db: Session
             .where(Notification.advisory_id == adv.id, Notification.department_id == dept.id)
             .order_by(Notification.id.desc())
         )
-        if n is not None:
-            n.ack_status = sync_status
-            n.ack_note = comment.body
-            n.ack_by = comment.author_name
-            n.ack_updated_at = now
-            if sync_status == enums.AckStatus.DONE:
+        if n is None:
+            # 발송 '전' 선(先)회신(§선처리): 게시판 게시만 된 상태에서 담당자가 먼저 처리한 경우 —
+            # 조용히 버리면 발송 이력에서 영영 안 보인다. 미발송(PENDING) 행을 만들어 기록하고,
+            # 이후 실제 발송이 이 행을 재사용한다(선회신 ack 는 보존 — notifications.py 참조).
+            dept_asset_ids = sorted({m.asset_id for m in db.scalars(
+                select(Match).join(Asset, Match.asset_id == Asset.id)
+                .where(Match.advisory_id == adv.id, Match.status == enums.MatchStatus.MATCHED,
+                       Asset.department_id == dept.id))})
+            n = Notification(advisory_id=adv.id, department_id=dept.id,
+                             status=enums.NotificationStatus.PENDING,
+                             channels=[], asset_ids=dept_asset_ids)
+            db.add(n)
+            db.flush()
+        n.ack_status = sync_status
+        n.ack_note = comment.body
+        n.ack_by = comment.author_name
+        n.ack_updated_at = now
+        if sync_status == enums.AckStatus.DONE:
+            if n.status != enums.NotificationStatus.PENDING:   # 미발송 선회신은 PENDING 유지
                 n.status = enums.NotificationStatus.ACKED
-            elif n.status == enums.NotificationStatus.ACKED:
-                n.status = enums.NotificationStatus.SENT   # 완료 정정(진행중/불가) → 종결 해제
-            ack_synced = n.id
+        elif n.status == enums.NotificationStatus.ACKED:
+            n.status = enums.NotificationStatus.SENT   # 완료 정정(진행중/불가) → 종결 해제
+        ack_synced = n.id
 
     record(db, action="BOARD_COMMENT", actor_id=None, entity_type="advisory",
            entity_id=adv.id, detail={"author": comment.author_name, "dept": dept_name,

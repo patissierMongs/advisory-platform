@@ -103,26 +103,33 @@ def main() -> int:
         "header_rows": pv.get("header_rows", 1), "mode": "append", "on_warning": "skip"})
     log(f"자산대장: {r['committed']}행 적재 · 경고 {len(r['warnings'])}건 · 부서 생성 {len(r['created_departments'])}개")
 
-    # ④ 매칭 + 발송(WEB_UI 채널 — SMTP 불필요) + 게시판 게시 (재실행 안전)
+    # ④ 매칭 + 게시판 게시 + 일부만 발송(WEB_UI 채널 — SMTP 불필요)
+    #    전부 발송하면 전 부서 발송 → 자동 완료(COMPLETED)로 처리 게시판에서 기본 숨김되어
+    #    데모가 빈 화면이 된다 — 매칭 부서가 많은 2건만 발송해 발송/미발송·완료 필터를 모두 시연.
     advs = api.json("GET", "/advisories?size=100")["items"]
     published = 0
-    notified = 0
+    match_depts: dict[int, int] = {}
     for a in advs:
         try:
             api.json("POST", f"/advisories/{a['id']}/match", {})
         except urllib.error.HTTPError:
             pass  # 게이트 미충족(스캔본 등)은 매칭 없이 게시만
-        try:
-            # 발송 이력·조치 회신 데모를 위해 내부 기록 채널로 발송(멱등 — 재실행 시 무해).
-            r = api.json("POST", f"/advisories/{a['id']}/notifications",
-                         {"all": True, "channels": ["WEB_UI"]})
-            notified += len(r.get("results") or [])
-        except urllib.error.HTTPError:
-            pass  # 매칭 자산 없는 권고문은 발송 대상 없음
+        mt = api.json("GET", f"/advisories/{a['id']}/matches")["items"]
+        match_depts[a["id"]] = len({m["department"] for m in mt})
         if not a.get("board_published"):
             api.json("POST", f"/advisories/{a['id']}/board", {})
             published += 1
-    log(f"게시판 게시: {published}건 · 발송(WEB_UI): {notified}개 부서 (총 {len(advs)}건)")
+    notified = 0
+    send_targets = sorted(match_depts, key=lambda i: -match_depts[i])[:2]
+    for aid2 in send_targets:
+        if match_depts.get(aid2):
+            try:
+                r = api.json("POST", f"/advisories/{aid2}/notifications",
+                             {"all": True, "channels": ["WEB_UI"]})
+                notified += len(r.get("results") or [])
+            except urllib.error.HTTPError:
+                pass
+    log(f"게시판 게시: {published}건 · 발송(WEB_UI): 권고문 {len(send_targets)}건/{notified}개 부서 (총 {len(advs)}건)")
 
     # ⑤ 대표 권고문(매칭 '부서'가 가장 많은 것)에 부서 회신 댓글 시드 — 회신 상태 다양성 확보
     depts = {d["name"]: d["id"] for d in api.json("GET", "/departments")["items"]}

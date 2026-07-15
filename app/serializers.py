@@ -40,6 +40,23 @@ def cve_item(c: Cve) -> dict:
     }
 
 
+def _version_strings(av) -> list[str]:
+    """영향버전 규칙 → 검색용 문자열 목록(§필터). 전체(*) 규칙은 빈 목록."""
+    if av in (None, "*", "", []):
+        return []
+    if isinstance(av, list):
+        return [str(x) for x in av]
+    if isinstance(av, dict):
+        out: list[str] = []
+        for k, v in av.items():
+            if k == "range" and isinstance(v, (list, tuple)):
+                out += [str(x) for x in v]
+            else:
+                out.append(str(v))
+        return out
+    return [str(av)]
+
+
 def advisory_brief(a: Advisory, *, match_count: int | None = None) -> dict:
     found = sum(1 for ac in a.cves if ac.lookup_status == enums.LookupStatus.FOUND)
     not_found = len(a.cves) - found
@@ -78,6 +95,13 @@ def advisory_brief(a: Advisory, *, match_count: int | None = None) -> dict:
         "extracted": len(a.cves),
         "found": found,
         "not_found": not_found,
+        # 처리 게시판 필터(§필터) — CVE 코드/제품/버전 검색용.
+        "cve_codes": [ac.cve_id_text for ac in a.cves],
+        "cve_products": sorted({(ac.cve.product_name or ac.cve.product_key)
+                                for ac in a.cves if ac.cve
+                                and (ac.cve.product_name or ac.cve.product_key)}),
+        "cve_versions": sorted({v for ac in a.cves if ac.cve
+                                for v in _version_strings(ac.cve.affected_versions)}),
         "match_count": match_count,
         "board_post_id": a.board_post_id,
         "board_published": a.board_published_at is not None,

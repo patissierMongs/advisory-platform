@@ -127,8 +127,11 @@ def send(advisory_id: int, body: NotifyRequest, request: Request, db: Session = 
         outcome = notify.dispatch(channels, dept.name if dept else "", dept.messenger_id if dept else None,
                                   dept.email if dept else None, body_text)
         n = existing or Notification(advisory_id=advisory_id, department_id=dept_id, idempotency_key=key)
-        if existing is not None and existing.idempotency_key != key:
+        if existing is not None and existing.idempotency_key is not None \
+                and existing.idempotency_key != key:
             # 자산 구성이 바뀐 재통보 — 이전 회신은 새 구성에 대한 확인이 아니므로 초기화.
+            # (idempotency_key 가 None 인 행 = 발송 전 선회신(PENDING, §선처리) — 담당자가 이미
+            #  이 권고문을 처리한 기록이므로 초기화하지 않고 보존한다.)
             n.idempotency_key = key
             n.ack_status = enums.AckStatus.NONE
             n.ack_note = None
@@ -136,6 +139,8 @@ def send(advisory_id: int, body: NotifyRequest, request: Request, db: Session = 
             n.ack_updated_at = None
             n.reminded_at = None
             n.reminder_count = 0
+        elif existing is not None and existing.idempotency_key is None:
+            n.idempotency_key = key   # 선회신 행을 정식 발송 행으로 승격(ack 보존)
         n.channels = channels
         n.message_body = body_text
         n.asset_ids = asset_ids

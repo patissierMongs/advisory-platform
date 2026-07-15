@@ -208,10 +208,15 @@ function ackPicker(d){
     ${["NONE","IN_PROGRESS","DONE","UNABLE"].map(s=>`<option value="${s}" ${s===d.ack_status?"selected":""}>${KO[s]}</option>`).join("")}
   </select>`;
 }
+function evLabel(n){
+  // 증빙 뱃지 라벨(§UI) — 앞 5자 + … + 확장자(전체 이름은 툴팁).
+  const s = String(n||""); if(s.length<=14) return s;
+  const d = s.lastIndexOf("."); return s.slice(0,5)+"…"+(d>0?s.slice(d).slice(0,8):"");
+}
 function evCell(d, kind){
   // 증빙(§증빙): 업로드된 파일명 목록(클릭=팝업 열람, 세로 나열) + 우측 '＋' 추가 업로드(다중·누적).
   const files = (d.evidence_files||[]).map(f =>
-    `<button class="ev" style="border:none;font-family:inherit;display:block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left" data-name="${esc(f.name)}" onclick="openEvidence(${d.notification_id}, ${f.i}, this.dataset.name)" title="클릭하여 열람: ${esc(f.name)}">📎 ${esc(f.name)}</button>`).join("");
+    `<button class="ev" style="border:none;font-family:inherit;display:block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left" data-name="${esc(f.name)}" onclick="openEvidence(${d.notification_id}, ${f.i}, this.dataset.name)" title="클릭하여 열람: ${esc(f.name)}">📎 ${esc(evLabel(f.name))}</button>`).join("");
   const view = files ? `<div style="display:flex;flex-direction:column;gap:3px">${files}</div>` : `<span class="pill">없음</span>`;
   const up = `<label class="ghost" style="flex-shrink:0" title="증빙 추가 업로드(여러 파일 선택 가능) — 기존 첨부에 누적">＋<input type="file" multiple style="display:none" onchange="uploadEvidence(${d.notification_id},this)"></label>`;
   return `<div style="display:flex;align-items:flex-start;gap:6px">${view}${up}</div>`;
