@@ -362,7 +362,8 @@
                 </div>
               </sc-if>
 
-              <div style="display:grid; grid-template-columns:1.35fr 1fr; gap:18px; align-items:start;">
+              <!-- 화면이 좁으면 두 패널이 줄바꿈되어 세로로 쌓인다 — 버튼 가림/스크롤 불가 방지(§UI). -->
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(430px, 1fr)); gap:18px; align-items:start;">
 
                 <!-- LEFT : original PDF -->
                 <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden;">
@@ -470,24 +471,25 @@
                                 </sc-for>
                               </div>
                             </sc-if>
-                            <div style="display:grid; grid-template-columns:1fr 1.15fr 1fr 128px auto; gap:8px; align-items:end;">
-                              <label style="display:flex; flex-direction:column; gap:4px;">
+                            <!-- 좁은 화면에서는 필드가 다음 줄로 줄바꿈 — 등록 버튼이 가려지지 않는다(§UI). -->
+                            <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end;">
+                              <label style="display:flex; flex-direction:column; gap:4px; flex:1 1 140px; min-width:130px;">
                                 <span style="font-size:10.5px; font-weight:700; color:{{ r.gSourceColor }};">배포 기관</span>
-                                <input value="{{ r.gSource }}" onInput="{{ r.onGSource }}" placeholder="빈칸 가능" style="font-family:inherit; font-size:11.5px; padding:6px 8px; border:1px solid #d3dbe8; border-left:3px solid {{ r.gSourceColor }}; border-radius:6px; outline:none; color:#33415a;">
+                                <input value="{{ r.gSource }}" onInput="{{ r.onGSource }}" placeholder="빈칸 가능" style="width:100%; box-sizing:border-box; font-family:inherit; font-size:11.5px; padding:6px 8px; border:1px solid #d3dbe8; border-left:3px solid {{ r.gSourceColor }}; border-radius:6px; outline:none; color:#33415a;">
                               </label>
-                              <label style="display:flex; flex-direction:column; gap:4px;">
+                              <label style="display:flex; flex-direction:column; gap:4px; flex:1.2 1 160px; min-width:140px;">
                                 <span style="font-size:10.5px; font-weight:700; color:{{ r.gProductColor }};">대상(제품)</span>
-                                <input value="{{ r.gProduct }}" onInput="{{ r.onGProduct }}" placeholder="빈칸 가능" style="font-family:inherit; font-size:11.5px; padding:6px 8px; border:1px solid #d3dbe8; border-left:3px solid {{ r.gProductColor }}; border-radius:6px; outline:none; color:#33415a;">
+                                <input value="{{ r.gProduct }}" onInput="{{ r.onGProduct }}" placeholder="빈칸 가능" style="width:100%; box-sizing:border-box; font-family:inherit; font-size:11.5px; padding:6px 8px; border:1px solid #d3dbe8; border-left:3px solid {{ r.gProductColor }}; border-radius:6px; outline:none; color:#33415a;">
                               </label>
-                              <label style="display:flex; flex-direction:column; gap:4px;">
+                              <label style="display:flex; flex-direction:column; gap:4px; flex:1 1 140px; min-width:130px;">
                                 <span style="font-size:10.5px; font-weight:700; color:{{ r.gVersionColor }};">버전(쉼표 구분)</span>
-                                <input value="{{ r.gVersions }}" onInput="{{ r.onGVersions }}" placeholder="빈칸 = 전체" style="font-family:inherit; font-size:11.5px; padding:6px 8px; border:1px solid #d3dbe8; border-left:3px solid {{ r.gVersionColor }}; border-radius:6px; outline:none; color:#33415a;">
+                                <input value="{{ r.gVersions }}" onInput="{{ r.onGVersions }}" placeholder="빈칸 = 전체" style="width:100%; box-sizing:border-box; font-family:inherit; font-size:11.5px; padding:6px 8px; border:1px solid #d3dbe8; border-left:3px solid {{ r.gVersionColor }}; border-radius:6px; outline:none; color:#33415a;">
                               </label>
-                              <label style="display:flex; flex-direction:column; gap:4px;">
+                              <label style="display:flex; flex-direction:column; gap:4px; flex:0 1 132px; min-width:124px;">
                                 <span style="font-size:10.5px; font-weight:700; color:{{ r.gDateColor }};">날짜</span>
-                                <input type="date" value="{{ r.gDate }}" onInput="{{ r.onGDate }}" style="font-family:inherit; font-size:11.5px; padding:5px 8px; border:1px solid #d3dbe8; border-left:3px solid {{ r.gDateColor }}; border-radius:6px; outline:none; color:#33415a;">
+                                <input type="date" value="{{ r.gDate }}" onInput="{{ r.onGDate }}" style="width:100%; box-sizing:border-box; font-family:inherit; font-size:11.5px; padding:5px 8px; border:1px solid #d3dbe8; border-left:3px solid {{ r.gDateColor }}; border-radius:6px; outline:none; color:#33415a;">
                               </label>
-                              <button onClick="{{ r.onRegister }}" style="background:#0f766e; color:#fff; border:none; border-radius:7px; padding:8px 14px; font-size:11.5px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap;">DB 등록</button>
+                              <button onClick="{{ r.onRegister }}" style="flex:0 0 auto; background:#0f766e; color:#fff; border:none; border-radius:7px; padding:8px 14px; font-size:11.5px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap;">DB 등록</button>
                             </div>
                           </div>
                         </div>
@@ -500,7 +502,7 @@
               <!-- 인라인 카탈로그 편집(§게이트) — 작업 페이지 이탈 없이 제품·버전 패턴 추가/제거, 즉시 저장·실시간 반영 -->
               <div style="margin-top:14px; background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden;">
                 <button onClick="{{ toggleCatEdit }}" style="width:100%; display:flex; align-items:center; justify-content:space-between; background:#fafbfd; border:none; cursor:pointer; font-family:inherit; padding:12px 18px;">
-                  <span style="font-size:12.5px; font-weight:700; color:#3a4a63;">🎨 추출 제품·버전 패턴 편집 <span style="font-weight:500; color:#94a1b4;">— 파일 관리: data/config/product_catalog.json · 수정 즉시 하이라이트·기본값에 반영</span></span>
+                  <span style="font-size:12.5px; font-weight:700; color:#3a4a63;">🎨 추출 제품·버전 패턴 / 배포 기관 편집 <span style="font-weight:500; color:#94a1b4;">— 파일 관리: data/config/*.json · 수정 즉시 하이라이트·기본값·출처 탐지에 반영</span></span>
                   <span style="font-size:11.5px; color:#5a6b86;">{{ catEditChevron }}</span>
                 </button>
                 <sc-if value="{{ catEditOpen }}" hint-placeholder-val="">
@@ -527,12 +529,29 @@
                       <input value="{{ catNewVerPattern }}" onInput="{{ onCatNewVerPattern }}" placeholder="정규식 (예: \b\d+(?:\.\d+){1,3}\b)" style="flex:1; font-family:monospace; font-size:11.5px; padding:7px 9px; border:1px solid #d3dbe8; border-radius:6px; outline:none; color:#33415a;">
                       <button onClick="{{ onCatAddVerPattern }}" style="background:#7a5a9a; color:#fff; border:none; border-radius:6px; padding:7px 14px; font-size:11.5px; font-weight:700; cursor:pointer; font-family:inherit; flex-shrink:0;">+ 패턴 추가</button>
                     </div>
+                    <div style="font-size:11px; color:#94a1b4; font-weight:700; margin:14px 0 7px;">배포 기관(출처기관) 목록 <span style="font-weight:500;">— 게이트 폼의 배포 기관·업로드 출처 자동 탐지에 사용 (파일: data/config/source_orgs.json)</span></div>
+                    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:9px;">
+                      <sc-for list="{{ orgChips }}" as="og2" hint-placeholder-count="6">
+                        <span style="display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700; padding:4px 10px; border-radius:6px; background:#fdecec; color:#b42318; border:1px solid #f5c6c2;">
+                          {{ og2.name }}
+                          <sc-if value="{{ og2.hasAliases }}" hint-placeholder-val="">
+                            <span style="font-weight:500; opacity:.75;">({{ og2.aliases }})</span>
+                          </sc-if>
+                          <button onClick="{{ og2.onRemove }}" style="background:none; border:none; cursor:pointer; padding:0; color:inherit; opacity:.6; font-size:11px;">✕</button>
+                        </span>
+                      </sc-for>
+                    </div>
+                    <div style="display:flex; gap:7px; align-items:center;">
+                      <input value="{{ orgNewName }}" onInput="{{ onOrgNewName }}" placeholder="기관명 (예: 국가정보원)" style="flex:0 0 200px; font-family:inherit; font-size:11.5px; padding:7px 9px; border:1px solid #d3dbe8; border-radius:6px; outline:none; color:#33415a;">
+                      <input value="{{ orgNewAliases }}" onInput="{{ onOrgNewAliases }}" placeholder="별칭 (쉼표 구분 — 예: 국정원, NIS)" style="flex:1; font-family:inherit; font-size:11.5px; padding:7px 9px; border:1px solid #d3dbe8; border-radius:6px; outline:none; color:#33415a;">
+                      <button onClick="{{ onOrgAdd }}" style="background:#b42318; color:#fff; border:none; border-radius:6px; padding:7px 14px; font-size:11.5px; font-weight:700; cursor:pointer; font-family:inherit; flex-shrink:0;">+ 기관 추가</button>
+                    </div>
                   </div>
                 </sc-if>
               </div>
 
-              <div style="margin-top:18px; background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:16px 22px; display:flex; align-items:center; justify-content:space-between;">
-                <div style="display:flex; gap:30px;">
+              <div style="margin-top:18px; background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:16px 22px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+                <div style="display:flex; gap:30px; flex-wrap:wrap;">
                   <div><div style="font-size:11px; color:#94a1b4;">추출 CVE</div><div style="font-size:17px; font-weight:800; color:#15294a;">{{ rowCount }}건</div></div>
                   <div><div style="font-size:11px; color:#94a1b4;">DB 조회완료</div><div style="font-size:17px; font-weight:800; color:#0f766e;">{{ foundCount }}건</div></div>
                   <div><div style="font-size:11px; color:#94a1b4;">DB 미등록</div><div style="font-size:17px; font-weight:800; color:{{ unresolvedColor }};">{{ unresolvedCount }}건</div></div>
@@ -746,17 +765,18 @@
                 <option value="미상">미상</option>
               </select>
             </div>
-            <div style="display:grid; grid-template-columns:140px 1fr 90px 130px 110px 70px; gap:0; padding:10px 20px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:11px; font-weight:700; color:#94a1b4;">
-              <span>CVE</span><span>제품 / OS</span><span style="text-align:center;">심각도</span><span>영향 버전</span><span>게시일</span><span style="text-align:right;">출처</span>
+            <div style="display:grid; grid-template-columns:140px 1fr 84px 124px 104px 70px 58px; gap:0; padding:10px 20px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:11px; font-weight:700; color:#94a1b4;">
+              <span>CVE</span><span>제품 / OS</span><span style="text-align:center;">심각도</span><span>영향 버전</span><span>게시일</span><span style="text-align:right;">출처</span><span style="text-align:right;">등록</span>
             </div>
             <sc-for list="{{ cveTableRows }}" as="c" hint-placeholder-count="4">
-              <div style="display:grid; grid-template-columns:140px 1fr 90px 130px 110px 70px; gap:0; align-items:center; padding:11px 20px; border-bottom:1px solid #f2f5f9; font-size:12.5px;">
+              <div style="display:grid; grid-template-columns:140px 1fr 84px 124px 104px 70px 58px; gap:0; align-items:center; padding:11px 20px; border-bottom:1px solid #f2f5f9; font-size:12.5px;">
                 <span style="font-family:monospace; color:#0f5d56; font-weight:600; display:flex; align-items:center; gap:6px;">{{ c.id }}<sc-if value="{{ c.isNew }}" hint-placeholder-val=""><span style="font-size:9px; font-weight:800; color:#fff; background:#0f766e; padding:1px 5px; border-radius:4px;">NEW</span></sc-if></span>
                 <span style="color:#2a3a52; font-weight:600;">{{ c.product }}</span>
                 <span style="display:flex; justify-content:center;"><span style="{{ c.sevStyle }}">{{ c.severity }}</span></span>
                 <span style="color:#5a6b86;">{{ c.versions }}</span>
                 <span style="color:#8a98ab; font-family:monospace; font-size:11.5px;">{{ c.published }}</span>
                 <span style="text-align:right; font-size:11px; color:#5a6b86;">{{ c.source }}</span>
+                <span style="display:flex; justify-content:flex-end;"><span style="{{ c.manualStyle }}">{{ c.manualLabel }}</span></span>
               </div>
             </sc-for>
             <sc-if value="{{ cveTableEmpty }}" hint-placeholder-val="">
@@ -2827,6 +2847,10 @@ class Component extends DCLogic {
         published: (c.published_at || '').slice(0, 10) || '-',
         source: c.source || '-',
         isNew: false,
+        // 수동 등록 여부(§게이트) — 게이트/DB 화면에서 관리자가 직접 넣은 항목 식별.
+        manualLabel: c.is_manual ? '✏ 수동' : '피드',
+        manualStyle: 'font-size:10px; font-weight:700; padding:2px 7px; border-radius:5px; '
+          + (c.is_manual ? 'background:#eef2fb; color:#2f5bd0; border:1px solid #d4e3f2;' : 'background:#f0f3f7; color:#94a1b4;'),
       };
     });
     const updateLog = (S.apiFeedLog || []).map(f => ({
@@ -3139,17 +3163,28 @@ class Component extends DCLogic {
     const pdfScale = pdfAvailable ? (pv.scale || 2) : 2;
     const pdfPageUrl = pdfAvailable ? ('/api/v1/advisories/' + aid + '/page/' + curPage + '.png?scale=' + pdfScale) : '';
     // 박스 색 = 카테고리별 색(서버 카탈로그 설정 그대로) — 게이트 폼 칩과 항상 동일(§게이트).
-    const pdfBoxes = (pdfAvailable && pageMeta) ? pv.boxes.filter(b => b.page === curPage).map(b => ({
-      term: b.term,
-      style: 'position:absolute; left:' + (b.x / pageMeta.width * 100).toFixed(2) + '%; top:' + (b.y / pageMeta.height * 100).toFixed(2)
-        + '%; width:' + (b.w / pageMeta.width * 100).toFixed(2) + '%; height:' + (b.h / pageMeta.height * 100).toFixed(2)
-        + '%; background:' + this._rgba(b.color || '#e8a33d', 0.32) + '; border:1.5px solid ' + this._rgba(b.color || '#d08719', 0.95)
-        + '; border-radius:2px; box-shadow:0 0 0 1px rgba(255,255,255,.45); pointer-events:none;',
-    })) : [];
-    // 범례 — 서버가 내려준 카테고리·색 그대로(추출 영역 색과 항상 동일).
+    // 가장 중요한 CVE 는 '더' 강조(§UI): 진한 채움 + 두꺼운 테두리 + 글로우. 나머지는 옅게.
+    const pdfBoxes = (pdfAvailable && pageMeta) ? pv.boxes.filter(b => b.page === curPage).map(b => {
+      const color = b.color || '#e8a33d';
+      const isCve = b.category === 'cve' || !b.category;
+      const paint = isCve
+        ? 'background:' + this._rgba(color, 0.42) + '; border:2px solid ' + this._rgba(color, 1)
+          + '; border-radius:3px; box-shadow:0 0 0 3px ' + this._rgba(color, 0.22) + ', 0 0 10px ' + this._rgba(color, 0.55) + ';'
+        : 'background:' + this._rgba(color, 0.16) + '; border:1.5px solid ' + this._rgba(color, 0.8)
+          + '; border-radius:2px; box-shadow:0 0 0 1px rgba(255,255,255,.45);';
+      return {
+        term: b.term,
+        style: 'position:absolute; left:' + (b.x / pageMeta.width * 100).toFixed(2) + '%; top:' + (b.y / pageMeta.height * 100).toFixed(2)
+          + '%; width:' + (b.w / pageMeta.width * 100).toFixed(2) + '%; height:' + (b.h / pageMeta.height * 100).toFixed(2)
+          + '%; ' + paint + ' pointer-events:none;',
+      };
+    }) : [];
+    // 범례 — 서버가 내려준 카테고리·색 그대로(추출 영역 색과 항상 동일). CVE 견본도 동일하게 강조.
     const pdfLegend = ((pv && pv.legend) || []).map(l => ({
       label: l.label,
-      swatchStyle: 'width:12px; height:12px; border-radius:2px; background:' + this._rgba(l.color, 0.32) + '; border:1.5px solid ' + this._rgba(l.color, 0.95) + ';',
+      swatchStyle: l.category === 'cve'
+        ? 'width:13px; height:13px; border-radius:3px; background:' + this._rgba(l.color, 0.42) + '; border:2px solid ' + this._rgba(l.color, 1) + '; box-shadow:0 0 6px ' + this._rgba(l.color, 0.55) + ';'
+        : 'width:12px; height:12px; border-radius:2px; background:' + this._rgba(l.color, 0.16) + '; border:1.5px solid ' + this._rgba(l.color, 0.8) + ';',
     }));
     const pdfPageNode = pdfAvailable ? React.createElement('img', {
       src: pdfPageUrl,

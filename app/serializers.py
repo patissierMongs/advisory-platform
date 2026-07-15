@@ -36,6 +36,7 @@ def cve_item(c: Cve) -> dict:
         "description": c.description,
         "published_at": _d(c.published_at),
         "source": c.source,
+        "is_manual": bool(c.is_manual),   # 관리자 수동 등록 표식(§게이트)
     }
 
 

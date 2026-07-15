@@ -70,6 +70,7 @@ def upsert_cve(body: CveUpsertRequest, request: Request, db: Session = Depends(g
         cve.published_at = published
     if body.description and body.description.strip():
         cve.description = body.description.strip()
+    cve.is_manual = True   # 수동 등록 표식 — DB 화면에서 피드 유입분과 구분(§게이트)
     db.flush()
 
     unlocked = _reevaluate_advisories(db)

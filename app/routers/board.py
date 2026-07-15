@@ -271,11 +271,12 @@ def board_file(advisory_id: int, db: Session = Depends(get_db)):
 
 
 def _public_comment(c) -> dict:
-    """공개 게시판용 댓글 — 증빙 첨부는 노출하지 않는다(관리자 페이지에서만 열람)."""
-    item = serializers.comment_item(c)
-    item["evidence"] = None
-    item["has_evidence"] = False
-    return item
+    """공개 게시판용 댓글 — 증빙 첨부를 노출한다(§UI: '첨부 보기' 팝업).
+
+    과거엔 게시판에서 숨겼으나(관리자 전용), 서빙 엔드포인트(GET …/evidence)는 이미
+    공개였고 폐쇄망 내부 게시판에서 부서 간 조치 증빙 공유가 실사용 요구라 노출로 변경.
+    """
+    return serializers.comment_item(c)
 
 
 @router.get("/advisories/{advisory_id}")

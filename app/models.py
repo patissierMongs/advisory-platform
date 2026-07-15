@@ -125,6 +125,8 @@ class Cve(TimestampMixin, Base):
     published_at: Mapped[date | None] = mapped_column(Date)
     source: Mapped[str | None] = mapped_column(String(40))
     feed_import_id: Mapped[int | None] = mapped_column(ForeignKey("cve_feed_import.id"))
+    # 게이트/DB 화면에서 관리자가 직접 등록·수정한 항목 표식(§게이트) — 피드 갱신이 와도 유지.
+    is_manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class Advisory(TimestampMixin, Base):

@@ -111,6 +111,7 @@ def test_manual_cve_upsert_unlocks_gate(client):
     assert out["created"] is True
     assert out["advisories_unlocked"] == 1
     assert out["cve"]["product_key"]                    # product_name 정규화 키 자동 부여
+    assert out["cve"]["is_manual"] is True              # 수동 등록 표식(§게이트 — DB 화면 컬럼)
 
     r = client.get(f"/api/v1/advisories/{adv['id']}/cves")
     assert r.json()["can_proceed"] is True              # 게이트 해제

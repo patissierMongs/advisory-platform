@@ -101,11 +101,12 @@ def test_board_hides_comment_evidence_and_progress_is_asset_based(client, hist_i
                 files={"file": ("ev.png", b"x", "image/png")})
 
     detail = client.get(f"/api/v1/board/advisories/{aid}").json()
-    # 상세 진행률은 자산 기준(매칭 0건 → total 0), 부서별 표/증빙은 게시판에서 제거.
+    # 상세 진행률은 자산 기준(매칭 0건 → total 0), 부서별 표는 게시판에서 제거.
     assert detail["progress"]["total"] == 0
     assert "departments" not in detail["progress"]
-    # 댓글 증빙은 공개 게시판에서 숨김.
-    assert all(c["has_evidence"] is False for c in detail["comments"])
+    # 댓글 증빙은 게시판에서도 노출('첨부 보기' 팝업 §UI) — 요구 변경으로 숨김 해제.
+    ev = next(c for c in detail["comments"] if c["id"] == cid)
+    assert ev["has_evidence"] is True and ev["evidence"] == "ev.png"
     # 단, 관리자 측(발송이력 롤업)에서는 동기화된 증빙이 그대로 보인다.
     d = next(a for a in client.get("/api/v1/history/advisories").json()["items"]
              if a["id"] == aid)["departments"][0]

@@ -281,12 +281,13 @@ async function renderDetail(id){
     </table>` : `<div class="muted" style="font-size:12.5px">영향 자산 매칭 결과가 없습니다(관리자 매칭 전이거나 해당 자산 없음).</div>`;
 
     const comments = d.comments.length ? d.comments.map(c=>`
-      <div class="cmt">
+      <div class="cmt" style="position:relative">
         <span class="who">${esc(c.author_name)}</span>
         ${c.department?`<span class="muted"> · ${esc(c.department)}</span>`:""}
         ${c.is_admin?`<span class="chip" style="background:#e8effb;color:#2f5bd0">관리자</span>`:""}
         ${c.ack_status?`<span class="ack ack-${c.ack_status}">${ACK_KO[c.ack_status]||c.ack_status}</span>`:""}
         <span class="when"> · ${fmtDate(c.created_at)} ${esc((c.created_at||"").slice(11,16))}</span>
+        ${c.has_evidence?`<button class="btn-ghost" style="position:absolute;right:0;top:0;font-size:11.5px;padding:4px 10px" data-name="${esc(c.evidence||"증빙 파일")}" onclick="openEvidence(${c.id}, this.dataset.name)">📎 첨부 보기</button>`:""}
         <div class="body">${esc(c.body)}</div>
         ${c.has_evidence?`<a class="evlink" href="${API}/comments/${c.id}/evidence" target="_blank" rel="noopener">📎 ${esc(c.evidence||"증빙 파일")}</a>`:""}
       </div>`).join("") : `<div class="muted" style="font-size:12.5px;padding:8px 0">아직 댓글이 없습니다. 첫 회신을 남겨주세요.</div>`;
@@ -313,7 +314,7 @@ async function renderDetail(id){
           <a class="btn-ghost" href="${API}/advisories/${id}/file" target="_blank" rel="noopener">📄 원문 PDF 새 탭으로</a>
           <button class="btn-ghost" onclick="togglePdf(${id})">📄 여기서 보기 / 닫기</button>
         </div>
-        <div id="pdfbox"></div>
+        <div id="pdfbox"></div><!-- 원문 인라인 뷰어는 기본으로 펼침(§UI) — 아래 렌더 직후 togglePdf 호출 -->
       </div>
 
       <h2 class="section">영향 부서 · 자산 · 담당자</h2>
@@ -352,6 +353,7 @@ async function renderDetail(id){
         </div>
         <div style="text-align:right;margin-top:12px"><button class="btn" id="c_submit" onclick="submitComment(${id})">댓글 등록</button></div>
       </div>`;
+    togglePdf(id);   // '여기서 보기'가 기본값 — 원문 인라인 뷰어를 항상 펼친 상태로 시작(§UI)
   }catch(e){ app.innerHTML = `<div class="back" onclick="location.hash='#/'">← 목록</div><div class="err">${esc(e.message)}</div>`; }
 }
 
@@ -403,6 +405,29 @@ window.togglePdf = function(id){
   box.innerHTML = `<iframe src="${API}/advisories/${id}/file" title="원문 PDF"
     style="width:100%;height:620px;border:1px solid var(--line);border-radius:10px;margin-top:10px;background:#fff"></iframe>`;
   box.dataset.open = "1";
+};
+
+// 댓글 증빙 팝업(§UI) — 새 탭 대신 게시판 안에서 바로 확인. 안전 타입만 inline 서빙됨.
+window.openEvidence = function(cid, name){
+  const old = document.getElementById("evmodal");
+  if(old) old.remove();
+  const wrap = document.createElement("div");
+  wrap.id = "evmodal";
+  wrap.style.cssText = "position:fixed;inset:0;background:rgba(15,29,46,.55);display:flex;align-items:center;justify-content:center;z-index:80;padding:36px";
+  wrap.innerHTML = `
+    <div style="width:860px;max-width:100%;max-height:92vh;background:#fff;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.35)" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--line);background:#fafbfd">
+        <span style="font-size:13px;font-weight:700;color:#15294a">📎 ${esc(name||"증빙 파일")}</span>
+        <button class="btn-ghost" style="padding:5px 12px" onclick="document.getElementById('evmodal').remove()">닫기 ✕</button>
+      </div>
+      <iframe src="${API}/comments/${cid}/evidence" title="증빙 파일"
+        style="width:100%;height:70vh;border:none;background:#525659"></iframe>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:11px 18px;border-top:1px solid var(--line)">
+        <a class="btn-ghost" href="${API}/comments/${cid}/evidence" target="_blank" rel="noopener">새 탭에서 열기</a>
+      </div>
+    </div>`;
+  wrap.addEventListener("click", ()=>wrap.remove());
+  document.body.appendChild(wrap);
 };
 
 // ── '내 부서' 필터(영속) ──
