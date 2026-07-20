@@ -59,6 +59,9 @@ _ADDED_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "advisory_comment": [("evidence_path", "TEXT"), ("evidence_name", "VARCHAR(200)")],
     "match": [("ack_status", "VARCHAR(20) DEFAULT 'NONE' NOT NULL"), ("ack_by", "VARCHAR(80)"),
               ("ack_note", "TEXT"), ("ack_at", "DATETIME")],
+    # §개편 — 추출 엔진·다중 제품
+    "advisory_cve": [("is_deleted", "BOOLEAN DEFAULT 0 NOT NULL")],
+    "cve": [("affected_products", "JSON")],
 }
 
 

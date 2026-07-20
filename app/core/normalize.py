@@ -2,12 +2,19 @@
 
 자산대장의 원문 제품/OS 문자열과 CVE 피드의 제품명을 동일한 `product_key`로 변환한다.
 별칭 사전은 운영 중 추가 가능하도록 모듈 상수로 관리하며, DB 설정 테이블로 옮길 수 있다.
+
+매칭 규칙(§개편 — 오인 매칭 방지):
+  1) 토큰 경계 매칭 — 별칭은 단어 경계에서만 일치한다("iis"가 "aiis" 내부에 걸리지 않음).
+  2) 최장 일치 우선 — "apache tomcat" 이 "apache" 보다 먼저 매칭된다.
+  3) 벤더 접두어 가드 — "apache"·"microsoft" 같은 벤더명 단독 별칭은 바로 뒤에
+     다른 제품 단어가 이어지면(예: "Apache Storm") 매칭하지 않는다. 사전에 없는
+     하위 제품은 슬러그 키(apache_storm)로 남아 Apache HTTPD 와 절대 섞이지 않는다.
 """
 from __future__ import annotations
 
 import re
 
-# canonical product_key -> 별칭(소문자 부분일치) 목록
+# canonical product_key -> 별칭(소문자, 토큰 경계 일치) 목록
 PRODUCT_ALIASES: dict[str, list[str]] = {
     "windows_11": ["windows 11", "win11", "win 11", "windows11", "window 11"],
     "windows_10": ["windows 10", "win10", "win 10", "windows10", "window 10"],
@@ -23,16 +30,68 @@ PRODUCT_ALIASES: dict[str, list[str]] = {
     "ubuntu": ["ubuntu", "우분투"],
     "ibm_aix": ["aix"],
     "openssl": ["openssl"],
-    "apache_httpd": ["apache httpd", "apache http server", "httpd", "apache"],
-    "nginx": ["nginx"],
+    "apache_httpd": ["apache httpd", "apache http server", "apache http", "httpd", "apache"],
+    "apache_tomcat": ["apache tomcat", "tomcat", "톰캣"],
+    "apache_storm": ["apache storm"],
+    "apache_kafka": ["apache kafka", "kafka"],
+    "apache_struts": ["apache struts", "struts"],
+    "apache_log4j": ["apache log4j", "log4j"],
+    "nginx": ["nginx", "엔진엑스"],
+    "microsoft_iis": ["microsoft iis", "internet information services", "iis"],
+    "vmware_esxi": ["vmware esxi", "esxi"],
+    "mysql": ["mysql"],
+    "mariadb": ["mariadb"],
+    "postgresql": ["postgresql", "postgres"],
+    "oracle_database": ["oracle database", "oracle db"],
+    "openjdk": ["openjdk"],
+    "mozilla_firefox": ["mozilla firefox", "firefox", "파이어폭스"],
 }
 
-# 별칭 → key 역인덱스 (긴 별칭 우선 매칭).
-_ALIAS_INDEX: list[tuple[str, str]] = sorted(
-    ((alias, key) for key, aliases in PRODUCT_ALIASES.items() for alias in aliases),
-    key=lambda t: len(t[0]),
-    reverse=True,
-)
+# 벤더명 단독 별칭 — 뒤에 다른 제품 단어가 이어지면 해당 별칭으로 매칭하지 않는다.
+# (예: "Apache Storm" 에서 "apache" 별칭이 Apache HTTPD 로 오인되는 것 방지)
+VENDOR_PREFIX_ALIASES: frozenset[str] = frozenset({"apache", "microsoft", "adobe", "oracle", "mozilla"})
+
+# 버전형 토큰 — 별칭 뒤에 와도 '다른 제품 단어'로 보지 않는 것들.
+_VERSIONISH = re.compile(r"^(?:v?\d|dc\b|\d{2}h\d|x\b|버전|version|server\b)", re.IGNORECASE)
+_NEXT_WORD = re.compile(r"^[\s\-_/·]*([a-z가-힣][a-z0-9가-힣]*)", re.IGNORECASE)
+
+
+def _boundary_ok(text: str, start: int, end: int) -> bool:
+    """별칭 일치 구간이 단어 경계 위에 있는지(앞뒤가 영숫자/한글이 아닌지)."""
+    if start > 0 and re.match(r"[a-z0-9가-힣]", text[start - 1], re.IGNORECASE):
+        return False
+    if end < len(text) and re.match(r"[a-z0-9가-힣]", text[end], re.IGNORECASE):
+        return False
+    return True
+
+
+def _vendor_guard_ok(alias: str, text: str, end: int) -> bool:
+    """벤더 단독 별칭('apache' 등)은 뒤에 다른 제품 단어가 이어지면 매칭 거부."""
+    if alias not in VENDOR_PREFIX_ALIASES:
+        return True
+    rest = text[end:]
+    m = _NEXT_WORD.match(rest)
+    if not m:
+        return True                        # 문자열 끝/구두점 → "Apache 2.4" · "Apache" 단독
+    word = m.group(1)
+    return bool(_VERSIONISH.match(word))   # 버전형이면 허용, 제품 단어면 거부
+
+
+def _find_alias(text: str) -> tuple[str, str, int, int] | None:
+    """text(소문자)에서 규칙을 만족하는 최장 별칭 검색. 반환 (alias, key, start, end)."""
+    for alias, key in _ALIAS_INDEX:
+        i = text.find(alias)
+        while i != -1:
+            end = i + len(alias)
+            if _boundary_ok(text, i, end) and _vendor_guard_ok(alias, text, end):
+                return alias, key, i, end
+            i = text.find(alias, i + 1)
+    return None
+
+
+def slugify(text: str) -> str:
+    """영숫자/한글만 남긴 슬러그 키(사전 미등록 제품도 키 일관성 유지)."""
+    return re.sub(r"[^a-z0-9가-힣]+", "_", text.strip().lower()).strip("_")
 
 
 def normalize_product(raw: str | None) -> str:
@@ -40,12 +99,10 @@ def normalize_product(raw: str | None) -> str:
     if not raw:
         return ""
     text = raw.strip().lower()
-    for alias, key in _ALIAS_INDEX:
-        if alias in text:
-            return key
-    # 폴백: 영숫자/한글만 남겨 슬러그. (사전 미등록 제품도 키 일관성 유지)
-    slug = re.sub(r"[^a-z0-9가-힣]+", "_", text).strip("_")
-    return slug or ""
+    hit = _find_alias(text)
+    if hit:
+        return hit[1]
+    return slugify(text) or ""
 
 
 _VER_TOKEN = re.compile(r"^(?:\d|v\d|dc\b|\d{2}h\d)", re.IGNORECASE)
@@ -64,12 +121,12 @@ def split_product_version(raw: str | None) -> tuple[str, str]:
         return "", ""
     text = str(raw).strip()
     low = text.lower()
-    for alias, _key in _ALIAS_INDEX:  # 길이 내림차순 → 첫 매칭이 최장
-        i = low.find(alias)
-        if i != -1:
-            product = text[: i + len(alias)].strip()
-            version = text[i + len(alias):].strip(" -/().,")
-            return (product or text), version
+    hit = _find_alias(low)
+    if hit:
+        _alias, _key, i, end = hit
+        product = text[:end].strip()
+        version = text[end:].strip(" -/().,")
+        return (product or text), version
     tokens = text.split()
     for ti, tok in enumerate(tokens):
         if _VER_TOKEN.match(tok):
@@ -77,11 +134,23 @@ def split_product_version(raw: str | None) -> tuple[str, str]:
     return text, ""
 
 
+def _build_index() -> list[tuple[str, str]]:
+    return sorted(
+        ((alias, key) for key, aliases in PRODUCT_ALIASES.items() for alias in aliases),
+        key=lambda t: len(t[0]),
+        reverse=True,
+    )
+
+
+# 별칭 → key 역인덱스 (긴 별칭 우선 매칭).
+_ALIAS_INDEX: list[tuple[str, str]] = _build_index()
+
+
 def register_alias(product_key: str, alias: str) -> None:
     """운영 중 별칭 추가(메모리). DB 영속화는 설정 테이블로 확장."""
+    global _ALIAS_INDEX
     alias = alias.strip().lower()
     PRODUCT_ALIASES.setdefault(product_key, [])
     if alias not in PRODUCT_ALIASES[product_key]:
         PRODUCT_ALIASES[product_key].append(alias)
-        _ALIAS_INDEX.append((alias, product_key))
-        _ALIAS_INDEX.sort(key=lambda t: len(t[0]), reverse=True)
+        _ALIAS_INDEX = _build_index()

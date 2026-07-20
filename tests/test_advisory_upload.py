@@ -7,15 +7,24 @@ from app.models import Advisory
 from app.seed import _minimal_pdf
 
 
-def test_upload_requires_source_org(client):
+def test_upload_without_source_org_is_accepted_as_unspecified(client):
+    """출처기관은 선택(§개편) — 빈 출처로 접수되고 목록에서 일괄 지정할 수 있다."""
     pdf = _minimal_pdf(["missing source", "CVE-2099-1000"])
     r = client.post(
         "/api/v1/advisories",
         files={"file": ("missing-source.pdf", io.BytesIO(pdf), "application/pdf")},
         data={"receive_channel": "NCST"},
     )
-    assert r.status_code == 400
-    assert "출처기관" in r.text
+    assert r.status_code == 201
+    adv_id = r.json()["id"]
+    try:
+        assert r.json()["source_org"] is None
+    finally:
+        with SessionLocal() as db:
+            adv = db.get(Advisory, adv_id)
+            if adv:
+                db.delete(adv)
+                db.commit()
 
 
 def test_upload_rejects_invalid_receive_channel(client):

@@ -251,7 +251,7 @@ function renderAdvDetail(a){
         <a class="ev" href="${API}/advisories/${a.id}/file" target="_blank" rel="noopener">📄 원문 PDF</a>
         ${a.board_published?`<a class="ev" href="/board#/a/${a.id}" target="_blank" rel="noopener">💬 게시판</a>`:`<span class="pill">게시판 미게시</span>`}
       </div>
-      <div style="margin-top:13px;font-weight:700">조치 현황 — 완료 ${a.done}/${a.dept_total} (${a.done_rate}%) · 회신 ${a.responded_rate}%</div>
+      <div style="margin-top:13px;font-weight:700">조치 현황 — 부서 완료 ${a.done}/${a.dept_total} (${a.done_rate}%) · 회신 ${a.responded_rate}%${a.asset_total?` · <span style="color:#2f5bd0">자산(개별) ${a.asset_done}/${a.asset_total} (${a.asset_done_rate}%)</span>`:""}</div>
       ${barHtml(a)}
       <div class="m" style="margin-top:8px;gap:12px">
         <span><b class="muted">●</b> 완료 ${a.done}</span><span>진행중 ${a.in_progress}</span>
@@ -263,7 +263,7 @@ function renderAdvDetail(a){
       <table>
         <tr><th>부서</th><th>담당자</th><th>상태(변경 가능)</th><th>증빙</th><th>발송일</th><th>리마인드</th></tr>
         ${a.departments.map(d=>`<tr>
-          <td><b>${esc(d.department||"-")}</b>${d.asset_count?`<div class="muted" style="font-size:11px">자산 ${d.asset_count}</div>`:""}</td>
+          <td><b>${esc(d.department||"-")}</b>${d.asset_ack?`<div class="muted" style="font-size:11px">자산 ${d.asset_ack.done}/${d.asset_ack.total} 조치 (${d.asset_ack.done_rate}%)</div>`:(d.asset_count?`<div class="muted" style="font-size:11px">자산 ${d.asset_count}</div>`:"")}</td>
           <td>${esc(d.owner||"-")}</td>
           <td>${ackPicker(d)}${d.ack_note?`<div class="muted" style="font-size:11px;margin-top:3px">${esc(d.ack_note)}</div>`:""}</td>
           <td>${evCell(d)}</td>
@@ -302,6 +302,10 @@ function renderDeptDetail(r){
 // ── 액션: 조치상태 변경 / 증빙 업로드 / 재발송 / 프리셋 ──
 window.changeAck = async function(nid, status, selEl){
   let note = null, by = null;
+  // 회신 취소(§개편) — 실수 클릭 보호: 반드시 확인 팝업을 거친다.
+  if(status === "NONE"){
+    if(!confirm("정말 조치 회신을 취소하시겠습니까?\n해당 부서와 소속 자산의 조치 상태가 미회신으로 되돌아갑니다.")){ render(); return; }
+  }
   if(status === "UNABLE"){
     note = prompt("조치불가 사유를 입력하세요(필수):", "");
     if(note==null || !note.trim()){ render(); return; }  // 취소 → 되돌림

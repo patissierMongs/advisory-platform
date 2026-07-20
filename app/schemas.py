@@ -21,6 +21,39 @@ class CveAddRequest(BaseModel):
     cve_id: str                   # 수동 추가할 CVE 코드
 
 
+class CvePatchRequest(BaseModel):
+    """추출 CVE 코드 수정(§개편) — 오추출을 그 자리에서 교정."""
+    cve_id: str
+
+
+class AdvisoryProductIn(BaseModel):
+    """영향 제품 수동 추가(§개편)."""
+    product_name: str = Field(min_length=1, max_length=200)
+    # 규칙 형식: ["2019","2021"] | {"lt"/"lte"/"gt"/"gte"/"eq":..} | {"range":[a,b]} | "*"
+    affected_versions: object | None = None
+    fixed_version: str | None = None
+
+
+class AdvisoryProductPatch(BaseModel):
+    """영향 제품 수정(§개편) — 전달 필드만 갱신."""
+    product_name: str | None = None
+    affected_versions: object | None = None
+    fixed_version: str | None = None
+    status: str | None = None              # SUGGESTED | CONFIRMED
+
+
+class ProductApplyRequest(BaseModel):
+    """추출 제품 → CVE 적용(§개편)."""
+    cve_id: str
+
+
+class BulkSourceRequest(BaseModel):
+    """출처기관 일괄 지정(§개편)."""
+    ids: list[int] = Field(min_length=1)
+    source_org: str = Field(min_length=1, max_length=80)
+    only_empty: bool = True                # 빈 출처만 갱신(기본) — 기존 값 보호
+
+
 class AdvisoryMetaPatch(BaseModel):
     """관리자 수동 지정(§8·9) — 본문에서 추출되지 않은 조치기한·접수경로를 직접 입력.
 
@@ -28,6 +61,7 @@ class AdvisoryMetaPatch(BaseModel):
     """
     due_at: str | None = None              # 'YYYY-MM-DD'
     receive_channel: str | None = None     # NCST | WEBMAIL | OFFICIAL_DOC
+    source_org: str | None = None          # 출처기관(§개편 — 개별 수정)
 
 
 class GroupwareAckWebhook(BaseModel):
@@ -64,6 +98,7 @@ class AssetCommitRequest(BaseModel):
     mode: str = "append"          # append | replace
     on_warning: str = "skip"      # skip | reject
     create_departments: bool = True  # 자산대장의 미등록 부서 자동 생성(자산대장=부서 원천)
+    all_sheets: bool = False      # 모든 시트를 같은 매핑으로 일괄 적재(§개편 — 다중 시트)
 
 
 class DepartmentIn(BaseModel):

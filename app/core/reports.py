@@ -27,7 +27,7 @@ def _cve_rows(advisory: Advisory) -> list[dict]:
     out = []
     for ac in advisory.cves:
         c = ac.cve
-        if not c:
+        if not c or ac.is_deleted:
             continue
         av = c.affected_versions
         ver = ", ".join(av) if isinstance(av, list) else (av.get("lt", "") + " 미만" if isinstance(av, dict) and "lt" in av else "전체")

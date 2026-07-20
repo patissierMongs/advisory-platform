@@ -104,7 +104,7 @@
                 <div style="display:grid; grid-template-columns:1fr 160px 180px 150px; gap:10px; margin-top:14px; padding-top:14px; border-top:1px solid #eef1f5;">
                   <label style="display:flex; flex-direction:column; gap:5px;">
                     <span style="font-size:11px; font-weight:700; color:#5a6b86;">출처기관</span>
-                    <input value="{{ uploadSourceOrg }}" onInput="{{ onUploadSource }}" placeholder="예: 국가정보원" style="font-family:inherit; font-size:12.5px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a;">
+                    <input value="{{ uploadSourceOrg }}" onInput="{{ onUploadSource }}" placeholder="예: 국가정보원 (선택 — 비우면 목록에서 일괄 지정)" style="font-family:inherit; font-size:12.5px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a;">
                   </label>
                   <label style="display:flex; flex-direction:column; gap:5px;">
                     <span style="font-size:11px; font-weight:700; color:#5a6b86;">접수채널</span>
@@ -128,19 +128,36 @@
                   </label>
                 </div>
               </div>
-              <!-- 목록 헤더 -->
-              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+              <!-- 목록 헤더 + 검색·필터(§개편 — 시각 개선) -->
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:12px; flex-wrap:wrap;">
                 <h2 style="margin:0; font-size:15px; font-weight:700; color:#15294a;">등록된 권고문 <span style="font-size:12.5px; font-weight:500; color:#94a1b4;">— 각 권고문은 독립적으로 처리됩니다</span></h2>
-                <span style="font-size:12px; color:#8a98ab;">{{ boardCount }}건</span>
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <input value="{{ boardQuery }}" onInput="{{ onBoardQuery }}" placeholder="제목·문서번호·출처 검색" style="font-family:inherit; font-size:12px; padding:7px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a; width:200px;">
+                  <sc-for list="{{ boardFilters }}" as="bf" hint-placeholder-count="5">
+                    <button onClick="{{ bf.onClick }}" style="{{ bf.style }}">{{ bf.label }}</button>
+                  </sc-for>
+                  <span style="font-size:12px; color:#8a98ab;">{{ boardCount }}건</span>
+                </div>
+              </div>
+              <!-- 출처기관 일괄 지정 바(§개편) — 빈 출처만 선택 지원 -->
+              <div style="display:flex; align-items:center; gap:8px; background:#fff; border:1px solid #e1e7ef; border-radius:10px; padding:9px 14px; margin-bottom:12px; flex-wrap:wrap;">
+                <span style="font-size:11.5px; font-weight:700; color:#5a6b86;">출처기관 일괄 지정</span>
+                <button onClick="{{ onSelectEmptySource }}" style="font-family:inherit; font-size:11.5px; font-weight:600; padding:6px 11px; border-radius:7px; cursor:pointer; background:#fff6e9; color:#b45309; border:1px solid #f3dcb0;">빈 출처만 선택</button>
+                <button onClick="{{ onClearBoardSel }}" style="font-family:inherit; font-size:11.5px; font-weight:600; padding:6px 11px; border-radius:7px; cursor:pointer; background:#fff; color:#5a6b86; border:1px solid #d3dbe8;">선택 해제</button>
+                <span style="font-size:11.5px; color:#8a98ab;">선택 {{ boardSelCount }}건{{ boardSelEmptyNote }}</span>
+                <span style="flex:1;"></span>
+                <input value="{{ bulkSourceText }}" onInput="{{ onBulkSourceText }}" placeholder="지정할 출처기관 (예: 국가정보원)" style="font-family:inherit; font-size:12px; padding:7px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a; width:220px;">
+                <button onClick="{{ onApplyBulkSource }}" disabled="{{ bulkSourceDisabled }}" style="{{ bulkSourceBtnStyle }}">선택 건에 지정</button>
               </div>
               <!-- 카드 목록 -->
               <div style="display:flex; flex-direction:column; gap:11px;">
                 <sc-for list="{{ advisoryBoard }}" as="a" hint-placeholder-count="4">
                   <div style="{{ a.cardStyle }}">
-                    <div style="display:flex; align-items:flex-start; gap:14px;">
+                    <div style="display:flex; align-items:flex-start; gap:12px;">
+                      <input type="checkbox" checked="{{ a.checked }}" onChange="{{ a.onCheck }}" title="일괄 지정 대상 선택" style="margin-top:4px; width:15px; height:15px; accent-color:#0f766e; cursor:pointer; flex-shrink:0;">
                       <div style="flex:1; min-width:0;">
-                        <div style="display:flex; align-items:center; gap:9px; margin-bottom:5px; flex-wrap:wrap;">
-                          <span style="font-size:11px; font-weight:700; color:#b42318; background:#fdecec; border:1px solid #f5c6c2; padding:2px 8px; border-radius:5px;">{{ a.source }}</span>
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px; flex-wrap:wrap;">
+                          <span style="{{ a.sourceStyle }}">{{ a.source }}</span>
                           <span style="font-size:11px; color:#8a98ab; font-family:monospace;">{{ a.docNo }}</span>
                           <span style="{{ a.statusStyle }}">
                             <sc-if value="{{ a.processing }}" hint-placeholder-val="">
@@ -148,9 +165,26 @@
                             </sc-if>
                             {{ a.statusLabel }}
                           </span>
+                          <sc-if value="{{ a.sevLabel }}" hint-placeholder-val="">
+                            <span style="{{ a.sevStyle }}">{{ a.sevLabel }}</span>
+                          </sc-if>
+                          <sc-if value="{{ a.ddayLabel }}" hint-placeholder-val="">
+                            <span style="{{ a.ddayStyle }}">{{ a.ddayLabel }}</span>
+                          </sc-if>
                         </div>
                         <div style="font-size:14.5px; font-weight:700; color:#15294a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ a.title }}</div>
-                        <div style="font-size:11.5px; color:#94a1b4; margin-top:3px;">접수 {{ a.received }} · 기한 {{ a.due }} · {{ a.cveSummary }}</div>
+                        <div style="font-size:11.5px; color:#94a1b4; margin-top:3px;">접수 {{ a.received }} · 기한 {{ a.due }}<sc-if value="{{ a.cveSummary }}" hint-placeholder-val=""> · {{ a.cveSummary }}</sc-if></div>
+                        <!-- 처리 단계 미니 트래커(§개편) : 접수→추출→매칭→발송→완료 -->
+                        <div style="display:flex; align-items:center; gap:5px; margin-top:8px;">
+                          <sc-for list="{{ a.stages }}" as="sg" hint-placeholder-count="5">
+                            <span style="{{ sg.dotStyle }}"></span><span style="{{ sg.labelStyle }}">{{ sg.label }}</span>
+                            <sc-if value="{{ sg.hasNext }}" hint-placeholder-val=""><span style="{{ sg.connStyle }}"></span></sc-if>
+                          </sc-for>
+                          <sc-if value="{{ a.hasProgress }}" hint-placeholder-val="">
+                            <span style="margin-left:12px; font-size:11px; color:#5a6b86;">자산 {{ a.assetDone }}/{{ a.matchCount }} 조치 · 부서 {{ a.ackedDepts }}/{{ a.notifiedDepts }} 회신</span>
+                            <span style="width:90px; height:5px; border-radius:99px; background:#eef1f5; overflow:hidden; display:inline-flex;"><span style="{{ a.progBarStyle }}"></span></span>
+                          </sc-if>
+                        </div>
                         <sc-if value="{{ a.hasError }}" hint-placeholder-val="">
                           <div style="margin-top:8px; font-size:11.5px; color:#b42318; background:#fdecec; border:1px solid #f3c9c4; border-radius:7px; padding:7px 10px;">⚠ {{ a.errorMsg }}</div>
                         </sc-if>
@@ -240,11 +274,11 @@
             <div style="display:grid; grid-template-columns:1.4fr 1fr; gap:18px;">
               <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:24px;">
                 <h2 style="margin:0 0 4px; font-size:15px; font-weight:700; color:#15294a;">보안권고문 PDF 업로드</h2>
-                <p style="margin:0 0 20px; font-size:13px; color:#8a98ab;">PDF에서 <b style="color:#0f766e;">CVE 코드만 자동 추출</b>합니다. 제품·버전·심각도 정보는 로컬 CVE 데이터베이스에서 조회합니다.</p>
+                <p style="margin:0 0 20px; font-size:13px; color:#8a98ab;">PDF에서 <b style="color:#0f766e;">CVE 코드와 영향 제품·버전 범위</b>를 자동 추출합니다. 심각도 등 상세정보는 로컬 CVE 데이터베이스에서 조회하며, 추출 결과는 화면에서 수정·복원할 수 있습니다.</p>
                 <div style="display:grid; grid-template-columns:1fr 160px; gap:10px; margin-bottom:14px;">
                   <label style="display:flex; flex-direction:column; gap:5px;">
                     <span style="font-size:11px; font-weight:700; color:#5a6b86;">출처기관</span>
-                    <input value="{{ uploadSourceOrg }}" onInput="{{ onUploadSource }}" placeholder="예: 국가정보원" style="font-family:inherit; font-size:12.5px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a;">
+                    <input value="{{ uploadSourceOrg }}" onInput="{{ onUploadSource }}" placeholder="예: 국가정보원 (선택 — 비우면 목록에서 일괄 지정)" style="font-family:inherit; font-size:12.5px; padding:8px 10px; border:1px solid #d3dbe8; border-radius:7px; outline:none; color:#33415a;">
                   </label>
                   <label style="display:flex; flex-direction:column; gap:5px;">
                     <span style="font-size:11px; font-weight:700; color:#5a6b86;">접수채널</span>
@@ -369,14 +403,23 @@
                     <span style="font-size:11px; color:#0f766e; background:#e6f4f2; border-radius:5px; padding:3px 9px; font-weight:600;">{{ rowCount }}개 추출 · {{ foundCount }}개 조회</span>
                   </div>
 
-                  <!-- extracted chips + 수동 보정(§A2) -->
+                  <!-- extracted chips + 수동 보정(§A2 + §개편: 그 자리 수정·복원·재추출) -->
                   <div style="padding:11px 16px; border-bottom:1px solid #eef1f5;">
                     <div style="display:flex; flex-wrap:wrap; gap:7px; align-items:center;">
                       <span style="font-size:11px; color:#94a1b4; font-weight:600; margin-right:2px;">추출된 CVE</span>
                       <sc-for list="{{ cveEdit }}" as="c" hint-placeholder-count="6">
-                        <span style="{{ c.chipStyle }}">{{ c.code }}<button onClick="{{ c.onDelete }}" style="background:none; border:none; cursor:pointer; padding:0; display:flex; color:inherit; opacity:.55;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button></span>
+                        <span style="{{ c.chipStyle }}">{{ c.code }}<button onClick="{{ c.onEdit }}" title="코드 수정 (오추출 교정)" style="background:none; border:none; cursor:pointer; padding:0; display:flex; color:inherit; opacity:.55;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-4-4L4 16v4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button><button onClick="{{ c.onDelete }}" title="삭제 (복원 가능)" style="background:none; border:none; cursor:pointer; padding:0; display:flex; color:inherit; opacity:.55;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button></span>
                       </sc-for>
+                      <button onClick="{{ onReextractCves }}" title="본문에서 CVE 재추출 (수동 추가·삭제 이력은 보존)" style="font-family:inherit; font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:5px; cursor:pointer; background:#fff; color:#2f5d8f; border:1px solid #d4e3f2;">↻ 재추출</button>
                     </div>
+                    <sc-if value="{{ hasDeletedCves }}" hint-placeholder-val="">
+                      <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:8px;">
+                        <span style="font-size:10.5px; color:#94a1b4; font-weight:600;">삭제됨(복원 가능)</span>
+                        <sc-for list="{{ cveDeleted }}" as="dc" hint-placeholder-count="2">
+                          <span style="display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-family:monospace; font-weight:600; padding:3px 7px; border-radius:5px; background:#f0f3f7; color:#8a98ab; border:1px dashed #cfd6e0; text-decoration:line-through;">{{ dc.code }}<button onClick="{{ dc.onRestore }}" title="복원" style="background:none; border:none; cursor:pointer; padding:0; font-family:inherit; font-size:10px; font-weight:800; color:#0f766e; text-decoration:none;">복원</button></span>
+                        </sc-for>
+                      </div>
+                    </sc-if>
                     <div style="display:flex; gap:6px; align-items:center; margin-top:9px;">
                       <input value="{{ cveAddText }}" onInput="{{ onCveAddInput }}" placeholder="CVE-YYYY-NNNN 수동 추가 (정규식 누락 보정)" style="flex:0 0 330px; max-width:62%; font-family:monospace; font-size:11.5px; padding:6px 9px; border:1px solid #d3dbe8; border-radius:6px; outline:none; color:#33415a;">
                       <button onClick="{{ onAddCve }}" style="background:#fff; color:#0f5d56; border:1px solid #b8e0da; border-radius:6px; padding:6px 13px; font-size:11.5px; font-weight:700; cursor:pointer; font-family:inherit;">+ 추가</button>
@@ -410,6 +453,54 @@
                     </div>
                   </sc-for>
                 </div>
+              </div>
+
+              <!-- ===== 추출 영향 제품·버전(§개편 — 추출 엔진) ===== -->
+              <div style="margin-top:18px; background:#fff; border:1px solid #e1e7ef; border-radius:12px; overflow:hidden;">
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 18px; border-bottom:1px solid #eef1f5; background:#fbf9fd;">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="width:7px; height:7px; border-radius:50%; background:#7a5a9a;"></span>
+                    <span style="font-size:13px; font-weight:700; color:#5b4478;">본문 추출 영향 제품 · 버전</span>
+                    <span style="font-size:11px; color:#94a1b4;">"이하/미만/~" 범위 해석 · 조치권고 버전은 영향에서 제외</span>
+                  </div>
+                  <div style="display:flex; gap:6px;">
+                    <button onClick="{{ onAddProduct }}" style="font-family:inherit; font-size:11.5px; font-weight:700; padding:6px 12px; border-radius:7px; cursor:pointer; background:#fff; color:#0f5d56; border:1px solid #b8e0da;">+ 제품 추가</button>
+                    <button onClick="{{ onReextractProducts }}" title="본문에서 제품·버전 재추출 — 삭제했던 추출 제안도 복귀" style="font-family:inherit; font-size:11.5px; font-weight:700; padding:6px 12px; border-radius:7px; cursor:pointer; background:#fff; color:#2f5d8f; border:1px solid #d4e3f2;">↻ 수동 재추출</button>
+                  </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1.2fr 1fr 120px 110px 190px; gap:0; padding:9px 18px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:10.5px; font-weight:700; color:#94a1b4;">
+                  <span>제품</span><span>영향 버전</span><span>조치 버전</span><span style="text-align:center;">상태</span><span style="text-align:right;">처리</span>
+                </div>
+                <sc-for list="{{ productRows }}" as="p" hint-placeholder-count="3">
+                  <div style="{{ p.rowStyle }}">
+                    <div style="min-width:0;">
+                      <div style="font-size:12.5px; font-weight:700; color:#2a3a52;">{{ p.name }} <span style="font-size:10px; color:#94a1b4; font-family:monospace;">{{ p.key }}</span></div>
+                      <div style="font-size:10.5px; color:#94a1b4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="{{ p.snippet }}">{{ p.snippet }}</div>
+                    </div>
+                    <span style="font-size:12px; color:#3a4a63; font-weight:600;">{{ p.versionText }}</span>
+                    <span style="font-size:12px; color:#0f766e;">{{ p.fixText }}</span>
+                    <span style="display:flex; justify-content:center;"><span style="{{ p.statusStyle }}">{{ p.statusLabel }}</span></span>
+                    <span style="display:flex; justify-content:flex-end; gap:5px; flex-wrap:wrap;">
+                      <sc-if value="{{ p.canConfirm }}" hint-placeholder-val="">
+                        <button onClick="{{ p.onConfirm }}" title="추출 제안을 확인 처리" style="font-family:inherit; font-size:10.5px; font-weight:700; padding:4px 9px; border-radius:5px; cursor:pointer; background:#0f766e; color:#fff; border:1px solid #0f766e;">확인</button>
+                      </sc-if>
+                      <button onClick="{{ p.onEdit }}" title="제품명·버전 규칙 수정" style="font-family:inherit; font-size:10.5px; font-weight:600; padding:4px 9px; border-radius:5px; cursor:pointer; background:#fff; color:#5a6b86; border:1px solid #d3dbe8;">수정</button>
+                      <button onClick="{{ p.onApply }}" title="이 제품·버전 규칙을 CVE 레코드에 적용 (DB 미등록 해소)" style="font-family:inherit; font-size:10.5px; font-weight:600; padding:4px 9px; border-radius:5px; cursor:pointer; background:#fff; color:#2f5d8f; border:1px solid #d4e3f2;">CVE 적용</button>
+                      <button onClick="{{ p.onDelete }}" title="삭제 (복원 가능)" style="font-family:inherit; font-size:10.5px; font-weight:600; padding:4px 9px; border-radius:5px; cursor:pointer; background:#fff; color:#b42318; border:1px solid #f3c9c4;">삭제</button>
+                    </span>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ productEmpty }}" hint-placeholder-val="">
+                  <div style="padding:18px; font-size:12px; color:#94a1b4; text-align:center;">본문에서 추출된 영향 제품이 없습니다. 수동 추가하거나 재추출하세요.</div>
+                </sc-if>
+                <sc-if value="{{ hasDeletedProducts }}" hint-placeholder-val="">
+                  <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:9px 18px; border-top:1px dashed #eef1f5;">
+                    <span style="font-size:10.5px; color:#94a1b4; font-weight:600;">삭제된 제품(복원 가능)</span>
+                    <sc-for list="{{ productDeleted }}" as="dp" hint-placeholder-count="2">
+                      <span style="display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:600; padding:3px 8px; border-radius:5px; background:#f0f3f7; color:#8a98ab; border:1px dashed #cfd6e0; text-decoration:line-through;">{{ dp.name }}<button onClick="{{ dp.onRestore }}" style="background:none; border:none; cursor:pointer; padding:0; font-family:inherit; font-size:10px; font-weight:800; color:#0f766e; text-decoration:none;">복원</button></span>
+                    </sc-for>
+                  </div>
+                </sc-if>
               </div>
 
               <div style="margin-top:18px; background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:16px 22px; display:flex; align-items:center; justify-content:space-between;">
@@ -721,7 +812,16 @@
                     </div>
                   </div>
                   <div style="display:flex; align-items:center; gap:7px;">
-                    <span style="font-size:11px; color:#94a1b4; font-weight:600;">헤더행</span>
+                    <span style="font-size:11px; color:#94a1b4; font-weight:600;">시트</span>
+                    <select value="{{ importSheetValue }}" onChange="{{ onSheetPick }}" title="다중 시트 파일 — 미리보기·가져오기 대상 시트 선택" style="font-size:11.5px; padding:5px 8px; border:1px solid #d3dbe8; border-radius:6px; background:#fff; max-width:150px; font-family:inherit; cursor:pointer;">
+                      <sc-for list="{{ sheetOptions }}" as="o" hint-placeholder-count="2">
+                        <option value="{{ o.value }}">{{ o.label }}</option>
+                      </sc-for>
+                    </select>
+                    <label title="모든 시트를 같은 매핑으로 일괄 가져오기 (부서별 시트 자산대장)" style="display:flex; align-items:center; gap:4px; font-size:11px; color:#5a6b86; font-weight:600; cursor:pointer;">
+                      <input type="checkbox" checked="{{ importAllSheets }}" onChange="{{ onToggleAllSheets }}" style="accent-color:#0f766e; cursor:pointer;">전체 시트
+                    </label>
+                    <span style="font-size:11px; color:#94a1b4; font-weight:600; margin-left:6px;">헤더행</span>
                     <select value="{{ headerRowValue }}" onChange="{{ onHeaderRowPick }}" style="font-size:11.5px; padding:5px 8px; border:1px solid #d3dbe8; border-radius:6px; background:#fff; max-width:210px; font-family:inherit; cursor:pointer;">
                       <sc-for list="{{ headerRowOptions }}" as="o" hint-placeholder-count="3">
                         <option value="{{ o.value }}">{{ o.label }}</option>
@@ -924,7 +1024,11 @@
                 <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:16px 20px; margin-bottom:16px; display:flex; align-items:center; gap:20px;">
                   <div style="display:flex; align-items:baseline; gap:8px; flex-shrink:0;">
                     <span style="font-size:26px; font-weight:800; color:#0f766e;">{{ detailRate }}</span>
-                    <span style="font-size:12px; color:#94a1b4;">조치 완료율</span>
+                    <span style="font-size:12px; color:#94a1b4;">부서 완료율</span>
+                  </div>
+                  <div style="display:flex; align-items:baseline; gap:8px; flex-shrink:0;">
+                    <span style="font-size:26px; font-weight:800; color:#2f5d8f;">{{ detailAssetRate }}</span>
+                    <span style="font-size:12px; color:#94a1b4;">자산(개별) 조치율<br>{{ detailAssetCount }}</span>
                   </div>
                   <div style="flex:1; min-width:0;">
                     <div style="display:flex; align-items:center; gap:8px;">
@@ -945,11 +1049,11 @@
                     <h2 style="margin:0; font-size:15px; font-weight:700; color:#15294a;">부서별 조치 현황</h2>
                     <p style="margin:4px 0 0; font-size:12.5px; color:#8a98ab;">부서명을 누르면 게시판 글로 이동 · 버튼으로 회신 상태(완료/진행/불가)를 갱신하세요</p>
                   </div>
-                  <div style="display:grid; grid-template-columns:1fr 96px 56px 76px 150px 84px 52px; gap:0; padding:10px 20px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:11px; font-weight:700; color:#94a1b4;">
-                    <span>대상 부서</span><span>담당자</span><span style="text-align:center;">자산</span><span style="text-align:center;">상태</span><span style="text-align:center;">조치 회신</span><span style="text-align:center;">증빙</span><span style="text-align:right;">원문</span>
+                  <div style="display:grid; grid-template-columns:1fr 90px 110px 76px 150px 84px 52px; gap:0; padding:10px 20px; background:#fafbfd; border-bottom:1px solid #eef1f5; font-size:11px; font-weight:700; color:#94a1b4;">
+                    <span>대상 부서</span><span>담당자</span><span style="text-align:center;">자산 조치(개별)</span><span style="text-align:center;">상태</span><span style="text-align:center;">조치 회신</span><span style="text-align:center;">증빙</span><span style="text-align:right;">원문</span>
                   </div>
                   <sc-for list="{{ detailRows }}" as="h" hint-placeholder-count="4">
-                    <div style="display:grid; grid-template-columns:1fr 96px 56px 76px 150px 84px 52px; gap:0; align-items:center; padding:11px 20px; border-bottom:1px solid #f2f5f9; font-size:12.5px;">
+                    <div style="display:grid; grid-template-columns:1fr 90px 110px 76px 150px 84px 52px; gap:0; align-items:center; padding:11px 20px; border-bottom:1px solid #f2f5f9; font-size:12.5px;">
                       <div style="min-width:0;">
                         <button onClick="{{ h.onOpenBoard }}" title="게시판 글로 이동(상태 표시)" style="background:none; border:none; padding:0; font-family:inherit; font-size:12.5px; font-weight:700; color:#2f5bd0; cursor:pointer; text-align:left; text-decoration:underline; text-underline-offset:2px;">{{ h.dept }} ↗</button>
                         <sc-if value="{{ h.hasComments }}" hint-placeholder-val="">
@@ -960,7 +1064,12 @@
                         </sc-if>
                       </div>
                       <span style="color:#3a4a63; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ h.owner }}</span>
-                      <span style="text-align:center; color:#3a4a63;">{{ h.assets }}</span>
+                      <span style="display:flex; flex-direction:column; align-items:center; gap:3px;">
+                        <span style="color:#3a4a63; font-size:11.5px;">{{ h.assetAckText }}</span>
+                        <sc-if value="{{ h.hasAssetBar }}" hint-placeholder-val="">
+                          <span style="width:76px; height:5px; border-radius:99px; background:#eef1f5; overflow:hidden; display:inline-flex;"><span style="{{ h.assetBarStyle }}"></span></span>
+                        </sc-if>
+                      </span>
                       <span style="display:flex; justify-content:center;"><span style="{{ h.statusStyle }}">{{ h.status }}</span></span>
                       <span style="display:flex; justify-content:center; gap:4px;">
                         <button onClick="{{ h.ackDone.onClick }}" style="{{ h.ackDone.style }}">{{ h.ackDone.label }}</button>
@@ -1201,6 +1310,17 @@ class Component extends DCLogic {
     loaded: false,
     apiAdvisory: null,   // 활성 권고문 brief
     apiCveItems: [],     // advisory_cve 목록
+    apiCveDeleted: [],   // 소프트 삭제된 추출 CVE(복원 가능, §개편)
+    apiProducts: [],     // 본문 추출 영향 제품(§개편)
+    apiProductsDeleted: [],
+    // 권고문 보드(§개편 — 시각 개선 · 출처 일괄 지정)
+    boardQuery: '',
+    boardFilter: '',
+    boardSel: {},        // advisory_id → true (일괄 지정 선택)
+    bulkSourceText: '',
+    // 자산 가져오기(§개편 — 다중 시트)
+    importSheetSel: null,
+    importAllSheets: false,
     apiCveList: [],      // 등록 CVE 전체(cveDb 구성)
     apiAssets: [],
     apiRecent: [],
@@ -1299,8 +1419,11 @@ class Component extends DCLogic {
       this.api('GET', '/advisories/' + id + '/cves'),
       this.api('GET', '/advisories/' + id),
       this.api('GET', '/advisories/' + id + '/pdf-view').catch(() => null),
-    ]).then(([cves, adv, pvw]) => {
-      this.setState({ apiCveItems: cves.items || [], apiAdvisory: adv, pdfView: pvw, pdfPage: 0 });
+      this.api('GET', '/advisories/' + id + '/products').catch(() => ({ items: [], deleted: [] })),
+    ]).then(([cves, adv, pvw, prods]) => {
+      this.setState({ apiCveItems: cves.items || [], apiCveDeleted: cves.deleted || [],
+        apiProducts: prods.items || [], apiProductsDeleted: prods.deleted || [],
+        apiAdvisory: adv, pdfView: pvw, pdfPage: 0 });
       return this._loadMatches();
     }).catch(e => console.error('[openDetail]', e));
   }
@@ -1353,7 +1476,17 @@ class Component extends DCLogic {
   }
 
   // 조치 회신 갱신(§★★★★★) — 완료/진행중/불가. 불가는 사유 입력.
-  _ack(notifId, status) {
+  // 같은 상태 버튼을 다시 누르면 '회신 취소'(§개편) — 확인 팝업 후 미회신(NONE)으로 되돌린다.
+  _ack(notifId, status, current) {
+    if (current === status) {
+      const KO = { DONE: '조치완료', IN_PROGRESS: '진행중', UNABLE: '조치불가' };
+      if (!window.confirm('정말 "' + (KO[status] || status) + '" 회신을 취소하시겠습니까?\n해당 부서와 소속 자산의 조치 상태가 미회신으로 되돌아갑니다.')) return;
+      this.api('PATCH', '/notifications/' + notifId + '/ack', { ack_status: 'NONE', by: '관제' })
+        .then(() => this._refreshHistory())
+        .then(() => { if (this.flashToast) this.flashToast('회신 취소', '미회신 상태로 되돌렸습니다'); })
+        .catch(e => console.error('[ack cancel]', e));
+      return;
+    }
     let note = null;
     if (status === 'UNABLE') { note = window.prompt('조치불가 사유를 입력하세요'); if (note === null) return; }
     this.api('PATCH', '/notifications/' + notifId + '/ack', { ack_status: status, note: note, by: '관제' })
@@ -1401,14 +1534,19 @@ class Component extends DCLogic {
       const st = ack === 'DONE' ? ['조치완료', 'green'] : ack === 'IN_PROGRESS' ? ['조치중', 'amber']
         : ack === 'UNABLE' ? ['조치불가', 'red'] : ['미회신', 'gray'];
       const ackBtn = (s, label) => ({
-        label, onClick: () => this._ack(d.notification_id, s),
+        label, onClick: () => this._ack(d.notification_id, s, ack),
         style: 'font-family:inherit; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:5px; cursor:pointer; border:1px solid; '
           + (ack === s
             ? ({ DONE: 'background:#0f766e;color:#fff;border-color:#0f766e;', IN_PROGRESS: 'background:#e8a33d;color:#fff;border-color:#e8a33d;', UNABLE: 'background:#8a98ab;color:#fff;border-color:#8a98ab;' }[s])
             : 'background:#fff;color:#5a6b86;border-color:#d3dbe8;'),
       });
+      const aa = d.asset_ack || null;   // 개별 자산 단위 집계(§개편)
       return {
         dept: d.department || '-', owner: d.owner || '-', assets: (d.asset_count || 0) + '대',
+        assetAckText: aa ? (aa.done + '/' + aa.total + '대 (' + aa.done_rate + '%)')
+                          : ((d.asset_count || 0) + '대'),
+        hasAssetBar: !!(aa && aa.total),
+        assetBarStyle: aa ? ('height:100%; border-radius:99px; background:' + (aa.done_rate >= 100 ? '#2e9e5b' : (aa.done_rate >= 50 ? '#e0a82e' : '#d9544a')) + '; width:' + aa.done_rate + '%;') : '',
         status: st[0], statusStyle: 'font-size:11px; font-weight:700; padding:3px 10px; border-radius:6px; ' + m[st[1]],
         ackDone: ackBtn('DONE', '완료'), ackProg: ackBtn('IN_PROGRESS', '진행'), ackUnable: ackBtn('UNABLE', '불가'),
         evidenceLabel: d.has_evidence ? '📎 ✓' : '📎 증빙',
@@ -1463,6 +1601,10 @@ class Component extends DCLogic {
       detailRows: this._detailRows(selObj),
       detailEmpty: !!selObj && (selObj.departments || []).length === 0,
       detailRate: selObj ? (selObj.done_rate + '%') : '—',
+      // 개별 대상(자산) 단위 조치율(§개편) — 부서 묶음과 별도 표기.
+      detailAssetRate: (selObj && selObj.asset_total) ? (selObj.asset_done_rate + '%') : '—',
+      detailAssetCount: (selObj && selObj.asset_total)
+        ? (selObj.asset_done + '/' + selObj.asset_total + '대') : '집계 없음',
       detailTitle: selObj ? (selObj.title || selObj.doc_no || '제목 없음') : '',
       detailSlaLabel: dp.label, detailSlaStyle: dp.style,
       detailMeta: selObj ? ((selObj.doc_no ? selObj.doc_no + ' · ' : '') + '기한 ' + (selObj.due_at ? selObj.due_at.slice(0, 10) : '-')
@@ -1521,15 +1663,158 @@ class Component extends DCLogic {
     if (!this._advisoryId) return;
     this._busy.cveEdit = true;   // 편집 반영 중 — 폴링 덮어쓰기 방지
     try {
-      const [cves, cveList, adv, pdfView] = await Promise.all([
+      const [cves, cveList, adv, pdfView, prods] = await Promise.all([
         this.api('GET', '/advisories/' + this._advisoryId + '/cves'),
         this.api('GET', '/cves?size=500'),
         this.api('GET', '/advisories/' + this._advisoryId),
         this.api('GET', '/advisories/' + this._advisoryId + '/pdf-view').catch(() => null),
+        this.api('GET', '/advisories/' + this._advisoryId + '/products').catch(() => ({ items: [], deleted: [] })),
       ]);
-      this.setState({ apiCveItems: cves.items || [], apiCveList: cveList.items || [], apiAdvisory: adv, pdfView: pdfView });
+      this.setState({ apiCveItems: cves.items || [], apiCveDeleted: cves.deleted || [],
+        apiProducts: prods.items || [], apiProductsDeleted: prods.deleted || [],
+        apiCveList: cveList.items || [], apiAdvisory: adv, pdfView: pdfView });
     } catch (e) { console.error('[reloadCves]', e); }
     finally { this._busy.cveEdit = false; }
+  }
+
+  // ── 추출 CVE 그 자리 수정·복원(§개편) ──
+  _editCve(acId, curCode) {
+    const code = window.prompt('수정할 CVE 코드를 입력하세요 (예: CVE-2026-12345)', curCode || '');
+    if (!code || code.trim() === curCode) return;
+    this.api('PATCH', '/advisory-cves/' + acId, { cve_id: code.trim() })
+      .then(() => this._reloadCves())
+      .then(() => { if (this.flashToast) this.flashToast('CVE 수정', curCode + ' → ' + code.trim()); })
+      .catch(e => { if (this.flashToast) this.flashToast('수정 실패', (e && e.detailMessage) || '형식 또는 중복 확인'); });
+  }
+  _restoreCve(acId) {
+    this.api('POST', '/advisory-cves/' + acId + '/restore')
+      .then(() => this._reloadCves())
+      .then(() => { if (this.flashToast) this.flashToast('복원됨', '삭제한 CVE를 되살렸습니다'); })
+      .catch(e => console.error('[restoreCve]', e));
+  }
+
+  // ── 영향 제품(§개편) — 규칙 표기/입력 파서 ──
+  _ruleText(av) {
+    if (av == null || av === '*' || av === '') return '전체 버전';
+    if (Array.isArray(av)) return av.length ? av.join(', ') : '전체 버전';
+    if (typeof av === 'string') return av;
+    if (av.range) return av.range[0] + ' ~ ' + av.range[1] + ' (경계 포함)';
+    const parts = [];
+    if (av.gte) parts.push(av.gte + ' 이상');
+    if (av.gt) parts.push(av.gt + ' 초과');
+    if (av.lte) parts.push(av.lte + ' 이하 전체');
+    if (av.lt) parts.push(av.lt + ' 미만 전체');
+    if (av.eq) parts.push(av.eq);
+    return parts.join(' · ') || '전체 버전';
+  }
+  // 입력 문법: "*" | "a,b,c"(열거) | "<=2.4.57" "<9.0" ">=1.2 <2.0" | "8.5~9.0.30"
+  _parseRuleInput(s) {
+    const t = String(s || '').trim();
+    if (!t || t === '*' || t === '전체') return '*';
+    const tilde = t.match(/^([\w.]+)\s*[~∼]\s*([\w.]+)$/);
+    if (tilde) return { range: [tilde[1], tilde[2]] };
+    const ops = {};
+    let rest = t;
+    const opRe = /(<=|>=|<|>|=)\s*([\w.]+)/g;
+    let m; let found = false;
+    while ((m = opRe.exec(t))) {
+      found = true;
+      ops[{ '<=': 'lte', '>=': 'gte', '<': 'lt', '>': 'gt', '=': 'eq' }[m[1]]] = m[2];
+    }
+    if (found) return ops;
+    return t.split(/[;,/]/).map(x => x.trim()).filter(Boolean);
+  }
+  _loadProducts() {
+    if (!this._advisoryId) return Promise.resolve();
+    return this.api('GET', '/advisories/' + this._advisoryId + '/products')
+      .then(p => this.setState({ apiProducts: p.items || [], apiProductsDeleted: p.deleted || [] }))
+      .catch(() => {});
+  }
+  _addProductPrompt() {
+    const name = window.prompt('추가할 제품명 (예: Apache Tomcat)');
+    if (!name) return;
+    const rule = window.prompt('영향 버전 규칙 — 예: <=9.0.30 · >=8.5 <9.1 · 8.5~9.0.30 · a,b,c · * (전체)', '*');
+    if (rule === null) return;
+    this.api('POST', '/advisories/' + this._advisoryId + '/products',
+      { product_name: name.trim(), affected_versions: this._parseRuleInput(rule) })
+      .then(() => this._loadProducts())
+      .catch(e => { if (this.flashToast) this.flashToast('추가 실패', (e && e.detailMessage) || '중복 여부를 확인하세요'); });
+  }
+  _editProductPrompt(p) {
+    const name = window.prompt('제품명 수정', p.product_name);
+    if (name === null) return;
+    const cur = (() => {
+      const av = p.affected_versions;
+      if (av == null || av === '*') return '*';
+      if (Array.isArray(av)) return av.join(',');
+      if (av.range) return av.range[0] + '~' + av.range[1];
+      return ['gte', 'gt', 'lte', 'lt', 'eq'].filter(k => av[k])
+        .map(k => ({ gte: '>=', gt: '>', lte: '<=', lt: '<', eq: '=' }[k] + av[k])).join(' ');
+    })();
+    const rule = window.prompt('영향 버전 규칙 — 예: <=9.0.30 · >=8.5 <9.1 · 8.5~9.0.30 · a,b,c · *', cur);
+    if (rule === null) return;
+    const fix = window.prompt('조치(권장) 버전 — 없으면 비워두세요', p.fixed_version || '');
+    if (fix === null) return;
+    this.api('PATCH', '/advisory-products/' + p.id, {
+      product_name: name.trim() || p.product_name,
+      affected_versions: this._parseRuleInput(rule),
+      fixed_version: fix.trim(),
+    }).then(() => this._loadProducts())
+      .then(() => { if (this.flashToast) this.flashToast('수정됨', name.trim() || p.product_name); })
+      .catch(e => { if (this.flashToast) this.flashToast('수정 실패', (e && e.detailMessage) || ''); });
+  }
+  _confirmProduct(pid) {
+    this.api('PATCH', '/advisory-products/' + pid, { status: 'CONFIRMED' })
+      .then(() => this._loadProducts()).catch(e => console.error('[confirmProduct]', e));
+  }
+  _deleteProduct(pid) {
+    this.api('DELETE', '/advisory-products/' + pid)
+      .then(() => this._loadProducts())
+      .then(() => { if (this.flashToast) this.flashToast('삭제됨', '아래 "삭제된 제품"에서 복원할 수 있습니다'); })
+      .catch(e => console.error('[deleteProduct]', e));
+  }
+  _restoreProduct(pid) {
+    this.api('POST', '/advisory-products/' + pid + '/restore')
+      .then(() => this._loadProducts()).catch(e => console.error('[restoreProduct]', e));
+  }
+  _reextractProducts() {
+    this.api('POST', '/advisories/' + this._advisoryId + '/products/reextract')
+      .then(p => {
+        this.setState({ apiProducts: p.items || [], apiProductsDeleted: p.deleted || [] });
+        if (this.flashToast) this.flashToast('재추출 완료', '삭제했던 추출 제안도 복귀했습니다');
+      })
+      .catch(e => { if (this.flashToast) this.flashToast('재추출 불가', (e && e.detailMessage) || '본문 텍스트가 없습니다'); });
+  }
+  _applyProductToCve(p) {
+    const items = this.state.apiCveItems || [];
+    const nf = items.find(i => i.lookup_status !== 'FOUND');
+    const def = nf ? nf.cve_id_text : (items[0] ? items[0].cve_id_text : '');
+    const code = window.prompt('이 제품·버전 규칙을 적용할 CVE 코드 (이 권고문의 추출 CVE)', def);
+    if (!code) return;
+    this.api('POST', '/advisory-products/' + p.id + '/apply-to-cve', { cve_id: code.trim() })
+      .then(() => Promise.all([this._reloadCves(), this._loadProducts()]))
+      .then(() => { if (this.flashToast) this.flashToast('CVE 적용', code.trim() + ' ← ' + p.product_name); })
+      .catch(e => { if (this.flashToast) this.flashToast('적용 실패', (e && e.detailMessage) || '이 권고문의 추출 CVE인지 확인'); });
+  }
+
+  // ── 출처기관 일괄 지정(§개편) ──
+  _applyBulkSource() {
+    const ids = Object.keys(this.state.boardSel || {}).filter(k => this.state.boardSel[k]).map(Number);
+    const src = String(this.state.bulkSourceText || '').trim();
+    if (!ids.length || !src) return;
+    // 빈 출처만 선택했더라도 안전하게 서버 only_empty 가드로 이중 보호하되,
+    // 명시 선택에 출처 있는 건이 섞였으면 덮어쓸지 확인.
+    const hasNonEmpty = (this.state.apiRecent || []).some(a => this.state.boardSel[a.id] && (a.source_org || '').trim());
+    const onlyEmpty = hasNonEmpty
+      ? !window.confirm('선택 항목 중 이미 출처가 있는 권고문이 있습니다.\n확인 = 기존 출처도 덮어쓰기 / 취소 = 빈 출처만 갱신')
+      : true;
+    this.api('POST', '/advisories/source-org', { ids, source_org: src, only_empty: onlyEmpty })
+      .then(r => {
+        if (this.flashToast) this.flashToast('출처 일괄 지정', r.updated + '건 지정' + (r.skipped ? (' · ' + r.skipped + '건 건너뜀(기존 출처 보호)') : ''));
+        this.setState({ boardSel: {}, bulkSourceText: '' });
+        return this._refreshBoard();
+      })
+      .catch(e => { if (this.flashToast) this.flashToast('일괄 지정 실패', (e && e.detailMessage) || ''); });
   }
 
   // 그룹웨어 게시판 게시(§A3)
@@ -1734,10 +2019,7 @@ class Component extends DCLogic {
   _uploadAdvisories(files) {
     const self = this; let okCount = 0, dup = 0;
     const meta = this.state.uploadMeta || {};
-    if (!String(meta.source_org || '').trim()) {
-      if (this.flashToast) this.flashToast('출처기관 필요', 'PDF 업로드 전에 출처기관을 입력하세요');
-      return;
-    }
+    // 출처기관은 선택(§개편) — 비워두면 '출처 미지정'으로 접수되고 목록에서 일괄 지정 가능.
     const step = (i) => {
       if (i >= files.length) {
         return self.load().then(() => {
@@ -1766,27 +2048,30 @@ class Component extends DCLogic {
     const inp = document.createElement('input');
     inp.type = 'file';
     inp.accept = '.xlsx,.xlsm,.xls';
-    inp.onchange = () => { const f = inp.files && inp.files[0]; if (!f) return; this._importFile = f; this._previewAsset(f, null, 1); };
+    inp.onchange = () => { const f = inp.files && inp.files[0]; if (!f) return; this._importFile = f; this._previewAsset(f, null, 1, null); };
     inp.click();
   }
 
-  _previewAsset(file, headerRow, headerRows) {
+  _previewAsset(file, headerRow, headerRows, sheet) {
     const fd = new FormData();
     fd.append('file', file);
     if (headerRow) fd.append('header_row', String(headerRow));
     fd.append('header_rows', String(headerRows || 1));
+    if (sheet) fd.append('sheet', sheet);   // 다중 시트 선택(§개편)
     this.api('POST', '/assets/import/preview', fd, true)
       .then(pv => {
         const fm = this._fieldMap(); const nm = {};
         Object.keys(pv.suggested_mapping || {}).forEach(af => { const fid = fm[af]; if (fid) nm[fid] = pv.suggested_mapping[af]; });
         this.setState({ importPreview: pv, importId: pv.import_id, importHeaderRow: pv.header_row,
-          importHeaderRows: pv.header_rows || 1, colMap: nm, assetView: 'import' });
+          importHeaderRows: pv.header_rows || 1, importSheetSel: pv.sheet || null,
+          colMap: nm, assetView: 'import' });
       })
       .catch(e => { console.error('[preview]', e); if (this.flashToast) this.flashToast('미리보기 실패', '엑셀 형식을 확인하세요'); });
   }
 
-  _setHeaderRow(hr) { if (this._importFile) this._previewAsset(this._importFile, Number(hr), this.state.importHeaderRows || 1); }
-  _setHeaderRows(n) { if (this._importFile) this._previewAsset(this._importFile, this.state.importHeaderRow, Number(n)); }
+  _setHeaderRow(hr) { if (this._importFile) this._previewAsset(this._importFile, Number(hr), this.state.importHeaderRows || 1, this.state.importSheetSel); }
+  _setHeaderRows(n) { if (this._importFile) this._previewAsset(this._importFile, this.state.importHeaderRow, Number(n), this.state.importSheetSel); }
+  _setSheet(sheet) { if (this._importFile) this._previewAsset(this._importFile, null, this.state.importHeaderRows || 1, sheet); }
 
   _doRealImport() {
     const id = this.state.importId; if (!id) return;
@@ -1806,8 +2091,10 @@ class Component extends DCLogic {
     this.api('POST', '/assets/import/' + id + '/commit', {
       mapping, header_row: this.state.importHeaderRow, header_rows: this.state.importHeaderRows || 1,
       mode, on_warning: 'skip',
+      sheet: this.state.importSheetSel || null,
+      all_sheets: !!this.state.importAllSheets,   // 모든 시트 일괄 적재(§개편)
     })
-      .then(r => { this.setState({ lastImportResult: r }); if (this.flashToast) this.flashToast('가져오기 완료', r.committed + '행 적재' + (r.retired ? (' · 회수 ' + r.retired + '대') : '') + (r.created_departments && r.created_departments.length ? (' · 부서 ' + r.created_departments.length + '개 생성') : '') + (r.warnings && r.warnings.length ? (' · 경고 ' + r.warnings.length + '건') : '')); return this.api('GET', '/assets?size=500'); })
+      .then(r => { this.setState({ lastImportResult: r }); if (this.flashToast) this.flashToast('가져오기 완료', r.committed + '행 적재' + (r.sheets_imported && r.sheets_imported.length > 1 ? (' · 시트 ' + r.sheets_imported.length + '개') : '') + (r.retired ? (' · 회수 ' + r.retired + '대') : '') + (r.created_departments && r.created_departments.length ? (' · 부서 ' + r.created_departments.length + '개 생성') : '') + (r.warnings && r.warnings.length ? (' · 경고 ' + r.warnings.length + '건') : '')); return this.api('GET', '/assets?size=500'); })
       .then(a => this.setState({ apiAssets: a.items || [], assetView: 'list', assetImported: true, importPreview: null }))
       .catch(e => { console.error('[import]', e); if (this.flashToast) this.flashToast('가져오기 실패', (e && e.detailMessage) || '필수 매핑(부서·제품·담당자) 확인'); });
   }
@@ -1874,9 +2161,7 @@ class Component extends DCLogic {
   _versionText(affectedVersions) {
     const av = affectedVersions;
     if (Array.isArray(av)) return av.length ? av.join(', ') : '전체';
-    if (av && av.lt) return av.lt + ' 미만 전체';
-    if (av && av.lte) return av.lte + ' 이하 전체';
-    if (av && av.eq) return av.eq;
+    if (av && typeof av === 'object') return this._ruleText(av);
     if (typeof av === 'string') return av || '전체';
     return '전체';
   }
@@ -2003,7 +2288,7 @@ class Component extends DCLogic {
         matchKey: i.product_key,                     // asset.key 와 동일한 정규화 키
         versions: isList ? av : [],
         anyVer: !isList,                             // {"lt":...} / "*" → 제품키만 일치 시 매칭
-        versionNote: (av && av.lt) ? (av.lt + ' 미만 전체') : '전체',
+        versionNote: (av && typeof av === 'object' && !isList) ? this._ruleText(av) : '전체',
         severity: this._koSev(i.severity),
         desc: i.description,
         published: (i.published_at || '').slice(0, 10),
@@ -2376,7 +2661,8 @@ class Component extends DCLogic {
       { label: '스킵/경고', value: ((lastImport.skipped || 0) + (lastImport.warnings || []).length) + '건' },
       { label: '자동 생성 부서', value: ((lastImport.created_departments || []).join(', ') || '-') },
     ] : [];
-    const uploadReady = !!String((S.uploadMeta && S.uploadMeta.source_org) || '').trim();
+    // 출처기관은 선택(§개편) — 업로드는 항상 가능, 빈 출처는 목록에서 일괄 지정.
+    const uploadReady = true;
     const uploadInlineBtnStyle = 'border:none; border-radius:8px; padding:10px 20px; font-size:13px; font-weight:600; font-family:inherit; flex-shrink:0; '
       + (uploadReady ? 'background:#0f766e; color:#fff; cursor:pointer;' : 'background:#e3e8ef; color:#a3aebf; cursor:not-allowed;');
     const uploadHeroBtnStyle = 'margin-top:18px; border:none; border-radius:8px; padding:10px 22px; font-size:13px; font-weight:600; font-family:inherit; '
@@ -2494,7 +2780,27 @@ class Component extends DCLogic {
     const _statusKo = { UPLOADED: '접수', EXTRACTING: '추출 중', EXTRACTED: '추출 완료',
       NEEDS_CVE_UPDATE: 'CVE 미등록', MATCHED: '매칭 완료', NOTIFYING: '발송 중', COMPLETED: '완료', ARCHIVED: '보관' };
     const _phaseKo = { queued: '대기 중', regex: '정규식 추출 중', done: '추출 완료', failed: '추출 실패' };
-    const advisoryBoard = (S.apiRecent || []).map(a => {
+    // 보드 검색·상태 필터(§개편 — 시각 개선)
+    const bq = String(S.boardQuery || '').trim().toLowerCase();
+    const bFilterDefs = [['', '전체'], ['progress', '처리중'], ['needs', 'CVE 미등록'],
+      ['notify', '발송·완료'], ['failed', '실패'], ['nosource', '출처 미지정']];
+    const bFilterFn = {
+      '': () => true,
+      progress: a => ['UPLOADED', 'EXTRACTING', 'EXTRACTED', 'MATCHED'].indexOf(a.status) >= 0 && a.extract_phase !== 'failed',
+      needs: a => a.status === 'NEEDS_CVE_UPDATE',
+      notify: a => a.status === 'NOTIFYING' || a.status === 'COMPLETED' || a.status === 'ARCHIVED',
+      failed: a => a.extract_phase === 'failed',
+      nosource: a => !(a.source_org || '').trim(),
+    };
+    const boardFiltered = (S.apiRecent || []).filter(a => {
+      if (!(bFilterFn[S.boardFilter || ''] || (() => true))(a)) return false;
+      if (!bq) return true;
+      return [a.title, a.doc_no, a.source_org].some(v => String(v || '').toLowerCase().indexOf(bq) >= 0);
+    });
+    // 처리 단계 미니 트래커: 접수→추출→매칭→발송→완료
+    const _stageIdx = { UPLOADED: 1, EXTRACTING: 1, NEEDS_CVE_UPDATE: 2, EXTRACTED: 2,
+      MATCHED: 3, NOTIFYING: 4, COMPLETED: 5, ARCHIVED: 5 };
+    const advisoryBoard = boardFiltered.map(a => {
       const phase = a.extract_phase;
       const processing = a.status === 'EXTRACTING' || phase === 'queued' || phase === 'regex';
       const isErr = phase === 'failed';
@@ -2506,20 +2812,57 @@ class Component extends DCLogic {
       else if (a.status === 'NEEDS_CVE_UPDATE') { bg = '#fef3e2'; fg = '#b45309'; }
       else if (a.status === 'EXTRACTED' || a.status === 'MATCHED' || a.status === 'NOTIFYING' || a.status === 'COMPLETED') { bg = '#e6f4f2'; fg = '#0f766e'; }
       const showSummary = !processing && (phase === 'done' || a.status === 'EXTRACTED' || a.status === 'NEEDS_CVE_UPDATE' || a.status === 'MATCHED' || a.status === 'NOTIFYING' || a.status === 'COMPLETED');
+      const hasSource = !!(a.source_org || '').trim();
+      const sevKo = a.max_severity ? this._koSev(a.max_severity) : null;
+      const dd = a.d_day;
+      const ddayLabel = (dd == null || a.status === 'COMPLETED' || a.status === 'ARCHIVED') ? ''
+        : (dd < 0 ? ('기한초과 +' + (-dd)) : (dd === 0 ? 'D-DAY' : 'D-' + dd));
+      const ddayStyle = 'font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:5px; '
+        + (dd != null && dd < 0 ? 'background:#fdecec; color:#b42318;'
+          : (dd != null && dd <= 3 ? 'background:#fef3e2; color:#b45309;' : 'background:#eef2fb; color:#2f5d8f;'));
+      const stageNo = isErr ? 1 : (_stageIdx[a.status] || 1);
+      const stageDefs = ['접수', '추출', '매칭', '발송', '완료'];
+      const stages = stageDefs.map((label, i) => {
+        const done = (i + 1) < stageNo, cur = (i + 1) === stageNo;
+        const color = done ? '#0f766e' : (cur ? (isErr ? '#b42318' : '#0f766e') : '#cfd6e0');
+        return {
+          label,
+          dotStyle: 'width:8px; height:8px; border-radius:50%; flex-shrink:0; background:' + (done || cur ? color : '#e3e8ef') + ';' + (cur ? ' box-shadow:0 0 0 3px ' + (isErr ? '#fdecec' : '#e6f4f2') + ';' : ''),
+          labelStyle: 'font-size:10px; font-weight:' + (cur ? '800' : '600') + '; color:' + (done || cur ? (isErr && cur ? '#b42318' : '#0f5d56') : '#a3aebf') + ';',
+          hasNext: i < stageDefs.length - 1,
+          connStyle: 'width:16px; height:2px; border-radius:2px; background:' + (done ? '#b8e0da' : '#e8ecf2') + ';',
+        };
+      });
+      const mc = a.match_count || 0, md = a.asset_done || 0;
+      const prog = mc ? Math.round(md / mc * 100) : 0;
       return {
-        id: a.id, title: a.title || '보안권고문', docNo: a.doc_no || '-', source: a.source_org || '발신기관',
+        id: a.id, title: a.title || '보안권고문', docNo: a.doc_no || '-',
+        source: hasSource ? a.source_org : '출처 미지정',
+        sourceStyle: 'font-size:11px; font-weight:700; padding:2px 8px; border-radius:5px; border:1px solid; '
+          + (hasSource ? 'color:#b42318; background:#fdecec; border-color:#f5c6c2;'
+                       : 'color:#b45309; background:#fff6e9; border-color:#f3dcb0;'),
         received: this._fmtDate(a.received_at), due: a.due_at ? this._fmtDate(a.due_at) : '-',
         processing, hasError: isErr, hasWarn: isWarn, errorMsg: a.error_message || '',
         statusLabel: stLabel,
         statusStyle: 'display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:3px 10px; border-radius:6px; background:' + bg + '; color:' + fg + ';',
+        sevLabel: sevKo, sevStyle: sevKo ? this.sevStyle(sevKo) : '',
+        ddayLabel, ddayStyle,
+        stages,
+        hasProgress: mc > 0 && (a.status === 'NOTIFYING' || a.status === 'COMPLETED' || a.status === 'MATCHED'),
+        matchCount: mc, assetDone: md,
+        notifiedDepts: a.notified_depts || 0, ackedDepts: a.acked_depts || 0,
+        progBarStyle: 'height:100%; border-radius:99px; background:' + (prog >= 100 ? '#2e9e5b' : (prog >= 50 ? '#e0a82e' : '#d9544a')) + '; width:' + prog + '%;',
         cveSummary: showSummary ? ('CVE ' + (a.extracted || 0) + '건 · 조회 ' + (a.found || 0) + ' · 미등록 ' + (a.not_found || 0)) : '',
-        cardStyle: 'background:#fff; border:1px solid ' + (isErr ? '#f3c9c4' : '#e1e7ef') + '; border-radius:12px; padding:15px 18px;',
+        cardStyle: 'background:#fff; border:1px solid ' + (isErr ? '#f3c9c4' : ((S.boardSel || {})[a.id] ? '#5fbfb2' : '#e1e7ef')) + '; border-radius:12px; padding:15px 18px;',
         canRetry: isErr,
+        checked: !!(S.boardSel || {})[a.id],
+        onCheck: () => this.setState(st => ({ boardSel: Object.assign({}, st.boardSel, { [a.id]: !(st.boardSel || {})[a.id] }) })),
         onOpenPdf: () => this._openPdf(a.id, a.title, a.doc_no),
         onRetry: () => this._retryExtract(a.id),
         onProcess: () => this._openDetail(a.id),
       };
     });
+    const boardSelCount = Object.keys(S.boardSel || {}).filter(k => (S.boardSel || {})[k]).length;
 
     // ── STEP2 원문 PDF 뷰어(이미지 + CVE 강조 오버레이) ──
     const pv = S.pdfView;
@@ -2596,6 +2939,30 @@ class Component extends DCLogic {
       procBoard: S.nav === 'process' && S.procView !== 'detail',
       procDetail: S.nav === 'process' && S.procView === 'detail',
       advisoryBoard, boardCount: advisoryBoard.length, boardEmpty: advisoryBoard.length === 0,
+      // 보드 검색·필터(§개편)
+      boardQuery: S.boardQuery || '',
+      onBoardQuery: (e) => this.setState({ boardQuery: e.target.value }),
+      boardFilters: bFilterDefs.map(d => ({
+        label: d[1],
+        onClick: () => this.setState({ boardFilter: d[0] }),
+        style: 'font-family:inherit; font-size:11.5px; font-weight:600; padding:6px 11px; border-radius:7px; cursor:pointer; border:1px solid '
+          + ((S.boardFilter || '') === d[0] ? '#0f766e; background:#0f766e; color:#fff;' : '#d3dbe8; background:#fff; color:#5a6b86;'),
+      })),
+      // 출처기관 일괄 지정(§개편)
+      boardSelCount,
+      boardSelEmptyNote: boardSelCount ? '' : ' — 카드 왼쪽 체크박스로 선택',
+      onSelectEmptySource: () => this.setState(st => {
+        const sel = {};
+        (st.apiRecent || []).forEach(a => { if (!(a.source_org || '').trim()) sel[a.id] = true; });
+        return { boardSel: sel, boardFilter: 'nosource' };
+      }),
+      onClearBoardSel: () => this.setState({ boardSel: {} }),
+      bulkSourceText: S.bulkSourceText || '',
+      onBulkSourceText: (e) => this.setState({ bulkSourceText: e.target.value }),
+      bulkSourceDisabled: !boardSelCount || !String(S.bulkSourceText || '').trim(),
+      bulkSourceBtnStyle: 'font-family:inherit; font-size:11.5px; font-weight:700; padding:7px 14px; border-radius:7px; border:none; '
+        + ((boardSelCount && String(S.bulkSourceText || '').trim()) ? 'background:#0f766e; color:#fff; cursor:pointer;' : 'background:#e3e8ef; color:#a3aebf; cursor:not-allowed;'),
+      onApplyBulkSource: () => this._applyBulkSource(),
       detailSteps: this.stepsData().filter(s => s.num >= 2),
       onBackToBoard: () => this._backToBoard(),
 
@@ -2633,16 +3000,57 @@ class Component extends DCLogic {
 
       docLines: this.docLines(),
       rows, rowCount: rows.length, foundCount,
-      // CVE 수동 보정(§A2)
+      // CVE 수동 보정(§A2 + §개편: 그 자리 수정·복원·재추출)
       cveEdit: (S.apiCveItems || []).map(i => ({
         code: i.cve_id_text,
         chipStyle: 'display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-family:monospace; font-weight:600; padding:3px 7px; border-radius:5px; '
           + (i.lookup_status === 'FOUND' ? 'background:#e6f4f2;color:#0f766e;border:1px solid #b8e0da;' : 'background:#fef3e2;color:#b45309;border:1px solid #f5d9a8;'),
+        onEdit: () => this._editCve(i.id, i.cve_id_text),
         onDelete: () => this._delCve(i.id),
       })),
+      hasDeletedCves: (S.apiCveDeleted || []).length > 0,
+      cveDeleted: (S.apiCveDeleted || []).map(i => ({
+        code: i.cve_id_text,
+        onRestore: () => this._restoreCve(i.id),
+      })),
+      onReextractCves: () => {
+        if (!window.confirm('본문에서 CVE를 재추출할까요?\n수동 추가·삭제한 항목은 보존됩니다.')) return;
+        this._retryExtract(this._advisoryId);
+      },
       cveAddText: S.cveAddText || '',
       onCveAddInput: (e) => this.setState({ cveAddText: e.target.value }),
       onAddCve: () => this._addCve(),
+      // 본문 추출 영향 제품(§개편)
+      productRows: (S.apiProducts || []).map(p => {
+        const stM = {
+          SUGGESTED: ['추출 제안', 'background:#f3eefb; color:#7a5a9a; border:1px solid #e0d2f0;'],
+          CONFIRMED: [p.origin === 'MANUAL' ? '수동 등록' : '확인됨', 'background:#e6f4f2; color:#0f766e; border:1px solid #b8e0da;'],
+        };
+        const st = stM[p.status] || stM.SUGGESTED;
+        return {
+          name: p.product_name, key: p.product_key,
+          snippet: p.source_snippet || '',
+          versionText: this._ruleText(p.affected_versions),
+          fixText: p.fixed_version ? (p.fixed_version + ' 이상 권장') : '—',
+          statusLabel: st[0],
+          statusStyle: 'font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:5px; ' + st[1],
+          rowStyle: 'display:grid; grid-template-columns:1.2fr 1fr 120px 110px 190px; gap:0; align-items:center; padding:11px 18px; border-bottom:1px solid #f2f5f9;'
+            + (p.status === 'SUGGESTED' ? ' background:#fdfcff;' : ''),
+          canConfirm: p.status === 'SUGGESTED',
+          onConfirm: () => this._confirmProduct(p.id),
+          onEdit: () => this._editProductPrompt(p),
+          onApply: () => this._applyProductToCve(p),
+          onDelete: () => this._deleteProduct(p.id),
+        };
+      }),
+      productEmpty: !(S.apiProducts || []).length,
+      hasDeletedProducts: (S.apiProductsDeleted || []).length > 0,
+      productDeleted: (S.apiProductsDeleted || []).map(p => ({
+        name: p.product_name,
+        onRestore: () => this._restoreProduct(p.id),
+      })),
+      onAddProduct: () => this._addProductPrompt(),
+      onReextractProducts: () => this._reextractProducts(),
       hasUnresolved: unresolvedCount > 0,
       unresolvedCount,
       unresolvedColor: unresolvedCount ? '#b45309' : '#0f766e',
@@ -2751,6 +3159,14 @@ class Component extends DCLogic {
       importFileName: this._importFile ? this._importFile.name : (S.importPreview ? '업로드 파일' : ''),
       importSheet: S.importPreview ? S.importPreview.sheet : '',
       importTotalRows: S.importPreview ? S.importPreview.total_rows : 0,
+      // 다중 시트(§개편) — 시트 선택·전체 시트 일괄 적재
+      importSheetValue: S.importSheetSel || (S.importPreview ? S.importPreview.sheet : ''),
+      sheetOptions: ((S.importPreview && S.importPreview.sheets) || []).map(name => ({
+        value: name, label: name,
+      })),
+      onSheetPick: (e) => this._setSheet(e.target.value),
+      importAllSheets: !!S.importAllSheets,
+      onToggleAllSheets: () => this.setState(st => ({ importAllSheets: !st.importAllSheets })),
       headerRowValue: String(S.importHeaderRow || 1),
       headerRowsValue: String(S.importHeaderRows || 1),
       headerRowOptions: (S.importPreview && S.importPreview.preview_rows ? S.importPreview.preview_rows.map((r, i) => ({

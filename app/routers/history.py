@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from .. import enums, serializers
 from ..audit import record
 from ..db import get_db
-from ..models import Advisory, Asset, MessageTemplate, Notification
+from ..models import Advisory, Asset, Match, MessageTemplate, Notification
 from ..schemas import MessageTemplateIn
 
 router = APIRouter(prefix="/api/v1", tags=["history"])
@@ -29,7 +29,7 @@ _SEV_RANK = {
 
 
 def _max_severity(a: Advisory):
-    sevs = [ac.cve.severity for ac in a.cves if ac.cve]
+    sevs = [ac.cve.severity for ac in a.cves if ac.cve and not ac.is_deleted]
     if not sevs:
         return None
     return max(sevs, key=lambda s: _SEV_RANK.get(s, 0))
@@ -64,6 +64,24 @@ def history_advisories(db: Session = Depends(get_db)):
     for n in notifs:
         by_adv.setdefault(n.advisory_id, []).append(n)
 
+    # ── 자산(개별 대상) 단위 ack 집계(§개편) — 부서 묶음이 아닌 개별 자산 기준 조치율.
+    #    (advisory_id, department_id) → {total, done, in_progress, unable, none}
+    asset_ack: dict[tuple[int, int], dict[str, int]] = {}
+    if by_adv:
+        rows = db.execute(
+            select(Match.advisory_id, Asset.department_id, Match.ack_status)
+            .join(Asset, Match.asset_id == Asset.id)
+            .where(Match.advisory_id.in_(by_adv.keys()),
+                   Match.status == enums.MatchStatus.MATCHED)
+        ).all()
+        for adv_id, dept_id, ack in rows:
+            c = asset_ack.setdefault((adv_id, dept_id), {
+                "total": 0, "done": 0, "in_progress": 0, "unable": 0, "none": 0})
+            c["total"] += 1
+            key = {"DONE": "done", "IN_PROGRESS": "in_progress",
+                   "UNABLE": "unable"}.get(ack.value, "none")
+            c[key] += 1
+
     today = date.today()
     items = []
     for advisory_id, ns in by_adv.items():
@@ -71,11 +89,20 @@ def history_advisories(db: Session = Depends(get_db)):
         if adv is None:
             continue
         counts = {"NONE": 0, "IN_PROGRESS": 0, "DONE": 0, "UNABLE": 0}
+        adv_assets = {"total": 0, "done": 0, "in_progress": 0, "unable": 0, "none": 0}
         depts = []
         for n in sorted(ns, key=lambda x: (x.department.name if x.department else "")):
             counts[n.ack_status.value] = counts.get(n.ack_status.value, 0) + 1
             n_owners = sorted({owners.get(aid) for aid in (n.asset_ids or [])} - {None, "자동배포"})
+            aa = asset_ack.get((advisory_id, n.department_id))
+            if aa:
+                for k in adv_assets:
+                    adv_assets[k] += aa[k]
             depts.append({
+                # 개별 대상(자산) 단위 조치 집계(§개편) — 부서 단일 상태와 별개로 표기.
+                "asset_ack": dict(aa) | {
+                    "done_rate": round(aa["done"] / aa["total"] * 100) if aa["total"] else 0,
+                } if aa else None,
                 "notification_id": n.id,
                 "department_id": n.department_id,
                 "department": n.department.name if n.department else None,
@@ -117,6 +144,14 @@ def history_advisories(db: Session = Depends(get_db)):
             "unable": counts["UNABLE"],
             "done_rate": round(done / total * 100) if total else 0,
             "responded_rate": round((total - counts["NONE"]) / total * 100) if total else 0,
+            # 개별 대상(자산) 단위 합계(§개편) — 권고문 전체 자산 조치율.
+            "asset_total": adv_assets["total"],
+            "asset_done": adv_assets["done"],
+            "asset_in_progress": adv_assets["in_progress"],
+            "asset_unable": adv_assets["unable"],
+            "asset_none": adv_assets["none"],
+            "asset_done_rate": (round(adv_assets["done"] / adv_assets["total"] * 100)
+                                if adv_assets["total"] else 0),
             "departments": depts,
         })
 

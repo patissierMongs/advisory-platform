@@ -14,6 +14,23 @@ from . import exclusions
 from .versioning import version_matches
 
 
+def cve_product_rules(cve: Cve) -> list[tuple[str, object]]:
+    """CVE 의 (product_key, 영향버전 규칙) 목록 — 다중 제품 지원(§개편).
+
+    primary(product_key/affected_versions) + affected_products(JSON 목록)를 합친다.
+    HTTP 취약점처럼 Apache·Tomcat·IIS·nginx 여러 제품이 한 CVE 에 걸리는 경우
+    제품별 규칙이 각각 매칭에 참여한다.
+    """
+    rules: list[tuple[str, object]] = []
+    if cve.product_key:
+        rules.append((cve.product_key, cve.affected_versions))
+    for extra in (cve.affected_products or []):
+        key = (extra or {}).get("product_key")
+        if key and all(k != key for k, _ in rules):
+            rules.append((key, (extra or {}).get("affected_versions")))
+    return rules
+
+
 def asset_matches_cve(asset: Asset, cve: Cve) -> tuple[bool, dict | None]:
     """단일 자산 ↔ CVE 매칭 판정. 근거(reason) 동봉.
 
@@ -21,22 +38,25 @@ def asset_matches_cve(asset: Asset, cve: Cve) -> tuple[bool, dict | None]:
     정규화가 과하게 변형되어(예: "2021" → "21.001.20155") CVE 영향버전 목록과
     어긋나는 경우 취약 자산을 놓치지 않도록(보안 도구: 누락 < 오탐) — 둘 중 하나라도
     규칙을 만족하면 매칭. 관리자 화면(클라이언트 매칭)과 서버 저장 결과의 불일치도 해소.
+    CVE 가 여러 제품에 걸치면(affected_products) 자산 제품키에 해당하는 규칙으로 판정.
     """
-    if not cve.product_key or asset.product_key != cve.product_key:
-        return False, None
-    matched_n, cand_n = version_matches(asset.version_norm, cve.affected_versions)
-    matched_r, cand_r = version_matches(asset.version_raw, cve.affected_versions)
-    if not (matched_n or matched_r):
-        return False, None
-    # 둘 중 '확정 매칭'(matched & not candidate)이 하나라도 있으면 확정, 아니면 후보(사람 검토).
-    confident = (matched_n and not cand_n) or (matched_r and not cand_r)
-    return True, {
-        "product_key": cve.product_key,
-        "version_rule": cve.affected_versions,
-        "asset_version": asset.version_norm,
-        "asset_version_raw": asset.version_raw,
-        "candidate": not confident,  # True=버전 비교 불가/원본으로만 일치 → 사람 검토 권장
-    }
+    for product_key, rule in cve_product_rules(cve):
+        if asset.product_key != product_key:
+            continue
+        matched_n, cand_n = version_matches(asset.version_norm, rule)
+        matched_r, cand_r = version_matches(asset.version_raw, rule)
+        if not (matched_n or matched_r):
+            continue
+        # 둘 중 '확정 매칭'(matched & not candidate)이 하나라도 있으면 확정, 아니면 후보(사람 검토).
+        confident = (matched_n and not cand_n) or (matched_r and not cand_r)
+        return True, {
+            "product_key": product_key,
+            "version_rule": rule,
+            "asset_version": asset.version_norm,
+            "asset_version_raw": asset.version_raw,
+            "candidate": not confident,  # True=버전 비교 불가/원본으로만 일치 → 사람 검토 권장
+        }
+    return False, None
 
 
 def run_matching(db: Session, advisory: Advisory, actor_id: int | None = None) -> dict:
@@ -44,10 +64,11 @@ def run_matching(db: Session, advisory: Advisory, actor_id: int | None = None) -
 
     반환: {"matched": 활성매칭수, "departments": 대상부서수, "candidates": 후보수}
     """
-    found_cves = [ac for ac in advisory.cves if ac.lookup_status == enums.LookupStatus.FOUND and ac.cve]
+    found_cves = [ac for ac in active_cves(advisory)
+                  if ac.lookup_status == enums.LookupStatus.FOUND and ac.cve]
 
-    # 관련 제품키 자산만 조회(인덱스 활용).
-    product_keys = {ac.cve.product_key for ac in found_cves if ac.cve.product_key}
+    # 관련 제품키 자산만 조회(인덱스 활용) — 다중 제품 규칙 전체 포함.
+    product_keys = {key for ac in found_cves for key, _rule in cve_product_rules(ac.cve)}
     assets: list[Asset] = []
     if product_keys:
         assets = list(
@@ -110,10 +131,16 @@ def run_matching(db: Session, advisory: Advisory, actor_id: int | None = None) -
             "suggested_exclude": suggested}
 
 
+def active_cves(advisory: Advisory) -> list[AdvisoryCve]:
+    """소프트 삭제(§개편)를 제외한 유효 추출 CVE."""
+    return [ac for ac in advisory.cves if not ac.is_deleted]
+
+
 def all_cves_found(advisory: Advisory) -> bool:
     """발송/매칭 게이트: 미해소(NOT_FOUND) CVE 가 없는가.
 
     CVE 가 하나도 없는 권고문(일반 공지형)은 '미등록 CVE' 가 없으므로 게이트를 통과한다 —
     매칭은 0건으로 끝나고, 발송 게이트(NO_ACTIVE_MATCH)와 종결 처리로 이어진다.
+    소프트 삭제된 CVE 는 게이트에서 제외한다.
     """
-    return all(ac.lookup_status == enums.LookupStatus.FOUND for ac in advisory.cves)
+    return all(ac.lookup_status == enums.LookupStatus.FOUND for ac in active_cves(advisory))

@@ -83,6 +83,8 @@ def _norm_record(raw: dict) -> dict | None:
         "product_name": product_name,
         "product_key": product_key,
         "affected_versions": versions if versions not in (None, []) else "*",
+        # 다중 제품(§개편) — primary 외 추가 (product_key, 규칙) 목록. NVD CPE 다중 제품 등.
+        "affected_products": raw.get("affected_products") or None,
         "cpe_list": raw.get("cpe_list") or raw.get("cpe") or None,
         "severity": _sev_from_any(raw.get("severity"), raw.get("cvss_score") or raw.get("cvss")),
         "cvss_score": raw.get("cvss_score") or raw.get("cvss") or None,
@@ -116,22 +118,33 @@ def _norm_nvd_item(item: dict) -> dict | None:
         cdata = mlist[0].get("cvssData", {})
         cvss = cdata.get("baseScore")
         base_sev = mlist[0].get("baseSeverity") or cdata.get("baseSeverity")
-    # CPE → 제품명/영향버전(첫 cpeMatch 기준의 근사 추출, 정밀화는 §9 결정항목)
-    product_name = None
-    affected = "*"
+    # CPE → 제품별 영향버전(§개편 — 다중 제품). 같은 제품키의 규칙은 마지막 것을 사용.
     cpe_list = []
+    per_product: dict[str, dict] = {}   # product_key → {product_name, affected_versions}
+    order: list[str] = []
     for node in (_iter_cpe(cve)):
         cpe_list.append(node.get("criteria"))
-        if product_name is None:
-            product_name = _product_from_cpe(node.get("criteria"))
+        name = _product_from_cpe(node.get("criteria"))
+        if not name:
+            continue
+        key = normalize_product(name)
         rule = _versionrule_from_cpe(node)
-        if rule is not None:
-            affected = rule
+        entry = per_product.get(key)
+        if entry is None:
+            per_product[key] = {"product_name": name, "product_key": key,
+                                "affected_versions": rule if rule is not None else "*"}
+            order.append(key)
+        elif rule is not None:
+            entry["affected_versions"] = rule
+    primary = per_product[order[0]] if order else None
+    extras = [per_product[k] for k in order[1:]]
     return _norm_record(
         {
             "cve_id": cve_id,
-            "product_name": product_name,
-            "affected_versions": affected,
+            "product_name": primary["product_name"] if primary else None,
+            "product_key": primary["product_key"] if primary else None,
+            "affected_versions": primary["affected_versions"] if primary else "*",
+            "affected_products": extras or None,
             "cpe_list": [c for c in cpe_list if c] or None,
             "severity": base_sev,
             "cvss_score": cvss,
@@ -166,11 +179,21 @@ def _product_from_cpe(criteria: str | None) -> str | None:
 
 
 def _versionrule_from_cpe(m: dict):
-    if m.get("versionEndExcluding"):
-        return {"lt": m["versionEndExcluding"]}
-    if m.get("versionStartIncluding") and m.get("versionEndIncluding"):
-        return {"range": [m["versionStartIncluding"], m["versionEndIncluding"]]}
-    return None
+    """CPE 버전 경계 → 내부 규칙. 시작/끝·포함/제외 조합 전체를 해석한다(§개편)."""
+    lo_inc, lo_exc = m.get("versionStartIncluding"), m.get("versionStartExcluding")
+    hi_inc, hi_exc = m.get("versionEndIncluding"), m.get("versionEndExcluding")
+    if lo_inc and hi_inc:
+        return {"range": [lo_inc, hi_inc]}
+    rule: dict[str, str] = {}
+    if lo_inc:
+        rule["gte"] = lo_inc
+    elif lo_exc:
+        rule["gt"] = lo_exc
+    if hi_inc:
+        rule["lte"] = hi_inc
+    elif hi_exc:
+        rule["lt"] = hi_exc
+    return rule or None
 
 
 # CSV 헤더 별칭 정규화 표(배치·스트리밍 공유).
@@ -385,8 +408,8 @@ def apply_stream(db: Session, records: Iterator[dict], feed_import_id: int | Non
 
 
 # cve 테이블 upsert 시 충돌(cve_id 중복) 행에서 갱신할 데이터 컬럼.
-_UPSERT_COLS = ("product_name", "product_key", "affected_versions", "cpe_list",
-                "severity", "cvss_score", "description", "published_at", "source",
+_UPSERT_COLS = ("product_name", "product_key", "affected_versions", "affected_products",
+                "cpe_list", "severity", "cvss_score", "description", "published_at", "source",
                 "feed_import_id")
 # 한 INSERT 문의 바인드 변수 한계 회피용 행수 상한.
 # SQLite≥3.32(2020) 32766 / PostgreSQL 65535 내. (cve_id 포함 컬럼수 기준)

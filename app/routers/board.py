@@ -319,7 +319,7 @@ def board_detail(
             "severity": ac.cve.severity.value if ac.cve else None,
         }
         for ac in adv.cves
-        if not scoped or ac.id in matched_ac_ids
+        if not ac.is_deleted and (not scoped or ac.id in matched_ac_ids)
     ]
     comments_raw = _comments_for_department(adv, dept)
     comments = []
@@ -522,7 +522,9 @@ def asset_ack(advisory_id: int, body: AssetAckIn, request: Request, db: Session 
         m.ack_note = note
         m.ack_at = now
 
-    # 발송이력 브리지 — 해당 부서 전체 자산이 DONE 이면 부서 발송 ack 도 DONE 동기화.
+    # 발송이력 브리지 — 부서 전체 자산이 DONE 이면 부서 발송 ack 도 DONE 동기화.
+    # 회신 취소(§개편 — NONE 회신)로 '전체 DONE' 이 깨지면 부서 종결도 함께 해제해
+    # 게시판(자산 기준)과 발송이력(부서 기준)이 어긋나지 않게 한다.
     synced = None
     if dept is not None:
         dept_matches = db.scalars(
@@ -530,18 +532,25 @@ def asset_ack(advisory_id: int, body: AssetAckIn, request: Request, db: Session 
             .where(Match.advisory_id == adv.id, Match.status == enums.MatchStatus.MATCHED,
                    Asset.department_id == dept.id)
         ).all()
+        n = db.scalar(
+            select(Notification)
+            .where(Notification.advisory_id == adv.id, Notification.department_id == dept.id)
+            .order_by(Notification.id.desc())
+        )
         if dept_matches and all(m.ack_status == enums.AckStatus.DONE for m in dept_matches):
-            n = db.scalar(
-                select(Notification)
-                .where(Notification.advisory_id == adv.id, Notification.department_id == dept.id)
-                .order_by(Notification.id.desc())
-            )
             if n is not None:
                 n.ack_status = enums.AckStatus.DONE
                 n.status = enums.NotificationStatus.ACKED
                 n.ack_by = body.author_name.strip()
                 n.ack_updated_at = now
                 synced = n.id
+        elif n is not None and n.ack_status == enums.AckStatus.DONE and dept_matches:
+            any_progress = any(m.ack_status != enums.AckStatus.NONE for m in dept_matches)
+            n.ack_status = enums.AckStatus.IN_PROGRESS if any_progress else enums.AckStatus.NONE
+            n.status = enums.NotificationStatus.SENT
+            n.ack_by = body.author_name.strip()
+            n.ack_updated_at = now
+            synced = n.id
 
     record(db, action="BOARD_ASSET_ACK", actor_id=None, entity_type="advisory",
            entity_id=adv.id, detail={"author": body.author_name, "dept": dept_name,
