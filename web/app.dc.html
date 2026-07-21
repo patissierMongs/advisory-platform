@@ -1531,8 +1531,19 @@ class Component extends DCLogic {
     const isNew = cc > (this._seenComments()[adv.id] || 0);
     return (adv.departments || []).map(d => {
       const ack = d.ack_status;
-      const st = ack === 'DONE' ? ['조치완료', 'green'] : ack === 'IN_PROGRESS' ? ['조치중', 'amber']
-        : ack === 'UNABLE' ? ['조치불가', 'red'] : ['미회신', 'gray'];
+      // 표시 상태는 자산(개별) 집계 기준으로 파생(§개편) — 전 자산 완료일 때만 '조치완료',
+      // 일부만 조치됐으면 부서 회신이 완료여도 '진행중'으로 표기한다.
+      const agg = d.asset_ack || null;
+      let st;
+      if (agg && agg.total) {
+        if (agg.done === agg.total) st = ['조치완료', 'green'];
+        else if (ack === 'UNABLE') st = ['조치불가', 'red'];
+        else if (agg.done > 0 || agg.in_progress > 0 || ack === 'IN_PROGRESS' || ack === 'DONE') st = ['진행중 ' + agg.done + '/' + agg.total, 'amber'];
+        else st = ['미회신', 'gray'];
+      } else {
+        st = ack === 'DONE' ? ['조치완료', 'green'] : ack === 'IN_PROGRESS' ? ['진행중', 'amber']
+          : ack === 'UNABLE' ? ['조치불가', 'red'] : ['미회신', 'gray'];
+      }
       const ackBtn = (s, label) => ({
         label, onClick: () => this._ack(d.notification_id, s, ack),
         style: 'font-family:inherit; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:5px; cursor:pointer; border:1px solid; '
@@ -1540,7 +1551,7 @@ class Component extends DCLogic {
             ? ({ DONE: 'background:#0f766e;color:#fff;border-color:#0f766e;', IN_PROGRESS: 'background:#e8a33d;color:#fff;border-color:#e8a33d;', UNABLE: 'background:#8a98ab;color:#fff;border-color:#8a98ab;' }[s])
             : 'background:#fff;color:#5a6b86;border-color:#d3dbe8;'),
       });
-      const aa = d.asset_ack || null;   // 개별 자산 단위 집계(§개편)
+      const aa = agg;   // 개별 자산 단위 집계(§개편)
       return {
         dept: d.department || '-', owner: d.owner || '-', assets: (d.asset_count || 0) + '대',
         assetAckText: aa ? (aa.done + '/' + aa.total + '대 (' + aa.done_rate + '%)')
@@ -1585,7 +1596,9 @@ class Component extends DCLogic {
       const isSel = a.id === sel;
       return {
         id: a.id, title: a.title || a.doc_no || '제목 없음', docNo: a.doc_no || '',
-        done: a.done, total: total, rate: a.done_rate, noneText: a.none ? (' · 미회신 ' + a.none) : '',
+        done: a.done, total: total, rate: a.done_rate,
+        noneText: (a.asset_total ? (' · 자산 ' + a.asset_done + '/' + a.asset_total + '대 조치') : '')
+          + (a.none ? (' · 미회신 ' + a.none) : ''),
         bars: bars, slaLabel: p.label, slaStyle: p.style,
         itemStyle: 'padding:12px 15px; border-bottom:1px solid #f2f5f9; cursor:pointer; ' + (isSel ? 'background:#eef4ff; box-shadow:inset 3px 0 0 #2f5bd0;' : ''),
         onSelect: () => this._selectHistoryAdv(a.id),

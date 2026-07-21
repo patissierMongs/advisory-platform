@@ -125,6 +125,39 @@ function barHtml(a){
   return `<div class="bar">${seg("DONE",a.done)}${seg("IN_PROGRESS",a.in_progress)}${seg("UNABLE",a.unable)}${seg("NONE",a.none)}</div>`;
 }
 
+// ── 자산(개별 대상) 단위 집계·표기(§개편) ──
+// 부서 묶음 상태와 별개로 "몇 대 중 몇 대 조치됐는지"를 합산하고, 표시 상태는
+// 전 자산 완료일 때만 '조치완료' — 일부만 조치됐으면 '진행중'으로 파생한다.
+function assetAgg(items){
+  const s = {total:0, done:0, in_progress:0, unable:0, none:0};
+  items.forEach(it => { const a = it.d.asset_ack;
+    if(a){ s.total+=a.total; s.done+=a.done; s.in_progress+=a.in_progress; s.unable+=a.unable; s.none+=a.none; } });
+  s.rate = s.total ? Math.round(s.done/s.total*100) : 0;
+  return s;
+}
+function assetBarHtml(s){
+  if(!s.total) return "";
+  const seg = (c,n) => n ? `<i class="b-${c}" style="width:${n/s.total*100}%"></i>` : "";
+  return `<div class="bar">${seg("DONE",s.done)}${seg("IN_PROGRESS",s.in_progress)}${seg("UNABLE",s.unable)}${seg("NONE",s.none)}</div>`;
+}
+function effStatus(d){
+  const a = d.asset_ack;
+  if(a && a.total){
+    if(a.done === a.total) return {label:"조치완료", cls:"s-DONE"};
+    if(d.ack_status === "UNABLE") return {label:"조치불가", cls:"s-UNABLE"};
+    if(a.done>0 || a.in_progress>0 || d.ack_status==="IN_PROGRESS" || d.ack_status==="DONE")
+      return {label:`진행중 ${a.done}/${a.total}대`, cls:"s-IN_PROGRESS"};
+    return {label:"미회신", cls:"s-NONE"};
+  }
+  return {label:KO[d.ack_status]||d.ack_status, cls:"s-"+d.ack_status};
+}
+// 부서 회신값과 자산 기준 파생 상태가 다를 때만 보조 배지 표시(예: 부서 '조치완료'인데 자산 일부만 완료).
+function effBadge(d){
+  const e = effStatus(d);
+  if(e.label === (KO[d.ack_status]||d.ack_status)) return "";
+  return `<div style="margin-top:3px"><span class="badge ${e.cls}" title="자산(개별) 조치 기준 상태">${e.label}</span></div>`;
+}
+
 async function boot(){
   try{
     const [h, t] = await Promise.all([ api("/history/advisories"), api("/message-templates") ]);
@@ -195,9 +228,18 @@ function render(){
     if(SELDEPT==null || !rows.some(r=>r.dept===SELDEPT)) SELDEPT = rows.length ? rows[0].dept : null;
     list.innerHTML = rows.length ? rows.map(r=>{
       const open = r.items.filter(it=>it.d.ack_status!=="DONE" && it.d.ack_status!=="UNABLE").length;
+      // 자산(개별 대상) 진행 시각화(§개편) — 몇 대 중 몇 대 조치됐는지 + 파생 상태 배지.
+      const ag = assetAgg(r.items);
+      const stBadge = ag.total
+        ? (ag.done===ag.total ? `<span class="badge s-DONE">조치완료</span>`
+          : (ag.done>0||ag.in_progress>0 ? `<span class="badge s-IN_PROGRESS">진행중</span>`
+            : `<span class="badge s-NONE">미회신</span>`))
+        : "";
       return `<div class="li ${r.dept===SELDEPT?'on':''}" onclick="SELDEPT='${esc(r.dept)}';render()">
-        <div class="t">${esc(r.dept)}</div>
+        <div class="t">${esc(r.dept)} ${stBadge}</div>
         <div class="m"><span>담당 권고문 ${r.items.length}</span><span>· 미완료 <b style="color:#c0392b">${open}</b></span></div>
+        ${assetBarHtml(ag)}
+        ${ag.total?`<div class="m" style="margin-top:6px">자산 ${ag.done}/${ag.total}대 조치 · ${ag.rate}%</div>`:""}
       </div>`;}).join("") : `<div class="empty">조건에 맞는 부서가 없습니다.</div>`;
     renderDeptDetail(rows.find(r=>r.dept===SELDEPT));
   }
@@ -265,7 +307,7 @@ function renderAdvDetail(a){
         ${a.departments.map(d=>`<tr>
           <td><b>${esc(d.department||"-")}</b>${d.asset_ack?`<div class="muted" style="font-size:11px">자산 ${d.asset_ack.done}/${d.asset_ack.total} 조치 (${d.asset_ack.done_rate}%)</div>`:(d.asset_count?`<div class="muted" style="font-size:11px">자산 ${d.asset_count}</div>`:"")}</td>
           <td>${esc(d.owner||"-")}</td>
-          <td>${ackPicker(d)}${d.ack_note?`<div class="muted" style="font-size:11px;margin-top:3px">${esc(d.ack_note)}</div>`:""}</td>
+          <td>${ackPicker(d)}${effBadge(d)}${d.ack_note?`<div class="muted" style="font-size:11px;margin-top:3px">${esc(d.ack_note)}</div>`:""}</td>
           <td>${evCell(d)}</td>
           <td class="muted">${fmtDate(d.sent_at)}</td>
           <td class="muted">${d.reminder_count?`${d.reminder_count}회`:"—"}</td>
@@ -279,10 +321,12 @@ function renderDeptDetail(r){
   const el = document.getElementById("detail");
   if(!r){ el.innerHTML = `<div class="empty">왼쪽에서 부서를 선택하세요.</div>`; return; }
   const open = r.items.filter(it=>it.d.ack_status!=="DONE" && it.d.ack_status!=="UNABLE").length;
+  const ag = assetAgg(r.items);
   el.innerHTML = `
     <div class="card">
       <div style="font-size:16px;font-weight:800">${esc(r.dept)}</div>
-      <div class="m muted" style="margin-top:7px">담당 권고문 ${r.items.length}건 · 미완료 <b style="color:#c0392b">${open}</b></div>
+      <div class="m muted" style="margin-top:7px">담당 권고문 ${r.items.length}건 · 미완료 <b style="color:#c0392b">${open}</b>${ag.total?` · 자산(개별) ${ag.done}/${ag.total}대 조치 (${ag.rate}%)`:""}</div>
+      ${assetBarHtml(ag)}
     </div>
     <h2>이 부서의 권고문별 조치</h2>
     <div class="card" style="padding:6px 10px">
@@ -291,7 +335,7 @@ function renderDeptDetail(r){
         ${r.items.sort((x,y)=>(x.a.d_day??1e9)-(y.a.d_day??1e9)).map(it=>`<tr>
           <td><b>${esc(it.a.title||it.a.doc_no||"-")}</b><div class="muted" style="font-size:11px">${esc(it.a.doc_no||"")} ${it.a.d_day!=null?"· "+dday(it.a.d_day):""}</div></td>
           <td class="muted">${fmtDate(it.a.due_at)}</td>
-          <td>${ackPicker(it.d)}</td>
+          <td>${ackPicker(it.d)}${effBadge(it.d)}</td>
           <td>${evCell(it.d)}</td>
           <td class="muted">${fmtDate(it.d.sent_at)}</td>
         </tr>`).join("")}
