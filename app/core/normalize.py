@@ -53,7 +53,9 @@ VENDOR_PREFIX_ALIASES: frozenset[str] = frozenset({"apache", "microsoft", "adobe
 
 # 버전형 토큰 — 별칭 뒤에 와도 '다른 제품 단어'로 보지 않는 것들.
 _VERSIONISH = re.compile(r"^(?:v?\d|dc\b|\d{2}h\d|x\b|버전|version|server\b)", re.IGNORECASE)
-_NEXT_WORD = re.compile(r"^[\s\-_/·]*([a-z가-힣][a-z0-9가-힣]*)", re.IGNORECASE)
+# 벤더 가드는 라틴 단어만 '다른 제품명 후보'로 본다 — 한국어 후속어(웹서버·취약점·서버 등)는
+# 제품명이 아니라 일반 명사이므로 거부하면 "Apache 웹서버 취약점"에서 제품을 놓친다(§스트레스 S02).
+_NEXT_WORD = re.compile(r"^[\s\-_/·]*([A-Za-z][A-Za-z0-9]*)")
 
 
 def _boundary_ok(text: str, start: int, end: int) -> bool:

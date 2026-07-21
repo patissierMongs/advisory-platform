@@ -90,6 +90,23 @@ def test_unknown_product_suggested_with_range_phrase():
     assert p["confidence"] <= 0.5
 
 
+# ── 스트레스 라운드 회귀(§스트레스 S02·S05) ──────────────────────────────────
+
+def test_vendor_guard_allows_korean_following_word():
+    # "Apache 웹서버/취약점" — 한국어 후속어는 하위 제품명이 아니므로 httpd 로 인식해야 한다.
+    p = _one("Apache 웹서버 취약점 주의. 2.4.57 이하 버전이 영향받음.", "apache_httpd")
+    assert p["affected_versions"] == {"lte": "2.4.57"}
+    assert normalize_product("Apache 웹서버") == "apache_httpd"
+    # 라틴 하위 제품명은 여전히 가드된다.
+    assert normalize_product("Apache Druid") == "apache_druid"
+
+
+def test_hversion_not_truncated_and_month_not_version():
+    # 22H2 가 22 로 잘리거나 "6월"의 6 이 버전으로 들어가면 안 된다.
+    p = _one("Windows 11 2026년 6월 정기 업데이트 권고. 22H2, 23H2 버전 영향.", "windows_11")
+    assert p["affected_versions"] == ["22H2", "23H2"]
+
+
 # ── 다중 연산 규칙 평가(versioning 확장) ─────────────────────────────────────
 
 def test_version_matches_multi_op_dict():
