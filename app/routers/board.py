@@ -2,7 +2,8 @@
 
 설계
   · 그룹웨어 의존 없이 이 시스템 자체가 게시판이 된다(폐쇄망 내부 공유).
-  · 인증 없음 — 부서(드롭다운/직접입력) + 이름만으로 댓글. 관리자 작성은 is_admin 표식.
+  · 인증 없음 — 부서(드롭다운/직접입력) + 이름만으로 댓글. is_admin 표식은 공개
+    입력에서 받지 않는다(스푸핑 차단, 서버가 항상 False 로 저장).
   · 댓글에 조치상태(ack_status)를 첨부하면, 해당 (권고문, 부서) 발송 ack 로 동기화(둘 다).
   · 노출 범위: 관리자가 '게시판 게시'한(board_published_at 설정) 권고문만 게시판에 보인다.
 """
@@ -382,7 +383,9 @@ def add_comment(advisory_id: int, body: CommentIn, request: Request, db: Session
         author_department_name=dept_name,
         body=body.body.strip(),
         ack_status=body.ack_status,
-        is_admin=bool(body.is_admin),
+        # 공개·무인증 엔드포인트 — 클라이언트가 준 is_admin 은 신뢰하지 않는다(관리자 배지
+        # 스푸핑 차단). 정당한 관리자 댓글 경로가 아직 없으므로 항상 False 로 저장한다.
+        is_admin=False,
     )
     db.add(comment)
 

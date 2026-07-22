@@ -122,7 +122,8 @@ async function loadDepts(){
   try{ DEPTS = (await api("/departments")).items; }catch(e){}
 }
 
-const esc = s => (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+// 작은따옴표/백틱까지 이스케이프(인라인 JS 문자열 탈출 방지). 방어적 일관성.
+const esc = s => (s==null?"":String(s)).replace(/[&<>"'`]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;","`":"&#96;"}[c]));
 const ACK_KO = {DONE:"조치완료",IN_PROGRESS:"진행중",UNABLE:"조치불가",NONE:"미회신"};
 const CH_KO = {NCST:"국정원 NCST",WEBMAIL:"웹메일",OFFICIAL_DOC:"공문"};
 

@@ -109,7 +109,8 @@ let SEL = null;       // 선택된 advisory id
 let SELDEPT = null;   // 부서별 뷰 선택 부서명
 let _searchT;
 
-const esc = s => (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+// HTML 특수문자 전부 이스케이프 — 작은따옴표/백틱까지(인라인 JS 문자열 탈출 방지, 저장형 XSS 차단).
+const esc = s => (s==null?"":String(s)).replace(/[&<>"'`]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;","`":"&#96;"}[c]));
 const fmtDate = s => s ? s.slice(0,10) : "—";
 const dday = n => n==null ? "" : (n<0 ? "기한+"+(-n) : (n===0 ? "D-DAY" : "D-"+n));
 
@@ -157,6 +158,12 @@ function effBadge(d){
   if(e.label === (KO[d.ack_status]||d.ack_status)) return "";
   return `<div style="margin-top:3px"><span class="badge ${e.cls}" title="자산(개별) 조치 기준 상태">${e.label}</span></div>`;
 }
+
+// 부서 행 선택 — 인라인 onclick(부서명 문자열 삽입) 대신 data 속성 + 위임 리스너(XSS 차단).
+document.getElementById("list").addEventListener("click", e => {
+  const li = e.target.closest(".li[data-dept]");
+  if(li){ SELDEPT = li.getAttribute("data-dept"); render(); }
+});
 
 async function boot(){
   try{
@@ -235,7 +242,7 @@ function render(){
           : (ag.done>0||ag.in_progress>0 ? `<span class="badge s-IN_PROGRESS">진행중</span>`
             : `<span class="badge s-NONE">미회신</span>`))
         : "";
-      return `<div class="li ${r.dept===SELDEPT?'on':''}" onclick="SELDEPT='${esc(r.dept)}';render()">
+      return `<div class="li ${r.dept===SELDEPT?'on':''}" data-dept="${esc(r.dept)}" role="button" tabindex="0">
         <div class="t">${esc(r.dept)} ${stBadge}</div>
         <div class="m"><span>담당 권고문 ${r.items.length}</span><span>· 미완료 <b style="color:#c0392b">${open}</b></span></div>
         ${assetBarHtml(ag)}

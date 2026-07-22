@@ -135,12 +135,17 @@
 - **XXE / billion-laughs**: XML 파서 미사용(PDF=pypdf/pypdfium2, 피드=json/csv). openpyxl ≥3.1 하드닝.
 - **언세이프 역직렬화**: pickle/yaml.load/eval/exec/marshal 없음. JSON/CSV/openpyxl만.
 - **SSRF**: urllib/webhook URL은 관리자 환경설정 전용 — 요청별 사용자 URL이 `urlopen`에 도달하지 않음.
-- **프론트 XSS**: React 본문 자동 이스케이프, board/history는 `esc()`로 댓글 본문·작성자·부서명·자산 데이터 이스케이프.
-  app.dc.html에 `dangerouslySetInnerHTML` 0건. href/src는 고정 API 접두사 + 숫자 ID로만 조립.
+- **프론트 XSS**: React 본문 자동 이스케이프. board/history 의 `esc()` 는 `& < > " ' \``
+  전부 이스케이프(작은따옴표·백틱 포함 — 인라인 JS 문자열 탈출 차단). 부서 행 선택은 인라인
+  `onclick` 문자열 삽입 대신 `data-dept` 속성 + 위임 리스너로 처리해 데이터→코드 경로를 없앴다.
+  app.dc.html 에 `dangerouslySetInnerHTML` 0건. href/src 는 고정 API 접두사 + 숫자 ID 로만 조립.
+- **게시판 관리자 표식**: `is_admin` 은 공개·무인증 입력에서 받지 않는다(서버가 항상 False 로 저장).
+  관리자 배지 스푸핑(클라이언트가 관리자로 위장한 공지 게시)을 차단.
 - **라이브러리 버전**: React/ReactDOM 18.3.1, Babel 7.26.4 — 알려진 취약점 없음.
 - **업로드 검증**: 권고문 업로드는 `%PDF` 매직바이트 검증.
-- **스크립트 무결성**: PowerShell NVD 동기화는 SHA256 검증, 인자 리스트 subprocess(`shell=True` 없음),
-  스케줄 작업은 SYSTEM 아닌 현재 사용자 권한.
+- **스크립트 무결성**: PowerShell NVD 동기화는 SHA256 검증, 인자 리스트 subprocess(`shell=True` 없음).
+  스케줄 작업 등록 기본은 **현재 사용자 권한(최소 권한)** 이며, 관리자 권한이 필요할 때만
+  `-Elevated` 로 명시 opt-in(이 경우 스크립트 폴더 ACL 보호 권장).
 
 ---
 
