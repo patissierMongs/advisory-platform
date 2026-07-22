@@ -220,6 +220,29 @@ class AdvisoryProduct(TimestampMixin, Base):
     )
 
 
+class AdvisoryIndex(TimestampMixin, Base):
+    """권고문 관리 인덱스(§개편 후속) — 문서번호 중심의 검색·필터 전용 비정규화 테이블.
+
+    CVE 가 없는 권고문도 문서번호로 관리·검색되도록, 권고문 1건당 1행으로
+    문서번호·CVE 목록·대상 제품(복수)·버전(복수)·날짜·배포기관을 집약한다.
+    원천 데이터가 바뀔 때마다 reindex_advisory() 로 재생성(멱등 upsert)된다.
+    search_text 는 전 필드를 소문자로 이어붙인 검색용 열 — LIKE 한 번으로 전 필드 검색.
+    """
+    __tablename__ = "advisory_index"
+    # ondelete=CASCADE — 파생(비정규화) 테이블이 원본 삭제를 막으면 안 된다.
+    advisory_id: Mapped[int] = mapped_column(
+        ForeignKey("advisory.id", ondelete="CASCADE"), nullable=False, unique=True)
+    doc_no: Mapped[str | None] = mapped_column(String(120), index=True)
+    source_org: Mapped[str | None] = mapped_column(String(80), index=True)
+    received_at: Mapped[date | None] = mapped_column(Date)
+    due_at: Mapped[date | None] = mapped_column(Date)
+    cves: Mapped[list | None] = mapped_column(JSON)       # ["CVE-2026-1234", ...]
+    products: Mapped[list | None] = mapped_column(JSON)   # [{"name","key","versions"}, ...]
+    search_text: Mapped[str | None] = mapped_column(Text)
+
+    advisory: Mapped["Advisory"] = relationship()
+
+
 class AdvisoryComment(TimestampMixin, Base):
     """내부 게시판 댓글 — 사내 누구나(무인증) 권고문에 회신/질의.
 
@@ -327,6 +350,7 @@ class CveFeedImport(TimestampMixin, Base):
         _enum(enums.FeedImportStatus), default=enums.FeedImportStatus.VALIDATED, nullable=False
     )
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_message: Mapped[str | None] = mapped_column(Text)   # 적용 실패 사유(§개편 후속)
     # 검증 단계에서 산출한 파싱 결과를 적용 시점까지 임시 보관.
     staged_payload: Mapped[list | None] = mapped_column(JSON)
 

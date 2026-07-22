@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import re
 
+from . import normalize as _nz
 from .normalize import (
-    PRODUCT_ALIASES,
-    _ALIAS_INDEX,
+    PRODUCT_ALIASES,  # noqa: F401 — 하위 호환(외부 참조)
     _boundary_ok,
     _vendor_guard_ok,
     slugify,
@@ -79,7 +79,8 @@ def _find_product_mentions(text: str) -> list[dict]:
     low = text.lower()
     taken: list[tuple[int, int]] = []
     out: list[dict] = []
-    for alias, key in _ALIAS_INDEX:      # 길이 내림차순 — 최장일치 우선
+    # 모듈 속성으로 매번 조회(§개편 후속) — 피드 동기화가 인덱스를 재구축해도 최신 사전 사용.
+    for alias, key in _nz._ALIAS_INDEX:  # 길이 내림차순 — 최장일치 우선
         start = 0
         while True:
             i = low.find(alias, start)

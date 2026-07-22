@@ -156,3 +156,47 @@ def register_alias(product_key: str, alias: str) -> None:
     if alias not in PRODUCT_ALIASES[product_key]:
         PRODUCT_ALIASES[product_key].append(alias)
         _ALIAS_INDEX = _build_index()
+
+
+def _alias_ok(alias: str) -> bool:
+    """사전에 넣을 만한 별칭인가 — 잡음(빈값·기호·과도하게 짧은 것) 배제.
+
+    라틴 별칭은 3자 미만이면 잡음(약어 오인)일 확률이 높아 배제하되,
+    한글 제품명은 2음절이 흔하므로('알약' 등) 2자부터 허용한다.
+    """
+    if not alias or len(alias) < 2:
+        return False
+    if len(alias) < 3 and not re.search(r"[가-힣]", alias):
+        return False
+    if not re.search(r"[a-z가-힣]", alias):
+        return False               # 숫자·기호뿐인 이름 배제
+    return alias not in ("n/a", "none", "unknown", "기타")
+
+
+def sync_aliases_from_cves(pairs) -> int:
+    """CVE DB 의 (product_name, product_key) 목록을 추출 사전에 반영(§개편 후속).
+
+    피드 적용·기동 시 호출 — 피드로 들어온 실제 제품명이 본문 추출기의 인식 대상이 된다.
+    벌크로 모아 인덱스는 1회만 재구축. 반환: 신규 등록 별칭 수.
+    """
+    global _ALIAS_INDEX
+    existing = {a for a, _k in _ALIAS_INDEX}
+    n = 0
+    for name, key in pairs:
+        if not name or not key:
+            continue
+        alias = str(name).strip().lower()
+        if not _alias_ok(alias) or alias in existing:
+            continue
+        # 충돌 가드: 다른 키의 더 긴 기존 별칭에 부분 포함되는 짧은 이름('server' 류)은
+        # 자산·본문 정규화를 엉뚱한 키로 끌고 갈 수 있어 배제(같은 키면 무해하므로 허용).
+        if len(alias) <= 12 and any(
+            alias != a2 and alias in a2 and k2 != key for a2, k2 in _ALIAS_INDEX
+        ):
+            continue
+        PRODUCT_ALIASES.setdefault(key, []).append(alias)
+        existing.add(alias)
+        n += 1
+    if n:
+        _ALIAS_INDEX = _build_index()
+    return n
