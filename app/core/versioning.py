@@ -103,15 +103,19 @@ def version_matches(asset_version: str | None, rule) -> tuple[bool, bool]:
             if "range" in rule and isinstance(rule["range"], (list, tuple)) and len(rule["range"]) == 2:
                 lo, hi = rule["range"]
                 return (_cmp(av, lo) >= 0 and _cmp(av, hi) <= 0), False
-            for op, fn in (
-                ("lt", lambda c: c < 0),
-                ("lte", lambda c: c <= 0),
-                ("gt", lambda c: c > 0),
-                ("gte", lambda c: c >= 0),
-                ("eq", lambda c: c == 0),
-            ):
-                if op in rule:
-                    return fn(_cmp(av, str(rule[op]))), False
+            # 복수 연산자 dict({"gte":A,"lte":B} 등)는 모든 조건의 AND 로 평가한다 —
+            # 권고문 추출기가 "A 이상 B 이하" 를 이 형태로 저장한다(§개편).
+            ops = {
+                "lt": lambda c: c < 0,
+                "lte": lambda c: c <= 0,
+                "gt": lambda c: c > 0,
+                "gte": lambda c: c >= 0,
+                "eq": lambda c: c == 0,
+            }
+            present = [op for op in ops if op in rule]
+            if present:
+                ok = all(ops[op](_cmp(av, str(rule[op]))) for op in present)
+                return ok, False
         except CompareUndecidable:
             return True, True  # 보수적: 후보로 표기
         # 알 수 없는 dict 규칙 → 보수적 후보

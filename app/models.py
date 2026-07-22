@@ -116,6 +116,9 @@ class Cve(TimestampMixin, Base):
     product_key: Mapped[str | None] = mapped_column(String(80), index=True)
     # 영향 버전 규칙(§4.6): ["22H2","23H2"] | {"lt":"124"} | {"range":[a,b]} | "*"
     affected_versions: Mapped[object | None] = mapped_column(JSON)
+    # 다중 제품 지원(§개편) — 한 CVE 가 여러 제품에 영향을 줄 때(primary 외 추가분):
+    # [{"product_name":..,"product_key":..,"affected_versions":..}, ...]
+    affected_products: Mapped[list | None] = mapped_column(JSON)
     cpe_list: Mapped[list | None] = mapped_column(JSON)
     severity: Mapped[enums.Severity] = mapped_column(
         _enum(enums.Severity), default=enums.Severity.MEDIUM, nullable=False
@@ -155,6 +158,10 @@ class Advisory(TimestampMixin, Base):
     cves: Mapped[list["AdvisoryCve"]] = relationship(
         back_populates="advisory", cascade="all, delete-orphan"
     )
+    products: Mapped[list["AdvisoryProduct"]] = relationship(
+        back_populates="advisory", cascade="all, delete-orphan",
+        order_by="AdvisoryProduct.id",
+    )
     comments: Mapped[list["AdvisoryComment"]] = relationship(
         back_populates="advisory", cascade="all, delete-orphan",
         order_by="AdvisoryComment.id",
@@ -175,12 +182,41 @@ class AdvisoryCve(TimestampMixin, Base):
     )
     extraction_confidence: Mapped[float | None] = mapped_column(Numeric(3, 2))
     source_snippet: Mapped[str | None] = mapped_column(Text)
+    # 소프트 삭제(§개편) — 오추출 제거는 이력을 남기고 숨긴다. 재추출 시 삭제 의사가
+    # 보존되고, 실수 삭제는 '복원'으로 즉시 되살릴 수 있다.
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     advisory: Mapped[Advisory] = relationship(back_populates="cves")
     cve: Mapped[Cve | None] = relationship()
 
     __table_args__ = (
         UniqueConstraint("advisory_id", "cve_id_text", name="uq_advisory_cve"),
+    )
+
+
+class AdvisoryProduct(TimestampMixin, Base):
+    """권고문 본문에서 추출/수동등록한 영향 제품·버전 규칙(§개편 — 추출 엔진).
+
+    status:  SUGGESTED(추출 제안) | CONFIRMED(관리자 확인) | DELETED(삭제 — 복원 가능)
+    origin:  EXTRACTED(본문 추출) | MANUAL(관리자 수동 추가)
+    affected_versions 는 CVE 규칙과 동일 형식(열거/{lt,lte,gt,gte,eq}/{range}/"*").
+    fixed_version 은 '이 버전 이상으로 업데이트' 류 조치 권고 버전(영향 아님).
+    """
+    __tablename__ = "advisory_product"
+    advisory_id: Mapped[int] = mapped_column(ForeignKey("advisory.id"), nullable=False, index=True)
+    product_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    product_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    affected_versions: Mapped[object | None] = mapped_column(JSON)
+    fixed_version: Mapped[str | None] = mapped_column(String(120))
+    source_snippet: Mapped[str | None] = mapped_column(Text)
+    confidence: Mapped[float | None] = mapped_column(Numeric(3, 2))
+    status: Mapped[str] = mapped_column(String(16), default="SUGGESTED", nullable=False)
+    origin: Mapped[str] = mapped_column(String(16), default="EXTRACTED", nullable=False)
+
+    advisory: Mapped[Advisory] = relationship(back_populates="products")
+
+    __table_args__ = (
+        UniqueConstraint("advisory_id", "product_key", name="uq_advisory_product"),
     )
 
 

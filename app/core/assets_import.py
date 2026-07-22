@@ -90,27 +90,45 @@ def _load_sheet(path: str, sheet: str | None):
 
     원본 파일/워크북은 절대 수정하지 않는다(저장 호출 없음, grid 는 별도 메모리 리스트).
     병합 정보 접근을 위해 read_only 는 끈다(자산대장 규모면 무방).
+    반환 (선택 시트명, grid, 전체 시트명 목록) — 다중 시트 파일 지원(§개편).
     """
     from openpyxl import load_workbook
 
     wb = load_workbook(path, data_only=True)
     try:
         ws = wb[sheet] if sheet and sheet in wb.sheetnames else wb[wb.sheetnames[0]]
-        grid = [list(r) for r in ws.iter_rows(values_only=True)]
-        # 세로/가로 병합 모두 좌상단 값으로 채움(원본 불변, grid 에만 반영).
-        for rng in list(ws.merged_cells.ranges):
-            r0, c0, r1, c1 = rng.min_row - 1, rng.min_col - 1, rng.max_row - 1, rng.max_col - 1
-            if r0 < 0 or r0 >= len(grid) or c0 >= len(grid[r0]):
-                continue
-            val = grid[r0][c0]
-            for r in range(r0, min(r1 + 1, len(grid))):
-                for cc in range(c0, c1 + 1):
-                    if cc < len(grid[r]):
-                        grid[r][cc] = val
+        grid = _ws_grid(ws)
         title = ws.title
+        sheetnames = list(wb.sheetnames)
     finally:
         wb.close()
-    return title, grid
+    return title, grid, sheetnames
+
+
+def _ws_grid(ws) -> list[list]:
+    grid = [list(r) for r in ws.iter_rows(values_only=True)]
+    # 세로/가로 병합 모두 좌상단 값으로 채움(원본 불변, grid 에만 반영).
+    for rng in list(ws.merged_cells.ranges):
+        r0, c0, r1, c1 = rng.min_row - 1, rng.min_col - 1, rng.max_row - 1, rng.max_col - 1
+        if r0 < 0 or r0 >= len(grid) or c0 >= len(grid[r0]):
+            continue
+        val = grid[r0][c0]
+        for r in range(r0, min(r1 + 1, len(grid))):
+            for cc in range(c0, c1 + 1):
+                if cc < len(grid[r]):
+                    grid[r][cc] = val
+    return grid
+
+
+def load_all_sheets(path: str) -> list[tuple[str, list[list]]]:
+    """모든 시트 → [(시트명, grid)] — 부서별 시트로 쪼개진 자산대장 일괄 가져오기(§개편)."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path, data_only=True)
+    try:
+        return [(ws.title, _ws_grid(ws)) for ws in wb.worksheets]
+    finally:
+        wb.close()
 
 
 def detect_header_row(grid: list[list], max_scan: int = 15) -> int:
@@ -173,9 +191,10 @@ def combine_headers(grid: list[list], hidx: int, header_rows: int) -> list[str]:
 def preview(path: str, sheet: str | None, header_row: int | None = None,
             header_rows: int = 1, sample_n: int = 5) -> dict:
     """미리보기. header_row(1-기반) 미지정 시 자동 감지. header_rows>1 이면 다단 헤더 결합."""
-    title, grid = _load_sheet(path, sheet)
+    title, grid, sheetnames = _load_sheet(path, sheet)
     if not grid:
-        return {"sheet": title, "total_rows": 0, "columns": [], "suggested_mapping": {},
+        return {"sheet": title, "sheets": sheetnames, "total_rows": 0, "columns": [],
+                "suggested_mapping": {},
                 "header_row": 1, "detected_header_row": 1, "header_rows": 1, "preview_rows": []}
     detected = detect_header_row(grid)
     hidx = (header_row - 1) if header_row else detected
@@ -192,6 +211,7 @@ def preview(path: str, sheet: str | None, header_row: int | None = None,
         columns.append({"letter": col_letter(idx), "header": header, "samples": samples})
     return {
         "sheet": title,
+        "sheets": sheetnames,                        # 전체 시트 목록(§개편 — 다중 시트 선택)
         "header_row": hidx + 1,                      # 적용된 헤더 시작행(1-기반)
         "header_rows": max(1, header_rows),
         "detected_header_row": detected + 1,         # 자동 감지값
@@ -213,14 +233,33 @@ def commit(
     header_row: int | None = None,
     header_rows: int = 1,
     create_departments: bool = True,
+    all_sheets: bool = False,
 ) -> dict:
-    """매핑 적용·적재. 반환 {committed, warnings, total_rows}. 병합 채움 + (다단)헤더행 적용."""
-    title, grid = _load_sheet(path, sheet)
-    hidx = ((header_row - 1) if header_row else detect_header_row(grid)) if grid else 0
-    hidx = max(0, min(hidx, len(grid) - 1)) if grid else 0
+    """매핑 적용·적재. 반환 {committed, warnings, total_rows}. 병합 채움 + (다단)헤더행 적용.
+
+    all_sheets=True 면 워크북의 모든 시트를 같은 매핑으로 순회 적재한다(§개편 — 부서별
+    시트로 나뉜 자산대장). 이때 헤더행은 시트마다 자동 감지한다(양식이 같아도 행 위치가
+    다를 수 있음). replace 회수 판정은 전체 시트 적재가 끝난 뒤 1회 수행한다.
+    """
+    if all_sheets:
+        sheet_grids = load_all_sheets(path)
+    else:
+        title, grid, _names = _load_sheet(path, sheet)
+        sheet_grids = [(title, grid)]
+
     span = max(1, header_rows)
-    body = grid[hidx + span:] if grid else []
-    row_offset = hidx + span + 1  # 엑셀 실제 행번호(헤더 다음 행부터)
+    # (시트명, body, row_offset) — all_sheets 는 시트별 헤더 자동 감지.
+    bodies: list[tuple[str, list, int]] = []
+    total_rows = 0
+    for title, grid in sheet_grids:
+        if not grid:
+            continue
+        use_manual = (header_row is not None) and not all_sheets
+        hidx = (header_row - 1) if use_manual else detect_header_row(grid)
+        hidx = max(0, min(hidx, len(grid) - 1))
+        body = grid[hidx + span:]
+        bodies.append((title, body, hidx + span + 1))  # 엑셀 실제 행번호(헤더 다음 행부터)
+        total_rows += len(body)
 
     depts = {d.name: d for d in db.scalars(select(Department))}
     specs = {field: parse_spec(value) for field, value in mapping.items()}
@@ -237,7 +276,14 @@ def commit(
     created_departments: list[str] = []
     committed = 0
     batch_by_no: dict[str, Asset] = {}   # 이 커밋에서 처리한 자산번호 → Asset (파일 내 중복 감지)
-    for rownum, row in enumerate(body, start=row_offset):  # 엑셀 실제 행번호
+    multi = len(bodies) > 1
+
+    def _rows():
+        for title, body, row_offset in bodies:
+            for rownum, row in enumerate(body, start=row_offset):  # 엑셀 실제 행번호
+                yield title, rownum, row
+
+    for sheet_title, rownum, row in _rows():
         if all(c in (None, "") for c in row):
             continue
         dept_name = cell(row, "department")
@@ -270,7 +316,10 @@ def commit(
 
         if issues:
             for code, val in issues:
-                warnings.append({"row": rownum, "issue": code, "value": val})
+                w = {"row": rownum, "issue": code, "value": val}
+                if multi:
+                    w["sheet"] = sheet_title
+                warnings.append(w)
             required_issue = any(
                 code in ("MISSING_DEPARTMENT", "UNKNOWN_DEPARTMENT", "MISSING_PRODUCT")
                 for code, _ in issues
@@ -280,7 +329,9 @@ def commit(
             if any(code in ("MISSING_DEPARTMENT", "UNKNOWN_DEPARTMENT") for code, _ in issues):
                 continue  # 부서 미상이면 적재 불가(매칭/발송 필수)
 
-        asset_no = cell(row, "asset_no") or f"AUTO-{import_batch_id}-{rownum}"
+        asset_no = cell(row, "asset_no") or (
+            f"AUTO-{import_batch_id}-{slugify_sheet(sheet_title)}-{rownum}" if multi
+            else f"AUTO-{import_batch_id}-{rownum}")
         # extra = 사용자 정의(선택) 필드(이름 키) + 매핑되지 않은 나머지 컬럼(레터 키 폴백).
         used_idx = {s[0] for s in specs.values()}
         extra: dict[str, str] = {}
@@ -298,7 +349,10 @@ def commit(
         # UNIQUE 위반으로 커밋 전체가 죽는다 → 배치 내 캐시로 감지, 뒤 행이 갱신(최신 우선).
         if asset_no in batch_by_no:
             asset = batch_by_no[asset_no]
-            warnings.append({"row": rownum, "issue": "DUPLICATE_ASSET_NO", "value": asset_no})
+            w = {"row": rownum, "issue": "DUPLICATE_ASSET_NO", "value": asset_no}
+            if multi:
+                w["sheet"] = sheet_title
+            warnings.append(w)
         else:
             existing = db.scalar(select(Asset).where(Asset.asset_no == asset_no))
             if existing is None:
@@ -331,5 +385,13 @@ def commit(
                 retired += 1
 
     db.flush()
-    return {"committed": committed, "warnings": warnings, "total_rows": len(body),
+    return {"committed": committed, "warnings": warnings, "total_rows": total_rows,
+            "sheets_imported": [t for t, _b, _o in bodies],
             "created_departments": created_departments, "retired": retired}
+
+
+def slugify_sheet(title: str) -> str:
+    """시트명 → 자산번호 자동생성용 짧은 슬러그(다중 시트 행번호 충돌 방지)."""
+    import re as _re
+
+    return _re.sub(r"[^0-9A-Za-z가-힣]+", "", str(title))[:12] or "S"

@@ -154,7 +154,8 @@ def _reevaluate_advisories(db: Session) -> int:
     for adv_id in touched_advisories:
         adv = db.get(Advisory, adv_id)
         if adv and adv.status == enums.AdvisoryStatus.NEEDS_CVE_UPDATE:
-            if all(a.lookup_status == enums.LookupStatus.FOUND for a in adv.cves):
+            if all(a.lookup_status == enums.LookupStatus.FOUND
+                   for a in adv.cves if not a.is_deleted):
                 adv.status = enums.AdvisoryStatus.EXTRACTED
                 unlocked += 1
     return unlocked

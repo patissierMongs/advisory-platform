@@ -5,7 +5,8 @@ from datetime import date, datetime
 
 from . import enums
 from .models import (
-    Advisory, AdvisoryComment, AdvisoryCve, Asset, Cve, Match, MessageTemplate, Notification,
+    Advisory, AdvisoryComment, AdvisoryCve, AdvisoryProduct, Asset, Cve, Match,
+    MessageTemplate, Notification,
 )
 
 _SEV_RANK = {
@@ -31,6 +32,7 @@ def cve_item(c: Cve) -> dict:
         "product_name": c.product_name,
         "product_key": c.product_key,
         "affected_versions": c.affected_versions,
+        "affected_products": c.affected_products,   # 다중 제품(§개편) — primary 외 추가분
         "severity": c.severity.value,
         "cvss_score": float(c.cvss_score) if c.cvss_score is not None else None,
         "description": c.description,
@@ -39,9 +41,15 @@ def cve_item(c: Cve) -> dict:
     }
 
 
+def _live_cves(a: Advisory) -> list[AdvisoryCve]:
+    """소프트 삭제(§개편) 제외한 유효 추출 CVE."""
+    return [ac for ac in a.cves if not ac.is_deleted]
+
+
 def advisory_brief(a: Advisory, *, match_count: int | None = None) -> dict:
-    found = sum(1 for ac in a.cves if ac.lookup_status == enums.LookupStatus.FOUND)
-    not_found = len(a.cves) - found
+    live = _live_cves(a)
+    found = sum(1 for ac in live if ac.lookup_status == enums.LookupStatus.FOUND)
+    not_found = len(live) - found
     d_day = None
     if a.due_at:
         d_day = (a.due_at - date.today()).days
@@ -71,7 +79,7 @@ def advisory_brief(a: Advisory, *, match_count: int | None = None) -> dict:
         "status": a.status.value,
         "extract_phase": a.extract_phase,
         "error_message": a.error_message,
-        "extracted": len(a.cves),
+        "extracted": len(live),
         "found": found,
         "not_found": not_found,
         "match_count": match_count,
@@ -82,7 +90,7 @@ def advisory_brief(a: Advisory, *, match_count: int | None = None) -> dict:
 
 
 def _max_severity(a: Advisory) -> str | None:
-    sevs = [ac.cve.severity for ac in a.cves if ac.cve]
+    sevs = [ac.cve.severity for ac in _live_cves(a) if ac.cve]
     if not sevs:
         return None
     top = max(sevs, key=lambda s: _SEV_RANK.get(s, 0))
@@ -183,6 +191,23 @@ def advisory_cve_item(ac: AdvisoryCve, *, match_count: int = 0) -> dict:
         "is_new": False,
         "match_count": match_count,
         "source_snippet": ac.source_snippet,
+    }
+
+
+def advisory_product_item(p: AdvisoryProduct) -> dict:
+    """권고문 영향 제품(§개편) — 추출 제안/수동 등록/삭제 이력 공용."""
+    return {
+        "id": p.id,
+        "advisory_id": p.advisory_id,
+        "product_name": p.product_name,
+        "product_key": p.product_key,
+        "affected_versions": p.affected_versions,
+        "fixed_version": p.fixed_version,
+        "source_snippet": p.source_snippet,
+        "confidence": float(p.confidence) if p.confidence is not None else None,
+        "status": p.status,       # SUGGESTED | CONFIRMED | DELETED
+        "origin": p.origin,       # EXTRACTED | MANUAL
+        "created_at": _d(p.created_at),
     }
 
 

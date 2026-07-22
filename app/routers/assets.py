@@ -86,6 +86,7 @@ def import_commit(import_id: int, body: AssetCommitRequest, request: Request, db
         import_batch_id=imp.id, mode=body.mode, on_warning=body.on_warning,
         header_row=body.header_row, header_rows=body.header_rows,
         create_departments=body.create_departments,
+        all_sheets=body.all_sheets,
     )
     imp.mapping = body.mapping
     imp.row_count = result["total_rows"]

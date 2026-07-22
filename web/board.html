@@ -344,6 +344,7 @@ async function renderDetail(id){
               <option value="IN_PROGRESS">진행중</option>
               <option value="DONE">조치완료</option>
               <option value="UNABLE">조치불가</option>
+              <option value="NONE">회신 취소 (미회신으로 되돌리기)</option>
             </select></div>
           <div><label class="f">증빙 파일 (선택 — 패치 결과 캡처 등)</label>
             <label class="filebtn"><span id="c_fname">📎 파일 선택</span>
@@ -370,6 +371,11 @@ async function submitComment(id){
   const checkedIds = [...document.querySelectorAll(".ackchk:checked")].map(c=>parseInt(c.dataset.matchId,10));
   if(checkedIds.length && !ack){ errEl.innerHTML = `<div class="err">체크한 자산이 있습니다. 위 <b>조치상태</b>를 선택하면 해당 자산에 반영됩니다(또는 체크를 해제하세요).</div>`; return; }
   if(checkedIds.length && !matched){ errEl.innerHTML = `<div class="err">체크한 자산을 반영하려면 <b>부서</b>를 목록에서 선택하세요.</div>`; return; }
+  // 회신 취소(§개편) — 실수로 등록한 조치상태를 미회신으로 되돌린다. 반드시 확인 팝업.
+  if(ack === "NONE"){
+    const scope = checkedIds.length ? `체크한 자산 ${checkedIds.length}건` : "부서 전체 자산";
+    if(!window.confirm(`정말 조치 회신을 취소하시겠습니까?\n${scope}의 조치 상태가 "미회신"으로 되돌아갑니다.`)) return;
+  }
   const payload = { author_name:name, body, ack_status:ack||null };
   if(matched) payload.department_id = matched.id; else if(deptName) payload.department_name = deptName;
   if(checkedIds.length) payload.match_ids = checkedIds;
