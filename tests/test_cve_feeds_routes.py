@@ -121,3 +121,33 @@ def test_empty_feed_rejected(client):
 def test_garbage_feed_rejected(client):
     r = _upload(client, b'{"unknown": 123}')
     assert r.status_code == 400
+
+
+def test_nvd11_legacy_dump_parses(client):
+    """구형 NVD 1.1 연도별 덤프(CVE_Items[]) 지원 — 35k급 반입 실패 회귀(§스트레스 후속)."""
+    import io as _io
+    import json as _json
+
+    doc = {"CVE_data_type": "CVE", "CVE_Items": [{
+        "cve": {"CVE_data_meta": {"ID": "CVE-2024-990001"},
+                "description": {"description_data": [{"lang": "en", "value": "legacy schema vuln"}]}},
+        "impact": {"baseMetricV3": {"cvssV3": {"baseScore": 9.1, "baseSeverity": "CRITICAL"}}},
+        "configurations": {"nodes": [{"operator": "OR", "cpe_match": [
+            {"vulnerable": True, "cpe23Uri": "cpe:2.3:a:apache:tomcat:*:*:*:*:*:*:*:*",
+             "versionStartIncluding": "8.5", "versionEndExcluding": "9.0.30"},
+            {"vulnerable": True, "cpe23Uri": "cpe:2.3:a:f5:nginx:*:*:*:*:*:*:*:*",
+             "versionEndExcluding": "1.24.0"}], "children": []}]},
+        "publishedDate": "2024-03-01T09:15Z"}]}
+    r = client.post("/api/v1/cve-feeds",
+                    files={"file": ("nvdcve-1.1-2024.json",
+                                    _io.BytesIO(_json.dumps(doc).encode()), "application/json")})
+    assert r.status_code == 200, r.text
+    imp = r.json()
+    assert imp["added_count"] == 1
+    r = client.post(f"/api/v1/cve-feeds/{imp['import_id']}/apply")
+    assert r.status_code == 200
+    row = client.get("/api/v1/cves?q=CVE-2024-990001").json()["items"][0]
+    assert row["product_key"] == "apache_tomcat"
+    assert row["affected_versions"] == {"gte": "8.5", "lt": "9.0.30"}
+    assert row["affected_products"][0]["product_key"] == "nginx"
+    assert row["severity"] == "CRITICAL"
