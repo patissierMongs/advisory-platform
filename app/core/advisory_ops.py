@@ -146,18 +146,28 @@ def reindex_advisory(db: Session, adv: Advisory) -> AdvisoryIndex:
     return row
 
 
-def rework_open_advisories(db: Session) -> dict:
+def rework_open_advisories(db: Session, *, batch_size: int = 25) -> dict:
     """피드/추출 사전 갱신 후 — 종결(완료·보관)·추출 진행 중 제외 전 권고문 재작업(§개편 후속).
 
     각 미완료 권고문에 대해:
       1) 본문 제품·버전 재추출(관리자 확인/수동/삭제 이력 보존)
-      2) 매칭 단계 이후(MATCHED·NOTIFYING)면 자산 재매칭(upsert — 제외/회신 상태 보존)
+      2) 매칭 단계 이후(MATCHED·NOTIFYING)면 자산 재매칭(upsert + stale 회수,
+         제외/회신 상태 보존)
       3) 관리 인덱스 재생성
     게시판·목록은 이 데이터를 읽으므로 다음 조회부터 즉시 반영된다.
+
+    id 목록만 먼저 뽑아 한 건씩 처리하고 batch_size 마다 커밋한다 — 전 권고문
+    본문을 메모리에 들지 않고, SQLite 쓰기 잠금을 주기적으로 놓아 동시 요청
+    (백그라운드 추출·게시판 회신)이 굶지 않는다(§적대검증 확정). 각 단계는
+    멱등이라 중간 커밋 후 실패해도 다음 적용에서 이어서 수렴한다.
     """
-    advs = db.scalars(select(Advisory).where(Advisory.status.notin_(_SKIP_REWORK))).all()
-    reextracted = rematched = 0
-    for adv in advs:
+    ids = db.scalars(select(Advisory.id).where(Advisory.status.notin_(_SKIP_REWORK))).all()
+    reworked = reextracted = rematched = 0
+    for aid in ids:
+        adv = db.get(Advisory, aid)
+        if adv is None or adv.status in _SKIP_REWORK:
+            continue                      # 배치 커밋 사이 상태 변화(추출 시작 등) 방어
+        reworked += 1
         text = adv.extracted_text or ""
         if text.strip():
             refresh_extracted_products(db, adv, text, revive_deleted=False)
@@ -166,5 +176,7 @@ def rework_open_advisories(db: Session) -> dict:
             run_matching(db, adv)
             rematched += 1
         reindex_advisory(db, adv)
+        if reworked % batch_size == 0:
+            db.commit()
     db.flush()
-    return {"reworked": len(advs), "reextracted": reextracted, "rematched": rematched}
+    return {"reworked": reworked, "reextracted": reextracted, "rematched": rematched}

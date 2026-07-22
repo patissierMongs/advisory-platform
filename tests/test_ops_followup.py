@@ -46,15 +46,19 @@ def cleanup():
 
 @pytest.fixture()
 def _alias_rollback():
-    """추출 사전 오염 방지 — 테스트가 추가한 별칭 원복(모듈 전역)."""
+    """추출 사전 오염 방지 — 테스트가 추가한 별칭 원복(큐레이션 + 동적, 모듈 전역)."""
     import copy
 
     from app.core import normalize
     snapshot = copy.deepcopy(PRODUCT_ALIASES)
+    dyn_snapshot = dict(normalize.DYNAMIC_ALIASES)
     yield
     PRODUCT_ALIASES.clear()
     PRODUCT_ALIASES.update(snapshot)
     normalize._ALIAS_INDEX = _build_index()
+    normalize.DYNAMIC_ALIASES.clear()
+    normalize.DYNAMIC_ALIASES.update(dyn_snapshot)
+    normalize._rebuild_dynamic_index()
 
 
 def _feed(client, records):
@@ -153,13 +157,42 @@ def test_versions_text_defensive_on_malformed_rules():
 
 
 def test_alias_ok_allows_two_char_korean(_alias_rollback):
-    """한글 2음절 제품명('알약' 류)은 사전 등재 허용, 라틴 2자는 계속 배제."""
+    """한글 2음절 제품명('알약' 류)은 동적 사전 등재 허용, 라틴 2자는 계속 배제."""
     from app.core import normalize
 
     n = normalize.sync_aliases_from_cves([("알약", "estsoft_alyac"), ("go", "golang")])
     assert n == 1
-    assert any(a == "알약" for a, _k in normalize._ALIAS_INDEX)
-    assert not any(a == "go" for a, _k in normalize._ALIAS_INDEX)
+    assert normalize.DYNAMIC_ALIASES.get("알약") == "estsoft_alyac"
+    assert "go" not in normalize.DYNAMIC_ALIASES
+
+
+def test_dynamic_aliases_do_not_touch_asset_normalization(_alias_rollback):
+    """피드 유래 별칭이 자산 정규화(normalize_product)를 바꾸지 않음(§적대검증 확정).
+
+    NVD 제품명('microsoft windows')이 최장일치로 큐레이션 별칭('windows server')을
+    가리면 자산 키 산출이 피드 적용 여부에 따라 달라져 기존 매칭이 깨진다.
+    """
+    from app.core import normalize
+
+    before = normalize.normalize_product("Microsoft Windows Server 2019")
+    normalize.sync_aliases_from_cves([("Microsoft Windows", "microsoft_windows")])
+    assert normalize.normalize_product("Microsoft Windows Server 2019") == before
+    # 동적 사전에는 들어가서 본문 추출(버전 문맥 有)에는 쓰인다.
+    assert normalize.DYNAMIC_ALIASES.get("microsoft windows") == "microsoft_windows"
+
+
+def test_dynamic_alias_requires_version_context(_alias_rollback):
+    """동적 별칭은 버전 문맥 없으면 제안하지 않음 — '*' 잡음 억제(§적대검증 확정)."""
+    from app.core import normalize
+    from app.core.product_extract import extract_products
+
+    normalize.sync_aliases_from_cves([("NoisyProduct", "noisyproduct")])
+    # 버전 문맥 없음 → 제안 없음
+    assert all(p["product_key"] != "noisyproduct"
+               for p in extract_products("NoisyProduct 관련 일반 공지입니다."))
+    # 버전 문맥 있음 → 규칙과 함께 제안
+    hits = {p["product_key"]: p for p in extract_products("NoisyProduct 2.5 이하 버전 취약점")}
+    assert hits["noisyproduct"]["affected_versions"] == {"lte": "2.5"}
 
 
 def test_feed_apply_post_step_failure_stays_applied(client, monkeypatch, _alias_rollback):

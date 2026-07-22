@@ -24,6 +24,9 @@ if _is_sqlite:
         cur = dbapi_conn.cursor()
         cur.execute("PRAGMA foreign_keys=ON")
         cur.execute("PRAGMA journal_mode=WAL")
+        # 쓰기 잠금 대기(기본 5s → 15s) — 피드 재작업 등 긴 쓰기와 겹칠 때
+        # 'database is locked' 500 대신 대기 후 진행(§적대검증 확정).
+        cur.execute("PRAGMA busy_timeout=15000")
         cur.close()
 
 
