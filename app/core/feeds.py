@@ -77,6 +77,8 @@ def _norm_record(raw: dict) -> dict | None:
         versions = raw.get("versions")
     if isinstance(versions, str):
         versions = [v.strip() for v in re.split(r"[;,/]", versions) if v.strip()] or "*"
+        if versions == ["*"]:
+            versions = "*"   # '전체' 표기 정규화 — 열거 ['*'] 로 남기면 매칭이 리터럴 비교한다
 
     return {
         "cve_id": cve_id,

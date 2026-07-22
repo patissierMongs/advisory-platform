@@ -5,7 +5,7 @@ import io
 import json
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app import enums
 from app.core.normalize import PRODUCT_ALIASES, _build_index
@@ -183,6 +183,55 @@ def test_feed_apply_post_step_failure_stays_applied(client, monkeypatch, _alias_
     with SessionLocal() as db:
         from app.models import Cve
         db.execute(delete(Cve).where(Cve.cve_id == "CVE-2099-9304"))
+        db.commit()
+
+
+def test_feed_correction_retracts_stale_matches(client, cleanup, _alias_rollback):
+    """정정 피드로 성립하지 않게 된 매칭 회수 — 미회신만 삭제, 회신 이력은 stale 보존."""
+    from app.models import Asset, Department
+
+    with SessionLocal() as db:
+        dept = Department(name="회수테스트부", code="RTRCT")
+        db.add(dept); db.flush()
+        a1 = Asset(asset_no="RT-1", department_id=dept.id, product_key="retractprod",
+                   product_raw="RetractProd", version_raw="3.0", version_norm="3.0")
+        a2 = Asset(asset_no="RT-2", department_id=dept.id, product_key="retractprod",
+                   product_raw="RetractProd", version_raw="3.0", version_norm="3.0")
+        db.add_all([a1, a2]); db.commit()
+        dept_id, a1_id, a2_id = dept.id, a1.id, a2.id
+
+    aid = _upload(client, ["RetractProd advisory CVE-2099-9305"], source_org="회수")
+    cleanup["advisory"].append(aid)
+    client.post(f"/api/v1/advisories/{aid}/cves", json={"cve_id": "CVE-2099-9305"})
+    imp = _feed(client, [{"cve_id": "CVE-2099-9305", "product": "RetractProd",
+                          "versions": "*", "severity": "HIGH"}])
+    assert client.post(f"/api/v1/cve-feeds/{imp}/apply").status_code == 200
+    r = client.post(f"/api/v1/advisories/{aid}/match")
+    assert r.status_code == 200 and r.json()["matched"] == 2
+
+    with SessionLocal() as db:   # 한 자산은 조치 완료 회신 상태로
+        m2 = db.scalar(select(Match).where(
+            Match.advisory_id == aid, Match.asset_id == a2_id))
+        m2.ack_status = enums.AckStatus.DONE
+        db.commit()
+
+    # 정정 피드: 3.0 은 영향 아님(열거에서 제외) → 재작업이 미회신 매칭만 회수
+    imp2 = _feed(client, [{"cve_id": "CVE-2099-9305", "product": "RetractProd",
+                           "versions": "1.0;2.0", "severity": "HIGH"}])
+    assert client.post(f"/api/v1/cve-feeds/{imp2}/apply").status_code == 200
+    with SessionLocal() as db:
+        rows = db.scalars(select(Match).where(Match.advisory_id == aid)).all()
+        by_asset = {m.asset_id: m for m in rows}
+        assert a1_id not in by_asset                     # 미회신 → 삭제
+        assert a2_id in by_asset                         # 회신 이력 → 보존
+        assert (by_asset[a2_id].match_reason or {}).get("stale") is True
+        # 정리
+        db.execute(delete(Match).where(Match.advisory_id == aid))
+        from app.models import Cve
+        db.execute(delete(AdvisoryCve).where(AdvisoryCve.cve_id_text == "CVE-2099-9305"))
+        db.execute(delete(Cve).where(Cve.cve_id == "CVE-2099-9305"))
+        db.execute(delete(Asset).where(Asset.id.in_([a1_id, a2_id])))
+        db.execute(delete(Department).where(Department.id == dept_id))
         db.commit()
 
 
