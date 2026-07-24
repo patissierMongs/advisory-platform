@@ -48,7 +48,14 @@ _AFTER_LT = re.compile(r"^\s*(?:버전\s*)?미만", re.IGNORECASE)
 _AFTER_GTE = re.compile(r"^\s*(?:버전\s*)?이상", re.IGNORECASE)
 _AFTER_GT = re.compile(r"^\s*(?:버전\s*)?초과", re.IGNORECASE)
 _BEFORE_LT = re.compile(r"(?:prior\s+to|before|earlier\s+than)\s*$", re.IGNORECASE)
-_RANGE_SEP = re.compile(r"^\s*[~∼〜–—]\s*|^\s*(?:부터|에서)\s*$")
+# 물결형 범위 구분자("1.20 ~ 1.24").
+_RANGE_TILDE = re.compile(r"^\s*[~∼〜–—]\s*")
+# 한국어 범위 시작어("1.20.0 부터 …"). "부터/에서" 뒤에 상한 버전이 이어진다.
+# 예전엔 `부터…$` 로 앵커돼 문장 중간의 "부터"를 못 잡아, 가장 흔한 "X 부터 Y 까지"
+# 표현이 범위가 아니라 열거로 저장되는 확신-미탐 결함이 있었다(§매칭 정확성 수정).
+_RANGE_FROM = re.compile(r"^\s*(?:부터|에서)\b|^\s*(?:부터|에서)\s")
+# 범위 종료어 — "부터" 뒤에 이게 있으면 상한이 있는 범위, 없으면 단독 "이상"(gte)으로 본다.
+_RANGE_TO = re.compile(r"까지")
 
 # 조치(fix) 버전 구문 — 버전 토큰 뒤에 이런 표현이 오면 '영향'이 아니라 '조치 권고'다.
 _FIX_AFTER_STRICT = re.compile(
@@ -161,8 +168,16 @@ def _scan_window(text: str, win_start: int, win_end: int) -> dict:
             range_pair = [pending_range_lo, tok]
             pending_range_lo = None
             continue
-        if _RANGE_SEP.match(after):
+        if _RANGE_TILDE.match(after):
             pending_range_lo = tok
+            continue
+        if _RANGE_FROM.match(after):
+            # "X 부터 Y 까지" → 범위(다음 버전 토큰을 상한으로). "까지" 없이 "X 부터" 단독은
+            # 상한이 없으므로 '이상(gte)'으로 해석한다.
+            if _RANGE_TO.search(window[m.end():]):
+                pending_range_lo = tok
+            else:
+                rule_ops["gte"] = tok
             continue
         if _AFTER_LTE.match(after):
             rule_ops["lte"] = tok
