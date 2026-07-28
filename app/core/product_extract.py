@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import re
 
+from . import normalize as _nz
 from .normalize import (
-    PRODUCT_ALIASES,
-    _ALIAS_INDEX,
+    PRODUCT_ALIASES,  # noqa: F401 — 하위 호환(외부 참조)
     _boundary_ok,
     _vendor_guard_ok,
     slugify,
@@ -75,26 +75,49 @@ _UNKNOWN_PRODUCT = re.compile(
 
 
 def _find_product_mentions(text: str) -> list[dict]:
-    """사전 기반 제품 언급 탐색(토큰 경계·벤더 가드·최장일치·중복 구간 제거)."""
+    """사전 기반 제품 언급 탐색(토큰 경계·벤더 가드·최장일치·중복 구간 제거).
+
+    큐레이션 사전을 먼저 훑고(안정·소규모), 피드 유래 동적 사전은 첫 토큰 버킷으로
+    후보만 추려 검사한다 — NVD 급 수만 별칭에서도 본문 토큰 수에 비례하는 비용.
+    동적 히트는 dynamic=True 로 표시되어 버전 문맥 없이는 제안되지 않는다.
+    """
     low = text.lower()
     taken: list[tuple[int, int]] = []
     out: list[dict] = []
-    for alias, key in _ALIAS_INDEX:      # 길이 내림차순 — 최장일치 우선
-        start = 0
-        while True:
-            i = low.find(alias, start)
-            if i == -1:
-                break
-            end = i + len(alias)
-            start = i + 1
-            if not _boundary_ok(low, i, end):
-                continue
-            if not _vendor_guard_ok(alias, low, end):
-                continue
-            if any(not (end <= s or i >= e) for s, e in taken):
-                continue                 # 더 긴 별칭이 이미 차지한 구간
-            taken.append((i, end))
-            out.append({"key": key, "alias": alias, "name": text[i:end], "start": i, "end": end})
+
+    def _scan(pairs, dynamic: bool) -> None:
+        for alias, key in pairs:   # 길이 내림차순 — 최장일치 우선
+            start = 0
+            while True:
+                i = low.find(alias, start)
+                if i == -1:
+                    break
+                end = i + len(alias)
+                start = i + 1
+                if not _boundary_ok(low, i, end):
+                    continue
+                if not _vendor_guard_ok(alias, low, end):
+                    continue
+                if any(not (end <= s or i >= e) for s, e in taken):
+                    continue                 # 더 긴/먼저 온(큐레이션) 별칭이 차지한 구간
+                taken.append((i, end))
+                out.append({"key": key, "alias": alias, "name": text[i:end],
+                            "start": i, "end": end, "dynamic": dynamic})
+
+    # 모듈 속성으로 매번 조회(§개편 후속) — 피드 동기화가 인덱스를 재구축해도 최신 사전 사용.
+    _scan(_nz._ALIAS_INDEX, dynamic=False)
+    dyn = _nz._DYNAMIC_BY_TOKEN
+    if dyn:
+        text_tokens = set(_nz._TOKEN_SPLIT.split(low))
+        cands: list[tuple[str, str]] = []
+        for t in text_tokens:
+            if t and t in dyn:
+                # 별칭의 모든 토큰이 본문에 있어야 부분일치 가능 — find 전 후보 축소.
+                cands.extend((alias, key) for alias, key, toks in dyn[t]
+                             if all(tk in text_tokens for tk in toks))
+        cands.sort(key=lambda p: len(p[0]), reverse=True)
+        _scan(cands, dynamic=True)
+
     out.sort(key=lambda m: m["start"])
     return out
 
@@ -242,8 +265,11 @@ def extract_products(text: str) -> list[dict]:
             win_end = min(win_end, mentions[idx + 1]["start"])
         info = _scan_window(text, win_start, win_end)
 
-        # 일반명사 별칭은 버전 증거 없으면 제안하지 않는다(오탐 억제).
-        if info["rule"] == "*" and men["alias"] in _DISCOVERY_NEEDS_VERSION:
+        # 일반명사 별칭·피드 유래 동적 별칭은 버전 증거 없으면 제안하지 않는다(오탐 억제 —
+        # NVD 제품명은 검증 안 된 자동 등재라 '*' 제안을 열면 모든 권고문에 잡음이 쌓인다).
+        if info["rule"] == "*" and (
+            men["alias"] in _DISCOVERY_NEEDS_VERSION or men.get("dynamic")
+        ):
             continue
 
         cur = merged.get(men["key"])

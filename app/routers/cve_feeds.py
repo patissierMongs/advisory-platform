@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from .. import enums
 from ..audit import record
 from ..config import DATA_DIR
-from ..core import feeds
+from ..core import advisory_ops, feeds, normalize
 from ..core.files import safe_filename
 from ..db import get_db
 from ..deps import get_actor_id
@@ -102,21 +102,54 @@ def apply_feed(import_id: int, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(410, "원본 피드 파일이 없어 적용할 수 없습니다. 다시 업로드하세요.")
     imp_id = imp.id
     # 원본 파일에서 스트리밍 → 배치 단위 upsert·커밋(상수 메모리, 중단 후 재적용 안전).
-    added, updated = feeds.apply_stream(
-        db, feeds.iter_records_from_path(imp.file_path, imp.file_name), imp_id)
+    # 실패 시 이력에 FAILED + 사유를 남긴다(§개편 후속 — 성공처럼 보이는 이력 오표시 방지).
+    try:
+        added, updated = feeds.apply_stream(
+            db, feeds.iter_records_from_path(imp.file_path, imp.file_name), imp_id)
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        imp = db.get(CveFeedImport, imp_id)
+        imp.status = enums.FeedImportStatus.FAILED
+        imp.error_message = f"{type(e).__name__}: {e}"[:500]
+        record(db, action="CVE_FEED_APPLY_FAIL", actor_id=get_actor_id(db),
+               entity_type="cve_feed_import", entity_id=imp_id,
+               detail={"error": imp.error_message}, request=request)
+        db.commit()
+        raise HTTPException(500, f"피드 적용 실패: {e}")
     imp = db.get(CveFeedImport, imp_id)  # 배치 커밋으로 만료 → 명시적 재취득
     imp.added_count, imp.updated_count = added, updated
     imp.status = enums.FeedImportStatus.APPLIED
+    imp.error_message = None
     imp.applied_at = datetime.now(timezone.utc)
+    db.commit()   # CVE 반영 확정 — 후처리 실패가 APPLIED 상태를 되돌리지 못하게 분리
 
-    transitioned = _reevaluate_advisories(db)
-
-    db.flush()
+    # ── 피드 반영 후속(§개편 후속) — 실패해도 이력은 '적용 완료 + 후처리 경고'로 정직하게.
+    transitioned = 0
+    new_aliases = 0
+    rework: dict = {}
+    post_error = None
+    try:
+        transitioned = _reevaluate_advisories(db)
+        # 1) 피드의 제품명을 본문 추출 사전에 반영 → 이후 추출이 그 제품을 인식.
+        new_aliases = normalize.sync_aliases_from_cves(
+            db.execute(select(Cve.product_name, Cve.product_key)
+                       .where(Cve.product_name.is_not(None), Cve.product_key.is_not(None))
+                       .distinct()).all())
+        # 2) 종결·추출중 제외 전 권고문 재추출·재매칭·재색인 — 목록/게시판이 다음 조회부터 최신.
+        rework = advisory_ops.rework_open_advisories(db)
+        db.flush()
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        post_error = f"{type(e).__name__}: {e}"[:400]
+        imp = db.get(CveFeedImport, imp_id)
+        imp.error_message = f"적용 완료 · 후처리 실패(재작업/사전 동기화): {post_error}"[:500]
     record(db, action="CVE_FEED_APPLY", actor_id=get_actor_id(db),
-           entity_type="cve_feed_import", entity_id=imp.id,
-           detail={"added": added, "updated": updated, "advisories_unlocked": transitioned}, request=request)
+           entity_type="cve_feed_import", entity_id=imp_id,
+           detail={"added": added, "updated": updated, "advisories_unlocked": transitioned,
+                   "new_aliases": new_aliases, "post_error": post_error, **rework}, request=request)
     db.commit()
-    return {"added_count": added, "updated_count": updated, "advisories_unlocked": transitioned}
+    return {"added_count": added, "updated_count": updated, "advisories_unlocked": transitioned,
+            "new_aliases": new_aliases, "post_error": post_error, **rework}
 
 
 @router.get("/cve-feeds")
@@ -131,7 +164,9 @@ def feed_history(db: Session = Depends(get_db)):
             "added_count": r.added_count,
             "updated_count": r.updated_count,
             "status": r.status.value,
+            "error_message": r.error_message,
             "applied_at": r.applied_at.isoformat() if r.applied_at else None,
+            "created_at": r.created_at.isoformat() if r.created_at else None,  # 실패행 시각 표기용
             "time": (r.applied_at or r.created_at).isoformat() if (r.applied_at or r.created_at) else None,
         }
         for r in rows

@@ -74,8 +74,10 @@ def version_matches(asset_version: str | None, rule) -> tuple[bool, bool]:
     """
     av = normalize_version(asset_version)
 
-    # 전체 버전
+    # 전체 버전 — 열거 목록에 '*' 가 섞여 온 경우(내부 피드 versions:"*" 등)도 동일.
     if rule in (None, "*", "", []):
+        return True, False
+    if isinstance(rule, list) and any(str(x).strip() == "*" for x in rule):
         return True, False
 
     # 자산 버전 미상 → 버전 한정 규칙엔 보수적 후보(사람 검토). 자산대장 버전 누락이 흔함.

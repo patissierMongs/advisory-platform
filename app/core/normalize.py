@@ -156,3 +156,77 @@ def register_alias(product_key: str, alias: str) -> None:
     if alias not in PRODUCT_ALIASES[product_key]:
         PRODUCT_ALIASES[product_key].append(alias)
         _ALIAS_INDEX = _build_index()
+
+
+def _alias_ok(alias: str) -> bool:
+    """사전에 넣을 만한 별칭인가 — 잡음(빈값·기호·과도하게 짧은 것) 배제.
+
+    라틴 별칭은 3자 미만이면 잡음(약어 오인)일 확률이 높아 배제하되,
+    한글 제품명은 2음절이 흔하므로('알약' 등) 2자부터 허용한다.
+    """
+    if not alias or len(alias) < 2:
+        return False
+    if len(alias) < 3 and not re.search(r"[가-힣]", alias):
+        return False
+    if not re.search(r"[a-z가-힣]", alias):
+        return False               # 숫자·기호뿐인 이름 배제
+    return alias not in ("n/a", "none", "unknown", "기타")
+
+
+# ── 피드 유래 동적 별칭(§개편 후속) — 큐레이션 사전과 '분리' 보관 ─────────────
+# 자산 정규화(normalize_product/split_product_version)에는 절대 쓰지 않는다:
+# NVD 급 피드 제품명이 큐레이션 별칭을 최장일치로 가리면 자산 키 산출이 피드
+# 적용 순서에 따라 달라져 기존 매칭이 조용히 깨진다(§적대검증 확정). 오직
+# 본문 추출(product_extract)에서, 버전 문맥이 있을 때만 후보로 쓴다.
+# 조회 비용: 첫 토큰 버킷 인덱스 — 수만 별칭에서도 본문 토큰 수만큼만 후보 검사.
+DYNAMIC_ALIASES: dict[str, str] = {}    # alias(lower) → product_key
+# 첫 토큰 → [(alias, key, alias 전체 토큰 튜플)] — 별칭이 본문에 부분일치하려면 별칭의
+# '모든' 토큰이 본문에 존재해야 하므로, find 시도 전에 토큰 포함 검사로 후보를 걸러낸다
+# (같은 첫 토큰을 공유하는 수만 별칭 — 'microsoft …' 류 — 의 버킷 폭주 방지).
+_DYNAMIC_BY_TOKEN: dict[str, list[tuple[str, str, tuple[str, ...]]]] = {}
+
+_TOKEN_SPLIT = re.compile(r"[^a-z0-9가-힣]+")
+
+
+def _alias_tokens(alias: str) -> tuple[str, ...]:
+    return tuple(t for t in _TOKEN_SPLIT.split(alias) if t)
+
+
+def _rebuild_dynamic_index() -> None:
+    global _DYNAMIC_BY_TOKEN
+    buckets: dict[str, list[tuple[str, str, tuple[str, ...]]]] = {}
+    for alias, key in DYNAMIC_ALIASES.items():
+        toks = _alias_tokens(alias)
+        if toks:
+            buckets.setdefault(toks[0], []).append((alias, key, toks))
+    for lst in buckets.values():
+        lst.sort(key=lambda p: len(p[0]), reverse=True)     # 버킷 내 최장일치 우선
+    _DYNAMIC_BY_TOKEN = buckets
+
+
+def sync_aliases_from_cves(pairs) -> int:
+    """CVE DB 의 (product_name, product_key) 목록을 '동적 추출 사전'에 반영(§개편 후속).
+
+    피드 적용·기동 시 호출 — 피드로 들어온 실제 제품명이 본문 추출기의 인식 대상이 된다.
+    큐레이션 사전(PRODUCT_ALIASES)은 건드리지 않으므로 자산 정규화는 그대로다.
+    반환: 신규 등록 별칭 수.
+    """
+    curated = {a for a, _k in _ALIAS_INDEX}
+    n = 0
+    for name, key in pairs:
+        if not name or not key:
+            continue
+        alias = str(name).strip().lower()
+        if not _alias_ok(alias) or alias in curated or alias in DYNAMIC_ALIASES:
+            continue
+        # 충돌 가드: 다른 키의 더 긴 큐레이션 별칭에 부분 포함되는 짧은 이름('server' 류)은
+        # 본문 추출을 엉뚱한 키로 끌고 갈 수 있어 배제(같은 키면 무해하므로 허용).
+        if len(alias) <= 12 and any(
+            alias != a2 and alias in a2 and k2 != key for a2, k2 in _ALIAS_INDEX
+        ):
+            continue
+        DYNAMIC_ALIASES[alias] = key
+        n += 1
+    if n:
+        _rebuild_dynamic_index()
+    return n

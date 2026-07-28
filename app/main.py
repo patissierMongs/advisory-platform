@@ -27,7 +27,47 @@ async def lifespan(app: FastAPI):
     if settings.LOAD_BUNDLED_FEEDS:
         _load_bundled_cve_feeds()
     _reconcile_stuck_extractions()
+    _sync_extraction_aliases()
+    _backfill_advisory_index()
     yield
+
+
+def _sync_extraction_aliases() -> None:
+    """CVE DB 의 제품명을 본문 추출 사전에 반영(§개편 후속) — 기동 시 1회.
+
+    추출 사전은 프로세스 메모리라 재기동마다 DB 에서 재구성한다(피드 적용 시에도 갱신).
+    """
+    from sqlalchemy import select
+
+    from .core import normalize
+    from .models import Cve
+
+    with SessionLocal() as db:
+        normalize.sync_aliases_from_cves(
+            db.execute(select(Cve.product_name, Cve.product_key)
+                       .where(Cve.product_name.is_not(None), Cve.product_key.is_not(None))
+                       .distinct()).all())
+
+
+def _backfill_advisory_index() -> None:
+    """관리 인덱스(advisory_index) 없는 권고문 기동 시 일괄 색인(§개편 후속).
+
+    구버전 DB 업그레이드 직후에도 검색(q=)이 전 권고문을 커버하도록 보장
+    (목록 조회의 지연 백필은 검색 필터에 걸리지 않은 행을 채우지 못한다).
+    """
+    from sqlalchemy import select
+
+    from .core.advisory_ops import reindex_advisory
+    from .models import Advisory, AdvisoryIndex
+
+    with SessionLocal() as db:
+        missing = db.scalars(
+            select(Advisory).where(
+                Advisory.id.notin_(select(AdvisoryIndex.advisory_id)))).all()
+        for adv in missing:
+            reindex_advisory(db, adv)
+        if missing:
+            db.commit()
 
 
 def _load_bundled_cve_feeds() -> None:

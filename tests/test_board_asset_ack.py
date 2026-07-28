@@ -177,8 +177,14 @@ def test_board_detail_department_id_scopes(client, ack_ids):
                 json={"author_name": "갑담당", "department_id": ack_ids["didA"], "body": "A 회신"})
     client.post(f"/api/v1/board/advisories/{aid}/comments",
                 json={"author_name": "을담당", "department_id": ack_ids["didB"], "body": "B 회신"})
-    client.post(f"/api/v1/board/advisories/{aid}/comments",
-                json={"author_name": "관리자", "body": "공지", "is_admin": True})
+    # 관리자 공지 — is_admin 은 공개 API 로 설정 불가(스푸핑 차단)이므로 표식은 서버측(DB)에서.
+    r = client.post(f"/api/v1/board/advisories/{aid}/comments",
+                    json={"author_name": "관리자", "body": "공지"})
+    admin_cid = r.json()["comment"]["id"]
+    with SessionLocal() as db:
+        c = db.get(AdvisoryComment, admin_cid)
+        c.is_admin = True
+        db.commit()
 
     scoped = client.get(f"/api/v1/board/advisories/{aid}",
                         params={"department_id": ack_ids["didA"]}).json()
@@ -189,6 +195,18 @@ def test_board_detail_department_id_scopes(client, ack_ids):
     assert scoped["advisory"]["affected_dept_count"] == 1
 
 
+def test_public_comment_cannot_forge_admin_badge(client, ack_ids):
+    """공개·무인증 댓글이 is_admin=true 를 넣어도 서버가 무시(관리자 배지 스푸핑 차단)."""
+    aid = ack_ids["aid"]
+    r = client.post(f"/api/v1/board/advisories/{aid}/comments",
+                    json={"author_name": "사칭", "body": "관리자인 척", "is_admin": True})
+    assert r.status_code == 201
+    assert r.json()["comment"]["is_admin"] is False
+    with SessionLocal() as db:
+        c = db.get(AdvisoryComment, r.json()["comment"]["id"])
+        assert c.is_admin is False
+
+
 def test_board_list_row_scoped_to_department(client, ack_ids):
     """'내 부서' 필터 시 목록 행의 영향요약·진행률·댓글수도 그 부서만(타부서 미노출) — Codex P2."""
     aid = ack_ids["aid"]
@@ -196,8 +214,12 @@ def test_board_list_row_scoped_to_department(client, ack_ids):
                 json={"author_name": "갑담당", "department_id": ack_ids["didA"], "body": "A"})
     client.post(f"/api/v1/board/advisories/{aid}/comments",
                 json={"author_name": "을담당", "department_id": ack_ids["didB"], "body": "B"})
-    client.post(f"/api/v1/board/advisories/{aid}/comments",
-                json={"author_name": "관리자", "body": "공지", "is_admin": True})
+    r = client.post(f"/api/v1/board/advisories/{aid}/comments",
+                    json={"author_name": "관리자", "body": "공지"})
+    with SessionLocal() as db:                     # is_admin 은 서버측 표식(공개 API 불가)
+        c = db.get(AdvisoryComment, r.json()["comment"]["id"])
+        c.is_admin = True
+        db.commit()
 
     res = client.get("/api/v1/board/advisories",
                      params={"department_id": ack_ids["didA"], "exclude_done": "false"}).json()

@@ -24,6 +24,9 @@ if _is_sqlite:
         cur = dbapi_conn.cursor()
         cur.execute("PRAGMA foreign_keys=ON")
         cur.execute("PRAGMA journal_mode=WAL")
+        # 쓰기 잠금 대기(기본 5s → 15s) — 피드 재작업 등 긴 쓰기와 겹칠 때
+        # 'database is locked' 500 대신 대기 후 진행(§적대검증 확정).
+        cur.execute("PRAGMA busy_timeout=15000")
         cur.close()
 
 
@@ -62,6 +65,8 @@ _ADDED_COLUMNS: dict[str, list[tuple[str, str]]] = {
     # §개편 — 추출 엔진·다중 제품
     "advisory_cve": [("is_deleted", "BOOLEAN DEFAULT 0 NOT NULL")],
     "cve": [("affected_products", "JSON")],
+    # §개편 후속 — 피드 적용 실패 사유 기록(이력 오표시 방지)
+    "cve_feed_import": [("error_message", "TEXT")],
 }
 
 

@@ -132,7 +132,7 @@ class CommentIn(BaseModel):
     body: str = Field(min_length=1)
     ack_status: AckStatus | None = None       # 선택: 조치상태 첨부 → 부서 ack 동기화
     match_ids: list[int] | None = None        # 선택: 체크한 자산 → 자산별 ack 동기화
-    is_admin: bool = False
+    # is_admin 은 공개 입력에서 받지 않는다(관리자 배지 스푸핑 차단 — 서버가 항상 False 로 저장).
 
 
 class AssetAckIn(BaseModel):

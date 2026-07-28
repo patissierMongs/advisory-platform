@@ -7,16 +7,21 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import case, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import enums
 from ..audit import record
 from ..config import UPLOAD_DIR, settings
 from ..core import extract, product_extract
+from ..core.advisory_ops import (
+    refresh_extracted_products,
+    reindex_advisory,
+)
 from ..core.matching import active_cves, all_cves_found
 from ..db import SessionLocal, get_db
 from ..deps import get_actor_id
-from ..models import Advisory, AdvisoryCve, AdvisoryProduct, Cve, Match, Notification
+from ..models import Advisory, AdvisoryCve, AdvisoryIndex, AdvisoryProduct, Cve, Match, Notification
 from ..schemas import (
     AdvisoryMetaPatch,
     AdvisoryProductIn,
@@ -122,6 +127,7 @@ async def upload_advisory(
     )
     db.add(adv)
     db.flush()
+    reindex_advisory(db, adv)
     record(db, action="ADVISORY_UPLOAD", actor_id=adv.uploaded_by,
            entity_type="advisory", entity_id=adv.id, detail={"sha256": sha, "force": force}, request=request)
     db.commit()
@@ -154,6 +160,7 @@ def update_meta(advisory_id: int, body: AdvisoryMetaPatch, request: Request,
         else:
             adv.receive_channel = None
             adv.channel_source = None
+    reindex_advisory(db, adv)
     record(db, action="ADVISORY_META_EDIT", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=adv.id, detail={"due_at": str(adv.due_at) if adv.due_at else None,
                                      "channel": adv.receive_channel.value if adv.receive_channel else None},
@@ -241,7 +248,7 @@ def _run_extract(advisory_id: int) -> None:
 
         # ── 영향 제품·버전 추출(§개편) — 관리자 확인/수동/삭제 이력은 보존하고
         #    이전 '추출 제안(SUGGESTED·EXTRACTED)'만 새 결과로 교체한다.
-        _refresh_extracted_products(db, adv, text, revive_deleted=False)
+        refresh_extracted_products(db, adv, text, revive_deleted=False)
         db.flush()
         db.refresh(adv)
         # 상태 판정은 보존된 수동 CVE 를 포함한 전체(삭제 제외) 기준.
@@ -251,6 +258,7 @@ def _run_extract(advisory_id: int) -> None:
                       else enums.AdvisoryStatus.EXTRACTED)
         adv.extract_phase = "done"
         adv.error_message = warning   # 경고는 표시하되 추출 자체는 완료
+        reindex_advisory(db, adv)     # 문서번호·CVE·제품 관리 인덱스 갱신(§개편 후속)
         db.commit()
     except Exception as e:  # noqa: BLE001 — 어떤 실패든 보드에서 보이게 기록
         try:
@@ -268,46 +276,6 @@ def _run_extract(advisory_id: int) -> None:
     finally:
         if db is not None:
             db.close()
-
-
-def _refresh_extracted_products(db: Session, adv: Advisory, text: str,
-                                *, revive_deleted: bool) -> int:
-    """본문에서 제품·버전 추출 → advisory_product 갱신(§개편).
-
-    · 이전 '추출 제안'(origin=EXTRACTED, status=SUGGESTED)은 새 결과로 교체.
-    · CONFIRMED(관리자 확인)·MANUAL(수동 추가)은 유지.
-    · DELETED 는 revive_deleted=False 면 유지(재추출로 되살아나지 않음 — 자동 재추출),
-      True 면 다시 SUGGESTED 로 복원(관리자가 '수동 재추출'로 명시 요청한 경우).
-    반환: 제안 건수.
-    """
-    extracted = product_extract.extract_products(text)
-    keep_keys: set[str] = set()
-    for p in list(adv.products):
-        if p.status == "DELETED" and revive_deleted and p.origin == "EXTRACTED":
-            db.delete(p)          # 곧바로 새 제안으로 재생성
-            continue
-        if p.origin == "EXTRACTED" and p.status == "SUGGESTED":
-            db.delete(p)          # 이전 제안 → 새 결과로 교체
-            continue
-        keep_keys.add(p.product_key)
-    db.flush()
-    n = 0
-    for item in extracted:
-        if item["product_key"] in keep_keys:
-            continue              # 관리자 확인/수동/삭제 이력이 우선
-        db.add(AdvisoryProduct(
-            advisory_id=adv.id,
-            product_name=item["product_name"],
-            product_key=item["product_key"],
-            affected_versions=item["affected_versions"],
-            fixed_version=item.get("fixed_version"),
-            source_snippet=item.get("source_snippet"),
-            confidence=item.get("confidence"),
-            status="SUGGESTED",
-            origin="EXTRACTED",
-        ))
-        n += 1
-    return n
 
 
 # ── 영향 제품·버전(§개편 — 추출 제안·수동 보정·복원·CVE 적용) ─────────────────
@@ -346,13 +314,14 @@ def add_product(advisory_id: int, body: AdvisoryProductIn, request: Request,
         p = revived
     else:
         p = AdvisoryProduct(
-            advisory_id=adv.id, product_name=name, product_key=key,
+            advisory=adv, product_name=name, product_key=key,
             affected_versions=body.affected_versions if body.affected_versions is not None else "*",
             fixed_version=(body.fixed_version or "").strip() or None,
             source_snippet="(수동 추가)", status="CONFIRMED", origin="MANUAL",
         )
         db.add(p)
     db.flush()
+    reindex_advisory(db, adv)
     record(db, action="PRODUCT_ADD_MANUAL", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=adv.id, detail={"product": name, "key": key}, request=request)
     db.commit()
@@ -383,7 +352,14 @@ def patch_product(product_id: int, body: AdvisoryProductPatch, request: Request,
         p.fixed_version = (body.fixed_version or "").strip() or None
     if "status" in sent and body.status in ("SUGGESTED", "CONFIRMED"):
         p.status = body.status
+    # 관리자가 내용을 손본 '추출 제안'은 수동 관리로 승격 — 피드 적용 재작업(재추출)이
+    # EXTRACTED+SUGGESTED 행을 새 추출로 교체할 때 편집분이 소리 없이 날아가지 않게.
+    if p.origin == "EXTRACTED" and p.status == "SUGGESTED" and (
+        {"product_name", "affected_versions", "fixed_version"} & sent
+    ):
+        p.origin = "MANUAL"
     db.flush()
+    reindex_advisory(db, p.advisory)
     record(db, action="PRODUCT_EDIT", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=p.advisory_id, detail={"product_id": p.id, "key": p.product_key,
                                             "versions": p.affected_versions}, request=request)
@@ -398,6 +374,7 @@ def delete_product(product_id: int, request: Request, db: Session = Depends(get_
     if not p:
         raise HTTPException(404, "영향 제품 없음")
     p.status = "DELETED"
+    reindex_advisory(db, p.advisory)
     record(db, action="PRODUCT_DELETE", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=p.advisory_id, detail={"product_id": p.id, "key": p.product_key}, request=request)
     db.commit()
@@ -413,6 +390,7 @@ def restore_product(product_id: int, request: Request, db: Session = Depends(get
     if p.status != "DELETED":
         raise HTTPException(409, "삭제 상태가 아닙니다.")
     p.status = "SUGGESTED" if p.origin == "EXTRACTED" else "CONFIRMED"
+    reindex_advisory(db, p.advisory)
     record(db, action="PRODUCT_RESTORE", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=p.advisory_id, detail={"product_id": p.id, "key": p.product_key}, request=request)
     db.commit()
@@ -429,7 +407,8 @@ def reextract_products(advisory_id: int, request: Request, db: Session = Depends
     text = adv.extracted_text or ""
     if not text.strip():
         raise HTTPException(409, "추출할 본문 텍스트가 없습니다(스캔본 PDF 가능성).")
-    n = _refresh_extracted_products(db, adv, text, revive_deleted=True)
+    n = refresh_extracted_products(db, adv, text, revive_deleted=True)
+    reindex_advisory(db, adv)
     record(db, action="PRODUCT_REEXTRACT", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=adv.id, detail={"suggested": n}, request=request)
     db.commit()
@@ -486,6 +465,7 @@ def apply_product_to_cve(product_id: int, body: ProductApplyRequest, request: Re
         p.status = "CONFIRMED"
     db.flush()
     _reeval_status(adv)
+    reindex_advisory(db, adv)
     record(db, action="PRODUCT_APPLY_CVE", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=adv.id, detail={"product_id": p.id, "key": p.product_key, "cve": code},
            request=request)
@@ -511,6 +491,7 @@ def bulk_source_org(body: BulkSourceRequest, request: Request, db: Session = Dep
             continue
         adv.source_org = source
         updated.append(adv.id)
+        reindex_advisory(db, adv)
     record(db, action="ADVISORY_SOURCE_BULK", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=None, detail={"source": source, "updated": updated,
                                    "skipped": skipped, "only_empty": body.only_empty},
@@ -568,13 +549,14 @@ def add_cve(advisory_id: int, body: CveAddRequest, request: Request, db: Session
         ac = existing
     else:
         ac = AdvisoryCve(
-            advisory_id=adv.id, cve_id_text=code, cve_ref_id=cve.id if cve else None,
+            advisory=adv, cve_id_text=code, cve_ref_id=cve.id if cve else None,
             lookup_status=enums.LookupStatus.FOUND if cve else enums.LookupStatus.NOT_FOUND,
             source_snippet="(수동 추가)",
         )
         db.add(ac)
     db.flush()
     _reeval_status(adv)
+    reindex_advisory(db, adv)
     record(db, action="CVE_ADD_MANUAL", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=adv.id, detail={"cve": code}, request=request)
     db.commit()
@@ -613,6 +595,7 @@ def patch_cve(ac_id: int, body: CvePatchRequest, request: Request, db: Session =
         ac.source_snippet = f"(관리자 수정: {old_code} → {new_code})"
     db.flush()
     _reeval_status(adv)
+    reindex_advisory(db, adv)
     record(db, action="CVE_EDIT_MANUAL", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=adv.id, detail={"from": old_code, "to": new_code}, request=request)
     db.commit()
@@ -635,6 +618,7 @@ def delete_cve(ac_id: int, request: Request, db: Session = Depends(get_db)):
     ac.is_deleted = True
     db.flush()
     _reeval_status(adv)
+    reindex_advisory(db, adv)
     record(db, action="CVE_DELETE_MANUAL", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=adv.id, detail={"cve": code}, request=request)
     db.commit()
@@ -655,6 +639,7 @@ def restore_cve(ac_id: int, request: Request, db: Session = Depends(get_db)):
     ac.lookup_status = enums.LookupStatus.FOUND if cve else enums.LookupStatus.NOT_FOUND
     db.flush()
     _reeval_status(ac.advisory)
+    reindex_advisory(db, ac.advisory)
     record(db, action="CVE_RESTORE", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=ac.advisory_id, detail={"cve": ac.cve_id_text}, request=request)
     db.commit()
@@ -763,18 +748,45 @@ def get_advisory(advisory_id: int, db: Session = Depends(get_db)):
 def list_advisories(
     status: str | None = None,
     source_org: str | None = None,
+    q: str | None = None,
     page: int = 1,
     size: int = 50,
     db: Session = Depends(get_db),
 ):
-    q = select(Advisory).order_by(Advisory.created_at.desc())
+    """권고문 목록. q(§개편 후속): 관리 인덱스 기반 자유 검색 —
+    문서번호·제목·출처·CVE·제품명·제품키·버전 전 필드 부분일치."""
+    stmt = select(Advisory).order_by(Advisory.created_at.desc())
     if status:
-        q = q.where(Advisory.status == enums.AdvisoryStatus(status))
+        stmt = stmt.where(Advisory.status == enums.AdvisoryStatus(status))
     if source_org:
-        q = q.where(Advisory.source_org == source_org)
-    total = db.scalar(select(func.count()).select_from(q.subquery()))
-    rows = db.scalars(q.limit(size).offset((page - 1) * size)).all()
+        stmt = stmt.where(Advisory.source_org == source_org)
+    if q and q.strip():
+        # LIKE 메타문자 이스케이프 — 제품키(windows_10 등) 검색어의 '_' 가 와일드카드로 풀리지 않게.
+        esc = q.strip().lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        hit_ids = select(AdvisoryIndex.advisory_id).where(
+            AdvisoryIndex.search_text.like(f"%{esc}%", escape="\\"))
+        stmt = stmt.where(Advisory.id.in_(hit_ids))
+    total = db.scalar(select(func.count()).select_from(stmt.subquery()))
+    rows = db.scalars(stmt.limit(size).offset((page - 1) * size)).all()
     ids = [a.id for a in rows]
+
+    # 관리 인덱스(문서번호·CVE·제품·버전) — 카드 표시·검색용. 없는 행은 지연 생성(구버전 DB 백필).
+    idx_map = {r.advisory_id: r for r in db.scalars(
+        select(AdvisoryIndex).where(AdvisoryIndex.advisory_id.in_(ids))
+    )} if ids else {}
+    backfilled = False
+    for a in rows:
+        if a.id not in idx_map:
+            idx_map[a.id] = reindex_advisory(db, a)
+            backfilled = True
+    if backfilled:
+        try:
+            db.commit()
+        except IntegrityError:
+            # 동시 목록 조회가 같은 행을 백필하면 unique(advisory_id) 충돌 — 승자 것을 사용.
+            db.rollback()
+            idx_map = {r.advisory_id: r for r in db.scalars(
+                select(AdvisoryIndex).where(AdvisoryIndex.advisory_id.in_(ids)))} if ids else {}
 
     # 보드 카드 시각화(§개편)용 롤업 — 매칭 자산 수/조치 완료 수, 발송 부서 수/회신 완료 수.
     match_counts: dict[int, tuple[int, int]] = {}
@@ -805,6 +817,9 @@ def list_advisories(
         item["notified_depts"] = nc
         item["acked_depts"] = nd
         item["max_severity"] = serializers_max_severity(a)
+        idx = idx_map.get(a.id)
+        item["products"] = (idx.products if idx else None) or []   # [{name,key,versions}]
+        item["cves"] = (idx.cves if idx else None) or []
         items.append(item)
     return {"total": total, "items": items}
 

@@ -77,6 +77,8 @@ def _norm_record(raw: dict) -> dict | None:
         versions = raw.get("versions")
     if isinstance(versions, str):
         versions = [v.strip() for v in re.split(r"[;,/]", versions) if v.strip()] or "*"
+        if versions == ["*"]:
+            versions = "*"   # '전체' 표기 정규화 — 열거 ['*'] 로 남기면 매칭이 리터럴 비교한다
 
     return {
         "cve_id": cve_id,
@@ -119,16 +121,41 @@ def _norm_nvd_item(item: dict) -> dict | None:
         cvss = cdata.get("baseScore")
         base_sev = mlist[0].get("baseSeverity") or cdata.get("baseSeverity")
     # CPE → 제품별 영향버전(§개편 — 다중 제품). 같은 제품키의 규칙은 마지막 것을 사용.
-    cpe_list = []
-    per_product: dict[str, dict] = {}   # product_key → {product_name, affected_versions}
+    cpe_list, primary, extras = _products_from_cpe_matches(
+        ((m.get("criteria"), m) for m in _iter_cpe(cve)))
+    return _norm_record(
+        {
+            "cve_id": cve_id,
+            "product_name": primary["product_name"] if primary else None,
+            "product_key": primary["product_key"] if primary else None,
+            "affected_versions": primary["affected_versions"] if primary else "*",
+            "affected_products": extras or None,
+            "cpe_list": cpe_list or None,
+            "severity": base_sev,
+            "cvss_score": cvss,
+            "description": desc,
+            "published": cve.get("published"),
+            "source": "NVD",
+        }
+    )
+
+
+def _products_from_cpe_matches(matches) -> tuple[list, dict | None, list]:
+    """(cpe URI, 버전경계 dict) 스트림 → (cpe 목록, primary 제품, 추가 제품 목록).
+
+    NVD 2.0(criteria)·1.1(cpe23Uri) 공용 — 버전 경계 키 이름은 두 스키마가 동일하다.
+    """
+    cpe_list: list = []
+    per_product: dict[str, dict] = {}
     order: list[str] = []
-    for node in (_iter_cpe(cve)):
-        cpe_list.append(node.get("criteria"))
-        name = _product_from_cpe(node.get("criteria"))
+    for uri, m in matches:
+        if uri:
+            cpe_list.append(uri)
+        name = _product_from_cpe(uri)
         if not name:
             continue
         key = normalize_product(name)
-        rule = _versionrule_from_cpe(node)
+        rule = _versionrule_from_cpe(m)
         entry = per_product.get(key)
         if entry is None:
             per_product[key] = {"product_name": name, "product_key": key,
@@ -138,6 +165,40 @@ def _norm_nvd_item(item: dict) -> dict | None:
             entry["affected_versions"] = rule
     primary = per_product[order[0]] if order else None
     extras = [per_product[k] for k in order[1:]]
+    return cpe_list, primary, extras
+
+
+def _iter_cpe11(nodes):
+    """NVD 1.1 configurations.nodes[] (children 중첩 포함) → vulnerable cpe_match 스트림."""
+    for node in nodes or []:
+        for m in node.get("cpe_match") or []:
+            if m.get("vulnerable"):
+                yield m
+        yield from _iter_cpe11(node.get("children"))
+
+
+def _norm_nvd11_item(item: dict) -> dict | None:
+    """구형 NVD 1.1(연도별 덤프 nvdcve-1.1-*.json 의 CVE_Items[]) → 정규화 레코드.
+
+    폐쇄망 반입에 가장 흔한 형식이 연도별 덤프(연간 3~4만 건)라 1.1 스키마를 직접 지원한다.
+    """
+    cve = item.get("cve") or {}
+    cve_id = (cve.get("CVE_data_meta") or {}).get("ID")
+    if not cve_id:
+        return None
+    descs = (cve.get("description") or {}).get("description_data") or []
+    desc = next((d.get("value") for d in descs if d.get("lang") == "en"), None) or (
+        descs[0].get("value") if descs else None)
+    impact = item.get("impact") or {}
+    m3 = (impact.get("baseMetricV3") or {}).get("cvssV3") or {}
+    if m3:
+        cvss, base_sev = m3.get("baseScore"), m3.get("baseSeverity")
+    else:
+        m2 = impact.get("baseMetricV2") or {}
+        cvss, base_sev = (m2.get("cvssV2") or {}).get("baseScore"), m2.get("severity")
+    cpe_list, primary, extras = _products_from_cpe_matches(
+        ((m.get("cpe23Uri"), m)
+         for m in _iter_cpe11((item.get("configurations") or {}).get("nodes"))))
     return _norm_record(
         {
             "cve_id": cve_id,
@@ -145,11 +206,11 @@ def _norm_nvd_item(item: dict) -> dict | None:
             "product_key": primary["product_key"] if primary else None,
             "affected_versions": primary["affected_versions"] if primary else "*",
             "affected_products": extras or None,
-            "cpe_list": [c for c in cpe_list if c] or None,
+            "cpe_list": cpe_list or None,
             "severity": base_sev,
             "cvss_score": cvss,
             "description": desc,
-            "published": cve.get("published"),
+            "published": item.get("publishedDate"),
             "source": "NVD",
         }
     )
@@ -239,9 +300,12 @@ def parse_feed(filename: str, content: bytes) -> list[dict]:
     doc = json.loads(text)
     if isinstance(doc, dict) and "vulnerabilities" in doc:
         return _parse_nvd(doc)
+    if isinstance(doc, dict) and "CVE_Items" in doc:   # 구형 NVD 1.1 연도별 덤프
+        return [r for r in (_norm_nvd11_item(it) for it in doc.get("CVE_Items") or []) if r]
     items = doc.get("cves") if isinstance(doc, dict) else doc
     if not isinstance(items, list):
-        raise ValueError("지원하지 않는 피드 형식")
+        raise ValueError("지원하지 않는 피드 형식 (지원: NVD 2.0 vulnerabilities / "
+                         "NVD 1.1 CVE_Items / 내부 JSON cves·배열 / CSV)")
     return [r for r in (_norm_record(x) for x in items) if r]
 
 
@@ -338,16 +402,19 @@ def iter_records_from_path(path: str, filename: str | None) -> Iterator[dict]:
         return
     # JSON: 배열 위치·원소 정규화 방식 결정
     if stripped[:1] == "[":
-        key, is_nvd = None, False
+        key, norm = None, _norm_record
     elif '"vulnerabilities"' in head:
-        key, is_nvd = "vulnerabilities", True
+        key, norm = "vulnerabilities", _norm_nvd_item
+    elif '"CVE_Items"' in head:                        # 구형 NVD 1.1 연도별 덤프
+        key, norm = "CVE_Items", _norm_nvd11_item
     elif '"cves"' in head:
-        key, is_nvd = "cves", False
+        key, norm = "cves", _norm_record
     else:
-        raise ValueError("지원하지 않는 피드 형식")
+        raise ValueError("지원하지 않는 피드 형식 (지원: NVD 2.0 vulnerabilities / "
+                         "NVD 1.1 CVE_Items / 내부 JSON cves·배열 / CSV)")
     with _open_text(path) as f:
         for item in _iter_json_array(f, key):
-            rec = _norm_nvd_item(item) if is_nvd else _norm_record(item)
+            rec = norm(item)
             if rec:
                 yield rec
 

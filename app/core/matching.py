@@ -60,9 +60,10 @@ def asset_matches_cve(asset: Asset, cve: Cve) -> tuple[bool, dict | None]:
 
 
 def run_matching(db: Session, advisory: Advisory, actor_id: int | None = None) -> dict:
-    """advisory 의 FOUND CVE 들을 자산과 매칭. 멱등(upsert).
+    """advisory 의 FOUND CVE 들을 자산과 매칭. 멱등(upsert + stale 회수).
 
-    반환: {"matched": 활성매칭수, "departments": 대상부서수, "candidates": 후보수}
+    반환: {"matched": 활성매칭수, "departments": 대상부서수, "candidates": 후보수,
+           "retracted": 회수된 매칭수}
     """
     found_cves = [ac for ac in active_cves(advisory)
                   if ac.lookup_status == enums.LookupStatus.FOUND and ac.cve]
@@ -91,6 +92,7 @@ def run_matching(db: Session, advisory: Advisory, actor_id: int | None = None) -
     candidates = 0
     suggested = 0
     dept_ids: set[int] = set()
+    seen: set[tuple[int, int]] = set()   # 이번 실행에서 여전히 성립한 (CVE, 자산) 쌍
     for ac in found_cves:
         for asset in assets:
             ok, reason = asset_matches_cve(asset, ac.cve)
@@ -101,6 +103,7 @@ def run_matching(db: Session, advisory: Advisory, actor_id: int | None = None) -
                 reason["suggested_exclude"] = True
                 suggested += 1
             key = (ac.id, asset.id)
+            seen.add(key)
             m = existing.get(key)
             if m is None:
                 m = Match(
@@ -120,6 +123,22 @@ def run_matching(db: Session, advisory: Advisory, actor_id: int | None = None) -
                 active += 1
                 dept_ids.add(asset.department_id)
 
+    # 회수(§개편 후속): 피드 정정·CVE 삭제로 더 이상 성립하지 않는 기존 매칭 정리.
+    # 손대지 않은 행(MATCHED + 미회신)만 삭제 — 오탐 제외(EXCLUDED)·회신 이력이 있는
+    # 행은 감사 기록 보존을 위해 유지하되 근거에 stale 표시만 남긴다.
+    retracted = 0
+    for key, m in list(existing.items()):
+        if key in seen:
+            continue
+        if m.status == enums.MatchStatus.MATCHED and m.ack_status == enums.AckStatus.NONE:
+            db.delete(m)
+            retracted += 1
+        else:
+            reason = dict(m.match_reason or {})
+            if not reason.get("stale"):
+                reason["stale"] = True
+                m.match_reason = reason
+
     if advisory.status in (
         enums.AdvisoryStatus.EXTRACTED,
         enums.AdvisoryStatus.NEEDS_CVE_UPDATE,
@@ -128,7 +147,7 @@ def run_matching(db: Session, advisory: Advisory, actor_id: int | None = None) -
 
     db.flush()
     return {"matched": active, "departments": len(dept_ids), "candidates": candidates,
-            "suggested_exclude": suggested}
+            "suggested_exclude": suggested, "retracted": retracted}
 
 
 def active_cves(advisory: Advisory) -> list[AdvisoryCve]:
