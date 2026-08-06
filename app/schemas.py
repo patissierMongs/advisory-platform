@@ -3,7 +3,34 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from .enums import AckStatus, MatchStatus, NotifyChannel
+from .enums import AckStatus, MatchStatus, NotifyChannel, UserRole
+
+
+class LoginIn(BaseModel):
+    username: str = Field(min_length=1, max_length=80)
+    password: str = Field(min_length=1, max_length=200)
+
+
+class PasswordChangeIn(BaseModel):
+    current_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=1, max_length=200)
+
+
+class UserCreateIn(BaseModel):
+    username: str = Field(min_length=1, max_length=80)
+    display_name: str = Field(min_length=1, max_length=120)
+    password: str = Field(min_length=1, max_length=200)
+    role: UserRole = UserRole.ADMIN
+
+
+class UserPatchIn(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=120)
+    role: UserRole | None = None
+    is_active: bool | None = None
+
+
+class PasswordResetIn(BaseModel):
+    new_password: str = Field(min_length=1, max_length=200)
 
 
 class MatchPatch(BaseModel):

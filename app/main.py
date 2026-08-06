@@ -11,14 +11,15 @@ from fastapi.staticfiles import StaticFiles
 from .config import WEB_DIR, settings
 from .db import SessionLocal, init_db
 from .routers import (
-    advisories, assets, audit, board, cve_feeds, cves, dashboard, departments, history, matches,
-    notifications, remediation,
+    advisories, assets, audit, auth, board, cve_feeds, cves, dashboard, departments, history,
+    matches, notifications, remediation,
 )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    _bootstrap_auth()
     if settings.SEED_ON_START:
         from .seed import seed
 
@@ -30,6 +31,16 @@ async def lifespan(app: FastAPI):
     _sync_extraction_aliases()
     _backfill_advisory_index()
     yield
+
+
+def _bootstrap_auth() -> None:
+    """로그인 가능한 관리자 보장 + 오래된 세션 정리. 멱등 — 매 기동 안전."""
+    from .auth import ensure_bootstrap_admin, purge_expired
+
+    with SessionLocal() as db:
+        ensure_bootstrap_admin(db)
+        if purge_expired(db):
+            db.commit()
 
 
 def _sync_extraction_aliases() -> None:
@@ -138,8 +149,8 @@ if settings.CORS_ORIGINS:
         allow_headers=["Content-Type", "X-CSRF-Token"],
     )
 
-for r in (advisories, cve_feeds, cves, assets, matches, notifications, departments, dashboard,
-          remediation, audit, board, history):
+for r in (auth, advisories, cve_feeds, cves, assets, matches, notifications, departments,
+          dashboard, remediation, audit, board, history):
     app.include_router(r.router)
 
 
