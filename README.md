@@ -36,13 +36,89 @@ chmod +x start.sh && ./start.sh
 `start.*` 는 `vendor/wheels` 에서 `--no-index` 로만 설치하므로 **PyPI/인터넷에 접속하지 않습니다**.
 (개발 PC에서 굳이 PyPI로 온라인 설치하려면 `ADVISORY_ONLINE_INSTALL=1` 을 명시해야 합니다.)
 
-> **대안 — 올인원 번들**: `python build_allinone.py` 로 임베디드 Python + 의존성까지 포함한 zip을 만들면,
-> 타깃은 Python 설치도 `vendor/wheels` 준비도 없이 압축만 풀고 `start.bat` 으로 바로 실행합니다(외부망 0).
+> **대안 — 올인원 번들**(권장): 타깃에 **Python 설치도, `vendor/wheels` 준비도 필요 없습니다.**
+> 압축만 풀고 `start.bat`. 자세한 절차는 아래 [올인원 번들](#올인원-번들-windows-amd64) 참고.
 
 브라우저에서 **http://localhost:8000** 접속 → 기본 실행은 운영 기준으로 빈 SQLite DB에서 시작합니다.
 
 > 기본 DB는 **SQLite**(파일, 무설치)입니다. 내부 관리자용 운영도 SQLite 파일 구조를 그대로 유지하는 것을 기본 전제로 합니다.
 > 기존 `data/` 가 있다면 운영 시작 전 백업하거나 초기화하세요. 데모 데이터는 `ADVISORY_SEED=true` 를 명시한 경우에만 넣습니다.
+
+---
+
+## 올인원 번들 (Windows amd64)
+
+임베디드 Python + 의존성 + 앱을 zip 하나로 묶습니다. **타깃 요건은 Windows amd64 뿐**이고,
+Python 설치도 휠 준비도 필요 없습니다. 압축을 풀고 `start.bat` 만 실행하면 됩니다.
+
+지원 런타임은 **Python 3.12 · 3.13** 두 가지이며, 산출물도 각각 나옵니다.
+
+| 옵션 | 임베디드 런타임 | 휠 ABI | 산출물 |
+|---|---|---|---|
+| `--python 3.12` (기본) | 3.12.10 | `cp312` / `win_amd64` | `../advisory-platform_allinone-py312.zip` |
+| `--python 3.13` | 3.13.7 | `cp313` / `win_amd64` | `../advisory-platform_allinone-py313.zip` |
+| `--python all` | 위 둘 다 | — | 두 개 모두 |
+
+런타임 zip 은 `build_allinone.py` 의 `PY_RUNTIMES` 에 **SHA256 이 고정**되어 있고, 내려받은 파일과
+캐시된 파일 모두 매번 검증합니다. 해시가 다르면 빌드를 중단합니다.
+
+> **빌드 호스트는 아무 OS·아무 파이썬 버전이나 됩니다.** 휠은 빌드 PC 가 아니라 번들에 들어갈
+> 타깃 런타임(`cp312`/`cp313` · `win_amd64`) 기준으로 받으므로, 리눅스에서 빌드해도 타깃과 ABI 가 맞습니다.
+> 번들 의존성 목록은 `requirements.txt` 가 아니라 **`requirements-bundle.txt`** 입니다 —
+> `uvicorn[standard]` 가 끌어오는 유닉스 전용 `uvloop`(win_amd64 휠 없음) 때문에 cross-OS 해석이
+> 실패하므로, `standard` 엑스트라 중 Windows 에서 실제로 쓰이는 것만 직접 나열했습니다. 런타임 동작은 동일합니다.
+
+### 온라인 PC 에서 빌드
+
+```bash
+python build_allinone.py --python all
+```
+
+### 완전 오프라인 빌드 (폐쇄망 안에서 번들 생성)
+
+인터넷이 필요한 단계는 **자산 수집 한 번**뿐입니다.
+
+**① 인터넷 되는 PC — 런타임 + 휠 수집**
+```bat
+:: Windows
+scripts\collect_offline_bundle.bat
+```
+```bash
+# Linux / Mac (아무 OS나 가능)
+python scripts/collect_offline_bundle.py
+```
+→ `vendor/bundle/` 이 생성됩니다.
+```
+vendor/bundle/
+├─ python-3.12.10-embed-amd64.zip   임베디드 런타임(SHA256 검증됨)
+├─ python-3.13.7-embed-amd64.zip
+├─ cp312/*.whl                       타깃 win_amd64 휠
+├─ cp313/*.whl
+└─ MANIFEST.sha256                   전체 목록·해시(반입 후 무결성 확인용)
+```
+
+**② 폐쇄망 반입 후 — 무결성 확인 + 빌드 (외부망 접속 0건)**
+```bash
+python scripts/collect_offline_bundle.py --verify     # USB 전송 중 손상·누락 확인
+python build_allinone.py --python all --offline
+```
+`--offline` 은 `--no-index --find-links vendor/bundle/<abi>` 로만 설치하므로 **PyPI 에 접속하지 않습니다.**
+자산이 없으면 조용히 온라인으로 빠지지 않고, 무엇을 어디서 수집해야 하는지 알려주며 중단합니다.
+
+### 번들 내용 확인
+
+각 zip 의 `runtime/BUNDLE_INFO.txt` 에 임베디드 파이썬 버전·해시·빌드 방식(온라인/오프라인)과
+설치된 배포본 목록이 기록됩니다. 폐쇄망에서 "이 번들에 뭐가 들었나" 를 확인할 때 쓰세요.
+
+### 점검 · 판올림
+
+```bash
+python scripts/verify_bundle_wheels.py              # 두 런타임 모두 휠 해석 점검(번들 생성 없이)
+python scripts/collect_offline_bundle.py --print-hashes 3.12.11 3.13.8
+                                                    # 런타임 판올림 시 새 PY_RUNTIMES 행 산출
+```
+`verify_bundle_wheels.py` 는 `requirements.txt` 에 추가된 패키지가 `requirements-bundle.txt` 에서
+누락되지 않았는지도 함께 확인합니다(둘이 어긋나면 그 패키지가 빠진 채 폐쇄망으로 나갑니다).
 
 ---
 
@@ -93,7 +169,13 @@ advisory-platform/
 │     └─ history.html    발송이력·조치관리 콘솔
 ├─ samples/              CVE 피드 샘플
 ├─ smoke_test.py         엔드투엔드 테스트
-└─ requirements.txt start.bat start.sh
+├─ build_allinone.py     올인원 번들 빌더(임베디드 Python 3.12/3.13 · win_amd64)
+├─ scripts/
+│  ├─ prepare_offline.*          venv 경로용 휠 수집 → vendor/wheels
+│  ├─ collect_offline_bundle.*   올인원 오프라인 자산 수집 → vendor/bundle
+│  ├─ verify_bundle_wheels.py    타깃 휠 해석 점검(번들 생성 없이)
+│  └─ harden_data_acl.bat        data 폴더 NTFS ACL 적용
+└─ requirements.txt requirements-bundle.txt start.bat start.sh
 ```
 
 ## REST API (요약, 접두사 `/api/v1`)

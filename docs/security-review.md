@@ -145,8 +145,12 @@
   실제 XSS는 `<`가 이스케이프되어 둔화되나 견고성 결함. 권고: JSON 인코딩/`encodeURIComponent`.
 - **이넘 값 무이스케이프 보간**: `web/board.html:128,319`, `web/history.html:180,207-208` —
   `class=`/`value=`에 서버 이넘 값을 `esc()` 없이 보간. 백엔드 이넘 강제에 의존(현재 안전, defense-in-depth).
-- **빌드 다운로드 무결성**: `build_allinone.py:44` — python.org 임베드 zip SHA256 미검증(TLS로 일부 완화).
-  권고: 해시 핀.
+- ~~**빌드 다운로드 무결성**: `build_allinone.py:44` — python.org 임베드 zip SHA256 미검증(TLS로 일부 완화).~~
+  - ✅ **조치 완료**: `build_allinone.py` 의 `PY_RUNTIMES` 에 지원 런타임(3.12/3.13) SHA256 을 고정하고,
+    다운로드분·캐시분·오프라인 반입분을 **매번** 검증한다(`download_embed`). 불일치 시 빌드 중단.
+    다운로드는 임시파일을 경유해 부분 파일이 캐시로 승격되지 않는다.
+    오프라인 자산 전체는 `vendor/bundle/MANIFEST.sha256` 로 반입 후 재검증한다
+    (`scripts/collect_offline_bundle.py --verify`).
 
 ---
 
