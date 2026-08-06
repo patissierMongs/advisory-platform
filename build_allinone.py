@@ -65,8 +65,12 @@ def copy_app(app: Path) -> None:
             dst = app / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(p, dst)
-    if not (app / "web" / "app.dc.html").exists():
-        sys.exit("web/app.dc.html missing — 프론트 자산 누락")
+    # 관리자 셸(web/admin)과 공개 자산(web/public)이 모두 있어야 한다 —
+    # 정적 마운트는 public 만 서빙하고 admin 은 세션 확인 라우트로만 나간다.
+    for rel in ("admin/app.dc.html", "admin/history.html", "public/board.html",
+                "public/login.html", "public/support.js"):
+        if not (app / "web" / rel).exists():
+            sys.exit(f"web/{rel} missing — 프론트 자산 누락")
 
 
 def place_python(app: Path, embed_zip: Path) -> None:

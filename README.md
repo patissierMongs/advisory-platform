@@ -82,12 +82,17 @@ advisory-platform/
 │  │  └─ notify.py       메시지 생성 · 채널 어댑터 · 멱등성
 │  ├─ routers/           REST API(명세 §5)
 │  └─ seed.py            프로토타입 데이터 시드
-├─ web/                  프론트엔드(DC SPA, 백엔드 연동)
-│  ├─ app.dc.html        UI(템플릿 동일, 로직만 API 연동)
-│  ├─ support.js         DC 런타임
-│  └─ sample-feed.json   데모용 CVE 피드
+├─ web/
+│  ├─ public/            /ui 로 정적 서빙되는 공개 자산
+│  │  ├─ board.html      내부 게시판(무인증)
+│  │  ├─ login.html      관리자 로그인 · 비밀번호 변경
+│  │  ├─ support.js      DC 런타임
+│  │  └─ vendor/         React·ReactDOM·Pretendard(동일 출처, 외부 요청 0건)
+│  └─ admin/             정적 마운트에 없음 — /admin 라우트가 세션 확인 후 서빙
+│     ├─ app.dc.html     관리자 SPA(템플릿 동일, 로직만 API 연동)
+│     └─ history.html    발송이력·조치관리 콘솔
 ├─ samples/              CVE 피드 샘플
-├─ smoke_test.py         엔드투엔드 테스트(66건)
+├─ smoke_test.py         엔드투엔드 테스트
 └─ requirements.txt start.bat start.sh
 ```
 
@@ -107,14 +112,20 @@ advisory-platform/
 | **SLA·리마인드** | `GET /reminders/due` · `POST /advisories/:id/remind` |
 | **CVE 보정** | `POST /advisories/:id/cves` · `DELETE /advisory-cves/:id` |
 | **게시판 공개·오탐기억** | `POST /advisories/:id/board`(내부 게시판 공개) · `POST /advisories/:id/board-unpublish` · `POST /webhooks/groupware/ack` · `GET /exclusion-rules` |
-| **내부 게시판(무인증)** | `GET /board/advisories`(검색 `?q=`·`?exclude_done=`) · `GET /board/advisories/:id` · `GET /board/advisories/:id/file`(원문 PDF) · `POST /board/advisories/:id/comments` · `GET /board/departments` · `DELETE /board/comments/:id` |
-| 기타 | `GET /departments` · `GET /dashboard` (SLA·리마인드 요약) · `GET /api/health` |
+| **내부 게시판(무인증)** | `GET /board/advisories`(검색 `?q=`·`?exclude_done=`) · `GET /board/advisories/:id` · `GET /board/advisories/:id/file`(원문 PDF) · `POST /board/advisories/:id/comments` · `POST /board/advisories/:id/asset-ack` · `POST /board/comments/:id/evidence` · `GET /board/departments` |
+| **게시판 중 관리자 전용** | `DELETE /board/comments/:id`(모더레이션) · `GET /board/comments/:id/evidence`(증빙 열람) |
+| **인증** | `POST /auth/login` · `POST /auth/logout` · `GET /auth/me` · `POST /auth/password` · `GET/POST /auth/users` · `PATCH /auth/users/:id` · `POST /auth/users/:id/password-reset` |
+| 웹훅(HMAC 서명) | `POST /webhooks/groupware/ack` |
+| 기타 | `GET /departments` · `GET /dashboard` (SLA·리마인드 요약) · `GET /api/health`(무인증) |
+
+> **위 표에서 "무인증"·"웹훅"으로 표시된 것을 제외한 전 엔드포인트는 관리자 로그인이 필요합니다**(미인증 시 401).
+> 상태변경 요청(POST/PATCH/DELETE)에는 `X-CSRF-Token` 헤더가 필요합니다 — 값은 로그인 시 내려오는 `adv_csrf` 쿠키에 있습니다.
 
 대화형 문서: 서버 실행 후 **http://localhost:8000/docs** (Swagger).
 
 ## 화면 두 갈래 — 관리자 / 내부 게시판
 
-- **`/admin`** — 기존 SPA. 관제 인원이 권고문 업로드·CVE 추출·자산 매칭·발송·조치추적을 수행.
+- **`/admin`** — 기존 SPA. 관제 인원이 권고문 업로드·CVE 추출·자산 매칭·발송·조치추적을 수행. **로그인 필요**(미인증 시 로그인 화면으로 이동).
   - **발송 이력 탭** — 권고문별 마스터/디테일(부서별 조치현황·신규 댓글 배지·조치불가 사유·보고서 모달·리마인드).
   - **`/admin/history`** — 발송이력·조치관리 **독립 콘솔**(권고문별/부서별 피벗 · 발송 문구 프리셋 · 미회신 부서 재발송). 발송 이력 탭의 "조치관리 콘솔 ↗"로 연결.
 - **`/board`** — 사내 누구나(무인증) 들어와 **공개된 보안권고문을 게시글처럼 열람하고 댓글로 회신**하는 내부 게시판. 루트 `/` 는 게시판으로 이동.
@@ -124,6 +135,50 @@ advisory-platform/
   - 상세에서 **원문 PDF 열람**(새 탭 / 인라인).
   - 댓글은 **부서(검색 드롭다운 / 직접입력) + 이름**으로 작성. **조치상태(완료/진행중/불가)** 를 첨부하면 해당 부서의 발송 **ack 로 자동 동기화**(자유 댓글 + 공식 회신 겸용).
   - 외부 그룹웨어 연동 없이 **이 시스템 자체가 게시판** 역할(폐쇄망 내부 공유).
+
+## 관리자 로그인 · 파일 접근통제
+
+### 최초 기동
+
+1. 서버를 처음 띄우면 **관리자 계정이 자동 생성**되고 콘솔에 출력됩니다.
+   `.env` 에 `ADVISORY_BOOTSTRAP_PASSWORD` 를 넣지 않았다면 **무작위 비밀번호가 이 화면에만 1회 표시**되므로,
+   `start.bat` 창을 닫기 전에 받아 적으세요. (코드베이스에 기본 비밀번호를 두지 않기 위한 설계입니다.)
+   ```
+   [auth] 초기 관리자 계정 생성: admin
+   [auth] 초기 비밀번호(이 화면에만 1회 표시): xxxxxxxxxxxx
+   ```
+2. `/admin` 접속 → 로그인 → **비밀번호 변경이 강제**됩니다(변경 전에는 어떤 관리자 기능도 쓸 수 없습니다).
+3. 이후 계정 추가·비활성화·비밀번호 초기화는 관리자 화면에서 할 수 있습니다.
+
+비밀번호를 분실했다면 `.env` 의 `ADVISORY_BOOTSTRAP_ADMIN` 계정을 DB 에서 지우고 재기동하면 다시 발급됩니다.
+
+### 무엇이 열려 있고 무엇이 닫혀 있나
+
+| 대상 | 접근 |
+|---|---|
+| 내부 게시판(`/board`, 열람·댓글·조치회신·증빙 **업로드**) | **무인증** — 기존 설계 유지 |
+| 관리자 화면(`/admin`, `/admin/history`)과 그 API 전부 | 로그인 필요 |
+| 댓글 **삭제**, 댓글 증빙 **열람** | 로그인 필요(게시판 화면에서 증빙은 원래 숨겨져 있었습니다) |
+| 그룹웨어 ack 웹훅 | HMAC 서명(`ADVISORY_WEBHOOK_SECRET`). 시크릿 미설정 시 503 |
+
+로그인 실패 5회 시 15분 계정 잠금, 세션은 12시간(유휴 60분) 후 만료됩니다.
+
+### 업로드 파일 접근통제 (Windows)
+
+업로드물(`data/uploads`, `data/evidence`, `data/feeds`, `data/assets`)은 정적 서빙 경로 밖에 있으며,
+**API 를 통해서만** 나갑니다. 그중 증빙 파일은 관리자 인증이 있어야 열람됩니다.
+`ADVISORY_DATA_DIR` 이 `web/` 안을 가리키면 업로드물이 통째로 노출되므로 **기동이 거부**됩니다.
+
+디스크 레벨에서는 최초 기동 시 `data` 폴더에 **NTFS ACL** 을 적용합니다(상속 제거 + SYSTEM·Administrators·구동 계정만 허용).
+폴더를 옮겼거나 백업에서 복원했거나 구동 계정이 바뀌었다면 `scripts\harden_data_acl.bat` 로 다시 적용하세요.
+적용 상태는 `icacls data` 로 확인할 수 있습니다 — `BUILTIN\Users` 항목이 없어야 정상입니다.
+
+> **한계 — 반드시 알고 계셔야 합니다.**
+> 운영자 계정으로 `start.bat` 을 직접 실행하는 구성에서 이 ACL 은 **일반 사용자와 네트워크 공유 접근을 차단**합니다.
+> 그러나 **같은 PC 의 다른 로컬 관리자는 소유권을 획득해 여전히 파일을 읽을 수 있습니다.**
+> 그 이상이 필요하면 (a) 전용 저권한 서비스 계정으로 구동하고 ACL 을 그 계정으로 좁히거나,
+> (b) EFS/앱단 암호화를 도입해야 합니다. 현재 범위에는 포함돼 있지 않습니다.
+> 또한 `data/advisory.db` 자체는 암호화돼 있지 않으므로, 백업본을 옮길 때는 백업 매체 쪽 보호가 필요합니다.
 
 ## 두 개의 서버측 게이트(명세 §2.2 — 프론트 검증에 의존하지 않음)
 
@@ -163,11 +218,17 @@ PDF 표 추출 등에서 흔한 띄어쓰기·구분자 변형(`CVE 2026 21345`,
 
 ## 폐쇄망 배포 시 체크리스트(명세 §7)
 
-- [x] **완료** — React·ReactDOM·Pretendard·Babel 모두 `web/vendor/`(동일 출처)에서만 로드. 외부 CDN(unpkg) 폴백 제거 →
+- [x] **완료** — React·ReactDOM·Pretendard·Babel 모두 `web/public/vendor/`(동일 출처)에서만 로드. 외부 CDN(unpkg) 폴백 제거 →
       `support.js` 가 어떤 경우에도 외부망으로 나가지 않음(외부 요청 0건).
 - [x] **완료** — 의존성 설치를 오프라인 휠(`vendor/wheels`)로 전환. `start.sh`/`start.bat` 는 `--no-index` 로만 설치하며
       기본 경로에서 PyPI/인터넷에 접속하지 않음. 휠 수집은 온라인 PC에서 `scripts/prepare_offline.*` 한 번.
 - [ ] 운영 시작 전 `data/` 백업 또는 초기화 후 `ADVISORY_SEED=false` 로 기동.
+- [ ] **최초 기동 콘솔에 출력된 초기 관리자 비밀번호를 확보하고, 로그인 후 즉시 변경**(변경 전에는 기능이 잠깁니다).
+- [ ] **`icacls data` 로 접근 제한 확인** — `BUILTIN\Users` 항목이 없어야 함. 없으면 `scripts\harden_data_acl.bat` 실행.
+      다른 표준 사용자 계정으로 `type data\evidence\*` 가 거부되는지 실제로 확인해 보면 확실합니다.
+- [ ] `ADVISORY_DATA_DIR` 을 앱 폴더 밖 절대경로(예: `C:\advisory-platform-data`)로 두면 ACL 관리가 더 단순합니다.
+- [ ] `ADVISORY_CORS_ORIGINS` 는 비워 둘 것(동일 출처 전용). 쿠키 인증과 `*` 는 함께 쓸 수 없어 기동이 거부됩니다.
+- [ ] 그룹웨어 ack 웹훅을 쓴다면 `ADVISORY_WEBHOOK_SECRET` 설정 — 미설정 시 해당 엔드포인트는 503 으로 닫힙니다.
 - [ ] SMTP 환경변수 설정 후 관리자 화면의 테스트 메일로 발송 확인.
 - [ ] CVE 피드와 자산대장은 실제 파일을 화면에서 검증 후 적용.
 
