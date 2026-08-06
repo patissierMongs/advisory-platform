@@ -60,6 +60,14 @@ with TestClient(app) as c:
     anon = TestClient(app)     # 익명 대조군(게이트가 실제로 닫혔는지 확인)
     check("무인증 관리자 API 거부", anon.get("/api/v1/dashboard").status_code == 401)
     check("무인증 게시판 열람 유지", anon.get("/api/v1/board/advisories").status_code == 200)
+    _shell = anon.get("/admin", follow_redirects=False)
+    check("무인증 관리자 화면 → 로그인",
+          _shell.status_code == 303 and _shell.headers["location"].startswith("/ui/login.html"),
+          _shell.status_code)
+    check("관리자 HTML 은 정적 마운트에 없음",
+          anon.get("/ui/app.dc.html").status_code == 404)
+    check("공개 자산은 그대로 서빙",
+          anon.get("/ui/board.html").status_code == 200 and anon.get("/ui/login.html").status_code == 200)
 
     from sqlalchemy import select as _select  # noqa: E402
     from app.db import SessionLocal as _SL  # noqa: E402

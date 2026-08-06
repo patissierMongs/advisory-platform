@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- 오프라인 번들: React 를 로컬에서 먼저 로드 → support.js 가 CDN fetch 를 건너뜀(폐쇄망). -->
-<script src="./vendor/react.production.min.js"></script>
-<script src="./vendor/react-dom.production.min.js"></script>
-<script src="./support.js"></script>
+<script src="/ui/vendor/react.production.min.js"></script>
+<script src="/ui/vendor/react-dom.production.min.js"></script>
+<script src="/ui/support.js"></script>
 </head>
 <body>
 <x-dc>
 <helmet>
-  <link rel="stylesheet" href="./vendor/pretendard.css">
+  <link rel="stylesheet" href="/ui/vendor/pretendard.css">
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
@@ -71,11 +71,12 @@
           <span style="font-size:12px; color:#43536b; font-weight:600;">로컬 처리 · 오프라인</span>
         </div>
         <div style="display:flex; align-items:center; gap:9px;">
-          <div style="width:32px; height:32px; border-radius:50%; background:#0f766e; color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700;">관제</div>
+          <div style="width:32px; height:32px; border-radius:50%; background:#0f766e; color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700;">{{ meInitial }}</div>
           <div style="line-height:1.25;">
-            <div style="font-size:12.5px; font-weight:600; color:#2a3a52;">정보보호팀 · 관제</div>
-            <div style="font-size:11px; color:#94a1b4;">보안관제 담당</div>
+            <div style="font-size:12.5px; font-weight:600; color:#2a3a52;">{{ meName }}</div>
+            <div style="font-size:11px; color:#94a1b4;">{{ meRole }}</div>
           </div>
+          <button onClick="{{ onLogout }}" title="로그아웃" style="margin-left:4px; font-family:inherit; font-size:11.5px; font-weight:600; color:#5a6b86; background:#fff; border:1px solid #d3dbe8; border-radius:7px; padding:6px 10px; cursor:pointer;">로그아웃</button>
         </div>
       </div>
     </header>
@@ -1336,8 +1337,16 @@
 </div>
 </x-dc>
 <script type="text/x-dc" data-dc-script>
+// CSRF 토큰은 HttpOnly 가 아닌 쿠키로 내려온다(서버가 세션 행의 값과 대조하므로
+// 읽히는 것만으로는 위조에 쓸 수 없다).
+function readCookie(name) {
+  const hit = document.cookie.split('; ').find(c => c.startsWith(name + '='));
+  return hit ? decodeURIComponent(hit.slice(name.length + 1)) : '';
+}
+
 class Component extends DCLogic {
   state = {
+    me: null,              // GET /auth/me — 헤더의 현재 계정 표시
     nav: 'process',
     procView: 'board',     // 권고문 처리: 'board'(통합 목록) | 'detail'(권고문별 처리)
     detailId: null,        // 상세 처리 중인 권고문 id
@@ -1405,12 +1414,34 @@ class Component extends DCLogic {
 
   // ════════ 백엔드 API 연동 ════════
   api(method, path, body, isForm) {
-    const opt = { method, headers: {} };
+    const opt = { method, headers: {}, credentials: 'same-origin' };
     if (body && isForm) opt.body = body;
     else if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+    // 상태변경 요청에는 CSRF 토큰을 실어야 한다(서버가 세션의 값과 대조).
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].indexOf((method || '').toUpperCase()) >= 0) {
+      opt.headers['X-CSRF-Token'] = readCookie('adv_csrf');
+    }
     // 실패 시 서버 detail(JSON)을 파싱해 에러 객체에 실어 준다 — 게이트 409 등 구체 사유를 토스트로 표시.
     return fetch('/api/v1' + path, opt).then(r => {
       if (r.ok) return r.json().catch(() => ({}));
+      // 세션 만료/강제 변경은 화면 전환이 정답이다. 해결되지 않는 Promise 를 돌려주는 이유:
+      // 폴링 타이머(_startPolling)가 리다이렉트 도중 계속 돌면서 토스트를 쏟아내는 걸 막는다.
+      if (r.status === 401) {
+        location.href = '/ui/login.html?next=' + encodeURIComponent(location.pathname);
+        return new Promise(() => {});
+      }
+      if (r.status === 403) {
+        return r.json().catch(() => ({})).then(j => {
+          if (j && j.detail && j.detail.code === 'PASSWORD_CHANGE_REQUIRED') {
+            location.href = '/ui/login.html?change=1';
+            return new Promise(() => {});
+          }
+          const err = new Error((j.detail && (j.detail.message || j.detail)) || 'HTTP 403');
+          err.status = 403;
+          err.detail = j.detail;
+          return Promise.reject(err);
+        });
+      }
       return r.json().catch(() => ({})).then(j => {
         const d = j && j.detail;
         const err = new Error((d && (d.message || d)) || ('HTTP ' + r.status));
@@ -1426,8 +1457,23 @@ class Component extends DCLogic {
   componentDidMount() {
     this._prev = { sent: {}, excluded: {}, step: this.state.step };
     this._busy = {};
+    this.loadMe();
     this.load();
     this._startPolling();
+  }
+
+  // 헤더에 표시할 현재 로그인 계정. 실패는 무시한다 — 세션이 끊겼으면 어차피
+  // 다음 api() 호출에서 401 을 받고 로그인 화면으로 넘어간다.
+  loadMe() {
+    this.api('GET', '/auth/me')
+      .then(d => this.setState({ me: (d && d.user) || null }))
+      .catch(() => {});
+  }
+
+  logout() {
+    this.api('POST', '/auth/logout')
+      .catch(() => {})
+      .then(() => { location.href = '/ui/login.html'; });
   }
 
   componentWillUnmount() {
@@ -3054,6 +3100,12 @@ class Component extends DCLogic {
       navProcess: S.nav === 'process', navCvedb: S.nav === 'cvedb', navAssets: S.nav === 'assets',
       navHistory: S.nav === 'history', navDashboard: S.nav === 'dashboard',
       pageTitle: pg[0], pageSub: pg[1],
+
+      // 로그인 계정 표시 + 로그아웃 (하드코딩된 '정보보호팀 · 관제' 자리)
+      meName: (S.me && S.me.display_name) || '—',
+      meRole: (S.me && S.me.username) ? ('@' + S.me.username) : '',
+      meInitial: (S.me && S.me.display_name) ? S.me.display_name.trim().slice(0, 2) : '··',
+      onLogout: () => this.logout(),
 
       // 권고문 처리: 게시판(목록) ↔ 권고문별 상세
       procBoard: S.nav === 'process' && S.procView !== 'detail',

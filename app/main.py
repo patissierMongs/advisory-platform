@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from urllib.parse import quote
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
 
-from .config import WEB_DIR, settings
-from .db import SessionLocal, init_db
+from .config import ADMIN_WEB_DIR, PUBLIC_WEB_DIR, settings
+from .db import SessionLocal, get_db, init_db
+from .enums import UserRole
 from .routers import (
     advisories, assets, audit, auth, board, cve_feeds, cves, dashboard, departments, history,
     matches, notifications, remediation, webhooks,
@@ -173,9 +176,11 @@ def favicon():
     return Response(status_code=204)
 
 
-# 프론트엔드(DC SPA) 정적 서빙. 동일 출처에서 /api/v1 호출.
-if WEB_DIR.exists():
-    app.mount("/ui", StaticFiles(directory=str(WEB_DIR), html=True), name="ui")
+# 정적 서빙은 공개 자산(web/public)만. 관리자 셸(web/admin)은 마운트하지 않는다 —
+# StaticFiles 는 라우터 게이트를 통째로 우회하고, Windows 파일시스템은 대소문자를
+# 구분하지 않아 /ui/APP.DC.HTML 같은 우회까지 가능하다. 아예 도달 경로를 없앤다.
+if PUBLIC_WEB_DIR.exists():
+    app.mount("/ui", StaticFiles(directory=str(PUBLIC_WEB_DIR), html=True), name="ui")
 
 
 @app.get("/")
@@ -189,12 +194,33 @@ def board_page():
     return RedirectResponse(url="/ui/board.html")
 
 
+def _admin_shell(request: Request, db: Session, filename: str):
+    """세션 확인 후 관리자 HTML 을 직접 서빙. 미인증이면 로그인 화면으로.
+
+    Depends 로는 리다이렉트를 반환할 수 없어(예외 핸들러가 필요) 라우트 본문에서 검사한다.
+    """
+    from .auth import resolve_session
+
+    resolved = resolve_session(db, request)
+    if resolved is None:
+        nxt = quote(request.url.path, safe="/")
+        return RedirectResponse(url=f"/ui/login.html?next={nxt}", status_code=303)
+    user, _ = resolved
+    if user.role != UserRole.ADMIN:
+        return RedirectResponse(url="/board", status_code=303)
+    if user.must_change_password:
+        return RedirectResponse(url="/ui/login.html?change=1", status_code=303)
+    return FileResponse(ADMIN_WEB_DIR / filename, media_type="text/html; charset=utf-8",
+                        headers={"Cache-Control": "no-store",
+                                 "X-Content-Type-Options": "nosniff"})
+
+
 @app.get("/admin")
-def admin_page():
-    return RedirectResponse(url="/ui/app.dc.html")
+def admin_page(request: Request, db: Session = Depends(get_db)):
+    return _admin_shell(request, db, "app.dc.html")
 
 
 @app.get("/admin/history")
-def admin_history_page():
+def admin_history_page(request: Request, db: Session = Depends(get_db)):
     # 발송이력·조치관리 콘솔(마스터-디테일). 기존 관리자 SPA 와 분리된 독립 페이지.
-    return RedirectResponse(url="/ui/history.html")
+    return _admin_shell(request, db, "history.html")

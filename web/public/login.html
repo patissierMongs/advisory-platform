@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>관리자 로그인 — 보안권고문 처리 시스템</title>
+<link rel="stylesheet" href="/ui/vendor/pretendard.css">
+<style>
+  /* board.html 과 동일한 하우스 스타일(빌드 스텝 없음, React 미사용). */
+  :root{
+    --bg:#f4f6fa; --card:#fff; --ink:#15294a; --sub:#7a889c; --line:#e3e9f2;
+    --brand:#2f5bd0; --brand-d:#21408f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+    font-size:14px;line-height:1.5;min-height:100vh;
+    display:flex;align-items:center;justify-content:center;padding:24px}
+  a{color:inherit;text-decoration:none}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:28px 26px;width:100%;max-width:380px;box-shadow:0 3px 18px rgba(20,41,74,.06)}
+  h1{font-size:17px;margin:0 0 4px;font-weight:800;letter-spacing:-.3px}
+  .lead{font-size:12.5px;color:var(--sub);margin:0 0 20px}
+  label.f{display:block;font-size:12px;font-weight:700;color:#4a5568;margin:14px 0 5px}
+  input{width:100%;font-family:inherit;font-size:13.5px;color:var(--ink);
+    border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#fcfdff;outline:none}
+  input:focus{border-color:var(--brand)}
+  .btn{background:var(--brand);color:#fff;border:none;border-radius:9px;padding:11px 16px;
+    font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;width:100%;margin-top:20px}
+  .btn:hover{background:var(--brand-d)} .btn:disabled{opacity:.5;cursor:default}
+  .err{background:#fdecec;color:#c0392b;font-size:12.5px;font-weight:600;
+    border-radius:8px;padding:9px 11px;margin-top:14px;display:none;white-space:pre-line}
+  .err.show{display:block}
+  .hint{font-size:11.5px;color:var(--sub);margin-top:16px;text-align:center}
+  .hint a:hover{color:var(--brand)}
+  .notice{background:#fcf6e3;color:#9a7d12;font-size:12.5px;border-radius:8px;
+    padding:10px 12px;margin-bottom:4px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1 id="title">관리자 로그인</h1>
+  <p class="lead" id="lead">보안권고문 처리 시스템</p>
+  <div class="notice" id="notice" style="display:none"></div>
+
+  <form id="form" autocomplete="on">
+    <div id="fields"></div>
+    <button class="btn" type="submit" id="submit">로그인</button>
+  </form>
+
+  <div class="err" id="err"></div>
+  <p class="hint"><a href="/board">← 사내 게시판으로</a></p>
+</div>
+
+<script>
+const API = "/api/v1/auth";
+const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+
+// 오픈 리다이렉트 차단 — 로그인 후 이동은 관리자 화면 안으로만 허용한다.
+function safeNext(){
+  const n = params.get("next") || "";
+  return /^\/admin(\/|$)/.test(n) ? n : "/admin";
+}
+
+let MODE = params.get("change") === "1" ? "change" : "login";
+let CURRENT_PW = "";     // 강제 변경 단계로 넘어올 때 방금 입력한 비밀번호를 이어받는다
+
+const FIELDS = {
+  login: `
+    <label class="f" for="username">아이디</label>
+    <input id="username" name="username" autocomplete="username" autofocus required>
+    <label class="f" for="password">비밀번호</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>`,
+  change: `
+    <label class="f" for="current">현재 비밀번호</label>
+    <input id="current" type="password" autocomplete="current-password" required>
+    <label class="f" for="next1">새 비밀번호</label>
+    <input id="next1" type="password" autocomplete="new-password" required autofocus>
+    <label class="f" for="next2">새 비밀번호 확인</label>
+    <input id="next2" type="password" autocomplete="new-password" required>`,
+};
+
+function render(){
+  const change = MODE === "change";
+  $("title").textContent = change ? "비밀번호 변경" : "관리자 로그인";
+  $("lead").textContent = change
+    ? "최초 로그인입니다. 새 비밀번호를 설정해야 계속할 수 있습니다."
+    : "보안권고문 처리 시스템";
+  $("fields").innerHTML = FIELDS[MODE];
+  $("submit").textContent = change ? "변경하고 계속" : "로그인";
+  if (change && CURRENT_PW) $("current").value = CURRENT_PW;
+  hideErr();
+}
+
+function showErr(msg){ $("err").textContent = msg; $("err").classList.add("show"); }
+function hideErr(){ $("err").classList.remove("show"); }
+
+function notice(msg){
+  const n = $("notice");
+  n.textContent = msg;
+  n.style.display = msg ? "block" : "none";
+}
+
+function readCookie(name){
+  const hit = document.cookie.split("; ").find(c => c.startsWith(name + "="));
+  return hit ? decodeURIComponent(hit.slice(name.length + 1)) : "";
+}
+
+async function post(path, body, csrf){
+  const headers = {"Content-Type": "application/json"};
+  if (csrf) headers["X-CSRF-Token"] = csrf;
+  const r = await fetch(API + path, {
+    method: "POST", headers, body: JSON.stringify(body), credentials: "same-origin",
+  });
+  let data = null;
+  try { data = await r.json(); } catch (e) { /* 204 등 */ }
+  if (!r.ok){
+    const d = data && data.detail;
+    const err = new Error((d && (d.message || d)) || ("요청 실패 (" + r.status + ")"));
+    err.status = r.status;
+    err.code = d && d.code;
+    err.retryAfter = d && d.retry_after_seconds;
+    throw err;
+  }
+  return data;
+}
+
+async function doLogin(){
+  const username = $("username").value.trim();
+  const password = $("password").value;
+  const res = await post("/login", {username, password});
+  if (res.must_change_password){
+    CURRENT_PW = password;
+    MODE = "change";
+    render();
+    notice("보안을 위해 최초 비밀번호를 변경해야 합니다.");
+    return;
+  }
+  location.replace(safeNext());
+}
+
+async function doChange(){
+  const current = $("current").value;
+  const next1 = $("next1").value;
+  const next2 = $("next2").value;
+  if (next1 !== next2) throw new Error("새 비밀번호가 서로 다릅니다.");
+  if (next1.length < 10) throw new Error("비밀번호는 10자 이상이어야 합니다.");
+  // 서버가 최종 권위 — 위 검사는 왕복 한 번을 아끼는 용도다.
+  await post("/password", {current_password: current, new_password: next1},
+             readCookie("adv_csrf"));
+  location.replace(safeNext());
+}
+
+$("form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  hideErr();
+  $("submit").disabled = true;
+  try {
+    await (MODE === "change" ? doChange() : doLogin());
+  } catch (e) {
+    if (e.status === 423 && e.retryAfter){
+      showErr("계정이 잠겼습니다. 약 " + Math.ceil(e.retryAfter / 60) + "분 후 다시 시도하세요.");
+    } else if (e.code === "WRONG_PASSWORD" && MODE === "change"){
+      showErr("현재 비밀번호가 올바르지 않습니다.");
+      CURRENT_PW = "";
+      $("current").value = "";
+    } else {
+      showErr(e.message || "요청에 실패했습니다.");
+    }
+  } finally {
+    $("submit").disabled = false;
+  }
+});
+
+// 강제 변경 화면으로 바로 들어온 경우(세션은 있으나 변경 미완료) 안내를 띄운다.
+if (MODE === "change") notice("보안을 위해 비밀번호를 변경해야 합니다.");
+render();
+
+// 이미 로그인돼 있고 변경도 끝났다면 로그인 화면에 머무를 이유가 없다.
+fetch(API + "/me", {credentials: "same-origin"}).then(r => r.ok ? r.json() : null).then(d => {
+  if (d && !d.must_change_password && MODE !== "change") location.replace(safeNext());
+}).catch(() => {});
+</script>
+</body>
+</html>

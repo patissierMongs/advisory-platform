@@ -14,6 +14,9 @@ from app.main import app
 
 # 무인증으로 열려 있어야 하는 경로 — 이 목록에 없으면 전부 인증을 요구해야 한다.
 # 게시판(/api/v1/board/*)은 사내 누구나 쓰는 공개 표면이라는 의도된 설계다.
+# 주의: /admin·/admin/history 는 무인증 접근이 허용된다는 뜻이 아니라, 401 대신
+# 로그인 화면으로 303 하기 때문에 401 전수 검사에서 빼는 것이다(사람이 보는 화면이므로
+# JSON 401 보다 리다이렉트가 옳다). 실제 게이트는 아래 셸 테스트가 확인한다.
 PUBLIC_EXACT = {
     "/", "/board", "/admin", "/admin/history", "/api/health", "/favicon.ico",
     "/api/v1/auth/login",
@@ -89,6 +92,62 @@ def test_public_board_routes_stay_anonymous(public_client, method, path):
 
 def test_health_open_anonymously(public_client):
     assert public_client.get("/api/health").json()["status"] == "ok"
+
+
+# ── 관리자 정적 셸 ────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("path", ["/admin", "/admin/history"])
+def test_admin_shell_redirects_anonymous_to_login(public_client, path):
+    r = public_client.get(path, follow_redirects=False)
+    assert r.status_code == 303, r.status_code
+    assert r.headers["location"].startswith("/ui/login.html?next=")
+    assert path in r.headers["location"]
+
+
+@pytest.mark.parametrize("path", ["/admin", "/admin/history"])
+def test_admin_shell_served_to_logged_in_admin(client, path):
+    r = client.get(path)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    assert r.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize("path", [
+    "/ui/app.dc.html", "/ui/history.html",
+    "/ui/APP.DC.HTML",            # Windows 는 파일시스템이 대소문자를 구분하지 않는다
+    "/ui/./app.dc.html", "/ui//app.dc.html",
+])
+def test_admin_html_unreachable_through_static_mount(public_client, path):
+    """정적 마운트에는 관리자 HTML 이 아예 없다 — 경로 매칭 우회 자체가 성립하지 않는다."""
+    r = public_client.get(path, follow_redirects=False)
+    assert r.status_code == 404, f"{path} → {r.status_code}"
+
+
+@pytest.mark.parametrize("path", ["/ui/board.html", "/ui/login.html", "/ui/support.js"])
+def test_public_assets_still_served(public_client, path):
+    assert public_client.get(path).status_code == 200
+
+
+def test_admin_shell_sends_forced_change_user_to_password_screen(client):
+    """강제 변경 중인 관리자는 SPA 셸이 아니라 비밀번호 변경 화면으로 가야 한다."""
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import AppUser
+
+    with SessionLocal() as db:
+        user = db.scalar(select(AppUser).where(AppUser.username == "testadmin"))
+        user.must_change_password = True
+        db.commit()
+    try:
+        r = client.get("/admin", follow_redirects=False)
+        assert r.status_code == 303
+        assert r.headers["location"] == "/ui/login.html?change=1"
+    finally:
+        with SessionLocal() as db:
+            db.scalar(select(AppUser).where(AppUser.username == "testadmin")
+                      ).must_change_password = False
+            db.commit()
 
 
 # ── 게시판 공개/비공개 경계의 실제 동작 ─────────────────────────────────────────
