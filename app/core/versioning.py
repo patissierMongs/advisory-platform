@@ -121,7 +121,12 @@ def version_matches(asset_version: str | None, rule) -> tuple[bool, bool]:
       {"lt":"124"}               미만
       {"lte"/"gt"/"gte":...}     비교(확장)
       {"range":["DC2019","DC2023"]}  경계 포함 범위
+      {"any":[규칙, 규칙, ...]}   하위 규칙 중 하나라도 해당(OR)
       "*" | [] | None            전체(제품 키만 일치하면 매칭)
+
+    any 는 한 제품에 영향 범위가 여럿인 권고문 표를 담는다(§표 추출):
+      "8.1.0 이상 8.1.2 미만" 과 "8.0.0 이상 8.0.3 미만" 이 같은 제품에 붙는 경우.
+      리스트로 담으면 '정확 버전 열거'로 해석돼 조용히 오판하므로 별도 형식이 필요하다.
 
     반환: (matched, is_candidate)
       is_candidate=True 는 '비교 불가로 사람 검토 필요'한 보수적 후보.
@@ -156,6 +161,18 @@ def version_matches(asset_version: str | None, rule) -> tuple[bool, bool]:
 
     if isinstance(rule, dict):
         try:
+            # OR — 하위 규칙 중 하나라도 확정 매칭이면 확정. 확정이 없고 후보만 있으면 후보.
+            # (보수적 후보가 확정 매칭을 가리지 않게 확정을 우선한다.)
+            if "any" in rule:
+                subs = rule["any"]
+                if not isinstance(subs, (list, tuple)) or not subs:
+                    return True, True          # 형태가 깨진 규칙 → 보수적 후보
+                results = [version_matches(asset_version, s) for s in subs]
+                if any(m and not c for m, c in results):
+                    return True, False
+                if any(m for m, _ in results):
+                    return True, True
+                return False, False
             if "range" in rule and isinstance(rule["range"], (list, tuple)) and len(rule["range"]) == 2:
                 lo, hi = rule["range"]
                 lo_m, lo_c = _eval_op("gte", av, str(lo))   # 경계 포함
