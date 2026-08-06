@@ -1,6 +1,7 @@
 """DB 엔진/세션 — SQLite(기본) 및 PostgreSQL 공용."""
 from __future__ import annotations
 
+import os
 from collections.abc import Generator
 
 from sqlalchemy import create_engine, event
@@ -51,6 +52,21 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     _ensure_sqlite_columns()
+    _restrict_sqlite_file()
+
+
+def _restrict_sqlite_file() -> None:
+    """DB 파일(+WAL/SHM)을 소유자 전용으로. Windows 는 DATA_DIR 의 NTFS ACL 상속이 담당한다."""
+    if not _is_sqlite or os.name != "posix":
+        return
+    path = settings.DATABASE_URL.split("sqlite:///", 1)[-1]
+    if not path or path == ":memory:":
+        return
+    for suffix in ("", "-wal", "-shm"):
+        try:
+            os.chmod(path + suffix, 0o600)
+        except OSError:
+            pass  # 아직 없거나(WAL 미생성) 권한 부족 — 치명적이지 않다
 
 
 # 신규 컬럼을 기존 SQLite DB 에 무손실 추가(create_all 은 ALTER 안 함). 운영(Postgres)은 정식 마이그레이션 사용.
@@ -58,7 +74,8 @@ _ADDED_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "asset": [("owner_team", "VARCHAR(120)"), ("owner_contact", "VARCHAR(120)")],
     "advisory": [("extract_phase", "VARCHAR(20)"), ("error_message", "TEXT"),
                  ("board_published_at", "DATETIME"),
-                 ("due_source", "VARCHAR(10)"), ("channel_source", "VARCHAR(10)")],
+                 ("due_source", "VARCHAR(10)"), ("channel_source", "VARCHAR(10)"),
+                 ("table_status", "VARCHAR(20)")],
     "advisory_comment": [("evidence_path", "TEXT"), ("evidence_name", "VARCHAR(200)")],
     "match": [("ack_status", "VARCHAR(20) DEFAULT 'NONE' NOT NULL"), ("ack_by", "VARCHAR(80)"),
               ("ack_note", "TEXT"), ("ack_at", "DATETIME")],
@@ -67,6 +84,13 @@ _ADDED_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "cve": [("affected_products", "JSON")],
     # §개편 후속 — 피드 적용 실패 사유 기록(이력 오표시 방지)
     "cve_feed_import": [("error_message", "TEXT")],
+    # §관리자 로그인 — 자격증명. SQLite 는 리터럴 기본값 없는 NOT NULL 을 ADD COLUMN 못 한다.
+    "app_user": [("password_hash", "TEXT"),
+                 ("must_change_password", "BOOLEAN DEFAULT 0 NOT NULL"),
+                 ("failed_count", "INTEGER DEFAULT 0 NOT NULL"),
+                 ("locked_until", "DATETIME"),
+                 ("last_login_at", "DATETIME"),
+                 ("password_changed_at", "DATETIME")],
 }
 
 

@@ -11,7 +11,9 @@
 """
 from __future__ import annotations
 
-from app.core.product_extract import extract_products
+import pytest
+
+from app.core.product_extract import _scan_window, extract_products
 from app.core.versioning import version_matches
 
 
@@ -108,3 +110,99 @@ def test_bare_from_phrase_is_gte_not_range():
     assert p["affected_versions"] == {"gte": "1.20.0"}
     assert version_matches("1.25.0", p["affected_versions"]) == (True, False)
     assert version_matches("1.19.0", p["affected_versions"]) == (False, False)
+
+
+# ── D4: 한 제품에 영향 범위가 여럿인 표(any 규칙) ──────────────────────────────
+#
+# 권고문 표는 같은 제품에 범위를 여러 줄로 적는다:
+#   | CVE-2026-8461 | FFmpeg | 8.1.0 이상 8.1.2 미만 | 8.1.2 |
+#   | CVE-2026-8461 | FFmpeg | 8.0.0 이상 8.0.3 미만 | 8.1.3 |
+# AdvisoryProduct 는 (권고문, 제품키)당 1행이라 두 범위를 한 규칙에 담아야 하는데,
+# 리스트로 담으면 '정확 버전 열거'로 해석돼 취약 자산이 조용히 누락된다. any 가 그 형식이다.
+
+_FFMPEG = {"any": [{"gte": "8.1.0", "lt": "8.1.2", "fixed": "8.1.2"},
+                   {"gte": "8.0.0", "lt": "8.0.3", "fixed": "8.1.3"}]}
+
+
+def test_any_matches_each_branch():
+    assert version_matches("8.1.1", _FFMPEG) == (True, False)   # 첫 범위
+    assert version_matches("8.0.2", _FFMPEG) == (True, False)   # 둘째 범위
+
+
+def test_any_excludes_versions_outside_every_branch():
+    """어느 범위에도 안 들면 확정 미매칭 — 고친 버전을 취약으로 부르면 안 된다."""
+    assert version_matches("8.1.2", _FFMPEG) == (False, False)  # 첫 범위 상한(미만)
+    assert version_matches("8.0.3", _FFMPEG) == (False, False)  # 둘째 범위 상한
+    assert version_matches("7.9.0", _FFMPEG) == (False, False)
+    assert version_matches("9.0.0", _FFMPEG) == (False, False)
+
+
+def test_any_prefers_confirmed_match_over_candidate():
+    """확정 매칭이 있으면 다른 가지의 '비교 불가 후보' 가 그것을 가리면 안 된다."""
+    rule = {"any": [{"lt": "알수없음"}, {"gte": "1.0", "lt": "2.0"}]}
+    assert version_matches("1.5", rule) == (True, False)
+
+
+def test_any_falls_back_to_candidate_when_no_branch_is_certain():
+    """확정이 하나도 없고 비교 불가만 있으면 사람 검토 후보로 남긴다(조용히 버리지 않는다)."""
+    rule = {"any": [{"lt": "알수없음"}, {"gte": "해석불가"}]}
+    matched, candidate = version_matches("1.5", rule)
+    assert (matched, candidate) == (True, True)
+
+
+def test_any_with_unknown_asset_version_is_candidate():
+    """자산 버전 미상은 기존 규칙과 동일하게 보수적 후보."""
+    assert version_matches(None, _FFMPEG) == (True, True)
+    assert version_matches("", _FFMPEG) == (True, True)
+
+
+def test_malformed_any_is_conservative():
+    """형태가 깨진 any 로 취약 자산이 조용히 사라지면 안 된다."""
+    for bad in ({"any": []}, {"any": None}, {"any": "8.1.0"}):
+        assert version_matches("8.1.1", bad) == (True, True), bad
+
+
+def test_fixed_key_inside_subrule_is_ignored_by_matcher():
+    """하위 규칙의 fixed 는 표시용 메타 — 비교에 영향을 주면 안 된다."""
+    with_fixed = {"any": [{"gte": "8.1.0", "lt": "8.1.2", "fixed": "8.1.2"}]}
+    without = {"any": [{"gte": "8.1.0", "lt": "8.1.2"}]}
+    for v in ("8.1.0", "8.1.1", "8.1.2", "8.2.0"):
+        assert version_matches(v, with_fixed) == version_matches(v, without), v
+
+
+def test_existing_rule_forms_are_unaffected():
+    """any 도입이 기존 형식의 의미를 바꾸지 않는다(하위 호환)."""
+    assert version_matches("124.0", {"lte": "124"}) == (True, False)
+    assert version_matches("22H2", ["22H2", "23H2"]) == (True, False)
+    assert version_matches("DC2021", {"range": ["DC2019", "DC2023"]}) == (True, False)
+    assert version_matches("1.0", "*") == (True, False)
+
+
+# ── D5: 영문 범위가 열거로 저장되던 결함 ───────────────────────────────────────
+#
+# "8.1.0 to 8.1.2" 를 범위가 아니라 정확 버전 열거 ['8.1.0','8.1.2'] 로 저장하면
+# 경계 사이의 8.1.1 이 확정 미매칭이 된다. D3(한국어 '부터~까지')와 같은 계열의
+# 확신-미탐이며, 한국어 권고문에도 영문 표가 흔히 섞여 들어와 실제로 발생한다.
+
+@pytest.mark.parametrize("phrase", [
+    "8.1.0 to 8.1.2",
+    "8.1.0 through 8.1.2",
+    "8.1.0 thru 8.1.2",
+])
+def test_english_range_is_a_range_not_an_enumeration(phrase):
+    rule = _scan_window(phrase, 0, len(phrase))["rule"]
+    assert rule == {"range": ["8.1.0", "8.1.2"]}, rule
+    assert version_matches("8.1.1", rule) == (True, False), "범위 사이 버전이 누락됐다"
+
+
+def test_comma_list_stays_an_enumeration():
+    """쉼표 나열까지 범위로 오인하면 반대 방향 오탐이 생긴다."""
+    for phrase in ("22H2, 23H2", "8.1.2, 9.0.1"):
+        rule = _scan_window(phrase, 0, len(phrase))["rule"]
+        assert isinstance(rule, list), (phrase, rule)
+
+
+def test_to_without_following_version_is_not_a_range():
+    """'to' 뒤에 버전이 없으면 범위가 아니다('8.1.0 to be announced')."""
+    rule = _scan_window("8.1.0 to be announced", 0, 21)["rule"]
+    assert rule == ["8.1.0"], rule

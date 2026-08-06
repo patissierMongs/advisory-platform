@@ -98,7 +98,7 @@ def test_board_hides_comment_evidence_and_progress_is_asset_based(client, hist_i
                       json={"author_name": "박담당", "body": "조치했습니다",
                             "department_id": did, "ack_status": "DONE"}).json()["comment"]["id"]
     client.post(f"/api/v1/board/comments/{cid}/evidence",
-                files={"file": ("ev.png", b"x", "image/png")})
+                files={"file": ("ev.png", b"\x89PNG\r\n\x1a\nfake", "image/png")})
 
     detail = client.get(f"/api/v1/board/advisories/{aid}").json()
     # 상세 진행률은 자산 기준(매칭 0건 → total 0), 부서별 표/증빙은 게시판에서 제거.

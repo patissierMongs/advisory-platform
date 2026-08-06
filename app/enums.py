@@ -89,6 +89,7 @@ class ImportMode(str, enum.Enum):
 
 
 class UserRole(str, enum.Enum):
+    ADMIN = "ADMIN"      # 관리자 화면·API 접근 권한(로그인 가능한 유일한 역할)
     ANALYST = "ANALYST"
     VIEWER = "VIEWER"
     SYSTEM = "SYSTEM"

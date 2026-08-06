@@ -26,6 +26,53 @@ def safe_filename(name: str | None, default: str = "file") -> str:
 # inline 렌더가 안전한 증빙 확장자 — 그 외(html/svg/js 등)는 첨부 강제로 stored-XSS 차단.
 _INLINE_SAFE_EXT = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".txt", ".csv", ".log"}
 
+# 업로드 허용 확장자 — inline 안전 목록 + 사내에서 실제로 첨부하는 문서 형식.
+# disposition 으로 막는 것과 별개로 애초에 저장을 거부한다. .html/.svg/.js/.xhtml 은
+# 여기 없으므로 stored-XSS 벡터가 디스크에 남지 않는다.
+EVIDENCE_ALLOWED_EXT = _INLINE_SAFE_EXT | {
+    ".zip", ".xlsx", ".xls", ".docx", ".doc", ".pptx", ".ppt", ".hwp", ".hwpx",
+}
+
+# 확장자별 매직바이트. 클라이언트가 보낸 content_type 은 전적으로 공격자 통제라 쓰지 않는다.
+_MAGIC: dict[str, tuple[bytes, ...]] = {
+    ".pdf": (b"%PDF",),
+    ".png": (b"\x89PNG\r\n\x1a\n",),
+    ".jpg": (b"\xff\xd8\xff",),
+    ".jpeg": (b"\xff\xd8\xff",),
+    ".gif": (b"GIF87a", b"GIF89a"),
+    ".bmp": (b"BM",),
+    ".webp": (b"RIFF",),
+    # OOXML/HWPX 는 zip 컨테이너, 구형 hwp/doc/xls/ppt 는 OLE2 복합문서.
+    ".zip": (b"PK\x03\x04", b"PK\x05\x06"),
+    ".xlsx": (b"PK\x03\x04",),
+    ".docx": (b"PK\x03\x04",),
+    ".pptx": (b"PK\x03\x04",),
+    ".hwpx": (b"PK\x03\x04",),
+    ".hwp": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+    ".doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+    ".xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+    ".ppt": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+}
+
+
+def check_evidence_upload(filename: str | None, content: bytes) -> str:
+    """증빙 업로드 검증 — 통과 시 안전화된 표시용 파일명 반환, 아니면 HTTPException(415).
+
+    확장자 화이트리스트로 저장 자체를 막고, 매직바이트를 아는 형식은 내용까지 대조한다
+    (`evil.png` 안에 HTML 을 넣는 우회 차단).
+    """
+    from fastapi import HTTPException
+
+    name = safe_filename(filename, default="evidence")
+    ext = PurePosixPath(name.lower()).suffix
+    if ext not in EVIDENCE_ALLOWED_EXT:
+        allowed = ", ".join(sorted(EVIDENCE_ALLOWED_EXT))
+        raise HTTPException(415, f"허용되지 않는 파일 형식입니다. 허용: {allowed}")
+    magics = _MAGIC.get(ext)
+    if magics and not any(content.startswith(m) for m in magics):
+        raise HTTPException(415, f"파일 내용이 확장자({ext})와 일치하지 않습니다.")
+    return name
+
 
 def evidence_response(path: str, display_name: str | None):
     """증빙 파일 응답 — 안전한 타입만 inline, 나머지는 attachment. 항상 nosniff.

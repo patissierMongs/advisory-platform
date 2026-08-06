@@ -11,8 +11,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import enums
+from ..auth import require_admin
 from ..audit import record
-from ..config import UPLOAD_DIR, settings
+from ..config import UPLOAD_DIR, secure_write_bytes, settings
 from ..core import extract, product_extract
 from ..core.advisory_ops import (
     refresh_extracted_products,
@@ -38,7 +39,8 @@ from ..serializers import (
     advisory_product_item,
 )
 
-router = APIRouter(prefix="/api/v1", tags=["advisories"])
+router = APIRouter(prefix="/api/v1", tags=["advisories"],
+                   dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
 
 # 비동기 추출용 작업 풀 — 업로드/추출 응답을 막지 않고 백그라운드에서 진행(보드가 상태 폴링).
 _EXTRACT_POOL = ThreadPoolExecutor(max_workers=3, thread_name_prefix="extract")
@@ -87,7 +89,7 @@ async def upload_advisory(
 
     path = UPLOAD_DIR / f"{sha}.pdf"
     if not path.exists():
-        path.write_bytes(content)
+        secure_write_bytes(path, content)
     text, pages = extract.extract_text_from_pdf(str(path))
 
     # 조치기한(§8): 본문 추출 우선 → 폼 수동입력 → 미지정(관리자 입력 대기).
@@ -192,7 +194,12 @@ def extract_cves(advisory_id: int, request: Request, db: Session = Depends(get_d
 
 
 def _run_extract(advisory_id: int) -> None:
-    """백그라운드 추출 워커 — 자체 DB 세션. 단계별로 extract_phase 를 갱신·커밋해 보드가 본다."""
+    """백그라운드 추출 워커 — 자체 DB 세션. 단계별로 extract_phase 를 갱신·커밋해 보드가 본다.
+
+    주의: 스레드풀 워커에는 요청 ContextVar 가 전파되지 않는다. 여기서 get_actor_id() 를
+    부르면 로그인 사용자가 아니라 폴백(ANALYST)이 찍힌다 — 감사 기록이 필요하면
+    submit 시점에 actor_id 를 캡처해 인자로 넘길 것.
+    """
     db = None
     try:
         db = SessionLocal()  # try 내부에서 생성 → 세션 생성 실패도 failed 로 기록
@@ -681,7 +688,8 @@ def get_file(advisory_id: int, download: bool = Query(False), db: Session = Depe
     else:
         disp = "inline"
     return FileResponse(adv.file_path, media_type="application/pdf",
-                        headers={"Content-Disposition": disp})
+                        headers={"Content-Disposition": disp,
+                                 "X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/advisories/{advisory_id}/pdf-view")
@@ -725,8 +733,10 @@ def get_page_png(advisory_id: int, page: int, scale: float = Query(2.0, ge=1.0, 
         raise HTTPException(404, "해당 페이지 없음")
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"PDF 렌더 실패: {e}")
+    # 관리자 게이트 뒤 콘텐츠다 — public 캐시는 공유 프록시에 남을 수 있어 private 로.
     return Response(content=png, media_type="image/png",
-                    headers={"Cache-Control": "public, max-age=86400"})
+                    headers={"Cache-Control": "private, max-age=86400",
+                             "X-Content-Type-Options": "nosniff"})
 
 
 def _download_name(adv: Advisory) -> str:

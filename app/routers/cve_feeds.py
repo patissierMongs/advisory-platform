@@ -11,17 +11,19 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import enums
+from ..auth import require_admin
 from ..audit import record
-from ..config import DATA_DIR
+from ..config import DATA_DIR, secure_dir
 from ..core import advisory_ops, feeds, normalize
 from ..core.files import safe_filename
 from ..db import get_db
 from ..deps import get_actor_id
 from ..models import Advisory, AdvisoryCve, Cve, CveFeedImport
 
-router = APIRouter(prefix="/api/v1", tags=["cve-feeds"])
-FEED_DIR = DATA_DIR / "feeds"
-FEED_DIR.mkdir(parents=True, exist_ok=True)
+router = APIRouter(prefix="/api/v1", tags=["cve-feeds"],
+                   dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
+FEED_DIR = secure_dir(DATA_DIR / "feeds")
+
 
 
 @router.post("/cve-feeds")

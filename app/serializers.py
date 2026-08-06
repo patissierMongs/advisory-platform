@@ -79,6 +79,8 @@ def advisory_brief(a: Advisory, *, match_count: int | None = None) -> dict:
         "status": a.status.value,
         "extract_phase": a.extract_phase,
         "error_message": a.error_message,
+        # 표 서식 판정(§표 기반 추출) — 관리자 목록에서 색·배지로 보정 대상을 드러낸다.
+        "table_status": a.table_status,
         "extracted": len(live),
         "found": found,
         "not_found": not_found,
@@ -139,6 +141,9 @@ def impact_from_matches(matches) -> dict:
 def board_advisory_item(a: Advisory, *, comment_count: int | None = None) -> dict:
     """내부 게시판 목록/상세용 요약 — 사내 누구나 보는 공개 뷰."""
     brief = advisory_brief(a)
+    # 추출 품질은 내부 처리 정보다. 직원이 볼 내용이 아니므로 공개 뷰에서 뺀다
+    # (_public_comment 가 증빙을 빼는 것과 같은 이유).
+    brief.pop("table_status", None)
     brief["max_severity"] = _max_severity(a)
     brief["max_severity_ko"] = (
         enums.SEVERITY_KO.get(enums.Severity(brief["max_severity"]))

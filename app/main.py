@@ -2,23 +2,28 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from urllib.parse import quote
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
 
-from .config import WEB_DIR, settings
-from .db import SessionLocal, init_db
+from .config import ADMIN_WEB_DIR, PUBLIC_WEB_DIR, settings
+from .db import SessionLocal, get_db, init_db
+from .enums import UserRole
 from .routers import (
-    advisories, assets, audit, board, cve_feeds, cves, dashboard, departments, history, matches,
-    notifications, remediation,
+    advisories, assets, audit, auth, board, cve_feeds, cves, dashboard, departments, history,
+    matches, notifications, remediation, webhooks,
 )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _harden_data_dir()
     init_db()
+    _bootstrap_auth()
     if settings.SEED_ON_START:
         from .seed import seed
 
@@ -30,6 +35,24 @@ async def lifespan(app: FastAPI):
     _sync_extraction_aliases()
     _backfill_advisory_index()
     yield
+
+
+def _harden_data_dir() -> None:
+    """업로드·DB 가 있는 data 폴더 접근 제한(멱등). 상속 덕에 하위 폴더는 자동 적용된다."""
+    from .config import DATA_DIR
+    from .core.winacl import harden_dir
+
+    harden_dir(DATA_DIR)
+
+
+def _bootstrap_auth() -> None:
+    """로그인 가능한 관리자 보장 + 오래된 세션 정리. 멱등 — 매 기동 안전."""
+    from .auth import ensure_bootstrap_admin, purge_expired
+
+    with SessionLocal() as db:
+        ensure_bootstrap_admin(db)
+        if purge_expired(db):
+            db.commit()
 
 
 def _sync_extraction_aliases() -> None:
@@ -76,7 +99,7 @@ def _load_bundled_cve_feeds() -> None:
     소스: NVD(Public Domain) · CISA KEV(Public Domain) · KISA. 멱등(표식 파일로 1회만).
     1.6GB급 NVD(.gz 포함)도 스트리밍으로 상수 메모리 적재(저사양 PC 안전).
     """
-    from .config import BASE_DIR, DATA_DIR
+    from .config import BASE_DIR, DATA_DIR, secure_write_bytes
     from .core import feeds
 
     feed_dir = BASE_DIR / "samples" / "cve_feeds"
@@ -99,7 +122,7 @@ def _load_bundled_cve_feeds() -> None:
                 continue
             total += added
             print(f"[cve-feeds]   {f.name}: 신규 +{added} (누적 {total})", flush=True)
-    sentinel.write_text(str(total), encoding="utf-8")
+    secure_write_bytes(sentinel, str(total).encode("utf-8"))
     if total:
         print(f"[cve-feeds] 동봉 CVE 피드 적재 완료: {total}건", flush=True)
 
@@ -126,15 +149,20 @@ def _reconcile_stuck_extractions() -> None:
 
 app = FastAPI(title="보안권고문 처리 시스템 API", version="1.0.0", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS or ["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# 동일 출처 서빙이 기본이라 CORS 는 명시 설정이 있을 때만 붙인다.
+# 쿠키 세션을 쓰므로 allow_credentials 가 필요하고, 그 조합에 와일드카드는 쓸 수 없다
+# (설정 단계에서 '*' 는 이미 거부된다 — app/config.py).
+if settings.CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "X-CSRF-Token"],
+    )
 
-for r in (advisories, cve_feeds, cves, assets, matches, notifications, departments, dashboard,
-          remediation, audit, board, history):
+for r in (auth, advisories, cve_feeds, cves, assets, matches, notifications, departments,
+          dashboard, remediation, audit, board, history, webhooks):
     app.include_router(r.router)
 
 
@@ -148,9 +176,11 @@ def favicon():
     return Response(status_code=204)
 
 
-# 프론트엔드(DC SPA) 정적 서빙. 동일 출처에서 /api/v1 호출.
-if WEB_DIR.exists():
-    app.mount("/ui", StaticFiles(directory=str(WEB_DIR), html=True), name="ui")
+# 정적 서빙은 공개 자산(web/public)만. 관리자 셸(web/admin)은 마운트하지 않는다 —
+# StaticFiles 는 라우터 게이트를 통째로 우회하고, Windows 파일시스템은 대소문자를
+# 구분하지 않아 /ui/APP.DC.HTML 같은 우회까지 가능하다. 아예 도달 경로를 없앤다.
+if PUBLIC_WEB_DIR.exists():
+    app.mount("/ui", StaticFiles(directory=str(PUBLIC_WEB_DIR), html=True), name="ui")
 
 
 @app.get("/")
@@ -164,12 +194,33 @@ def board_page():
     return RedirectResponse(url="/ui/board.html")
 
 
+def _admin_shell(request: Request, db: Session, filename: str):
+    """세션 확인 후 관리자 HTML 을 직접 서빙. 미인증이면 로그인 화면으로.
+
+    Depends 로는 리다이렉트를 반환할 수 없어(예외 핸들러가 필요) 라우트 본문에서 검사한다.
+    """
+    from .auth import resolve_session
+
+    resolved = resolve_session(db, request)
+    if resolved is None:
+        nxt = quote(request.url.path, safe="/")
+        return RedirectResponse(url=f"/ui/login.html?next={nxt}", status_code=303)
+    user, _ = resolved
+    if user.role != UserRole.ADMIN:
+        return RedirectResponse(url="/board", status_code=303)
+    if user.must_change_password:
+        return RedirectResponse(url="/ui/login.html?change=1", status_code=303)
+    return FileResponse(ADMIN_WEB_DIR / filename, media_type="text/html; charset=utf-8",
+                        headers={"Cache-Control": "no-store",
+                                 "X-Content-Type-Options": "nosniff"})
+
+
 @app.get("/admin")
-def admin_page():
-    return RedirectResponse(url="/ui/app.dc.html")
+def admin_page(request: Request, db: Session = Depends(get_db)):
+    return _admin_shell(request, db, "app.dc.html")
 
 
 @app.get("/admin/history")
-def admin_history_page():
+def admin_history_page(request: Request, db: Session = Depends(get_db)):
     # 발송이력·조치관리 콘솔(마스터-디테일). 기존 관리자 SPA 와 분리된 독립 페이지.
-    return RedirectResponse(url="/ui/history.html")
+    return _admin_shell(request, db, "history.html")

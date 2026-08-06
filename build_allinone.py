@@ -1,50 +1,153 @@
-"""All-in-one (Python 포함) 번들 생성 — 타깃에 설치 없이 압축만 풀고 start.bat.
+"""All-in-one(Python 포함) 번들 생성 — 타깃에 설치 없이 압축만 풀고 start.bat.
 
-구성: Windows 임베디드 Python 3.12 + 의존성 사전설치(runtime/site) + 앱 + web + 샘플.
-타깃 요건: Windows x64. (Python 불필요. 외부망 0.)
+구성: Windows amd64 임베디드 Python + 의존성 사전설치(runtime/site) + 앱 + web + 샘플.
+타깃 요건: **Windows amd64.** (Python 설치 불필요. 외부망 접속 0건.)
 
-Usage: py -3.12 build_allinone.py
-Output: ../advisory-platform_allinone.zip
+지원 런타임: Python 3.12 / 3.13 — 둘 다 같은 앱 코드로 빌드된다(PY_RUNTIMES 참고).
+
+빌드 호스트: **아무 OS·아무 파이썬 버전이나 된다.** 휠은 호스트가 아니라 타깃 런타임
+(cp312/cp313 · win_amd64) 기준으로 받으므로 리눅스에서 빌드해도 타깃과 ABI 가 맞는다.
+
+Usage:
+  python build_allinone.py                    # 기본(3.12) 온라인 빌드
+  python build_allinone.py --python 3.13
+  python build_allinone.py --python all       # 3.12 · 3.13 둘 다
+  python build_allinone.py --python all --offline
+      → 인터넷 없이 vendor/bundle 의 사전 수집 자산만으로 빌드.
+        수집은 인터넷 PC 에서 scripts/collect_offline_bundle.py 한 번.
+
+Output: ../advisory-platform_allinone-py312.zip (버전별)
 """
 from __future__ import annotations
 
+import argparse
+import hashlib
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.request
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 CACHE = ROOT / "_cache"
-PYVER = "3.12.8"
-PYMINOR = ".".join(PYVER.split(".")[:2])   # "3.12" — 임베디드 런타임 마이너 버전
-PYABI = "cp" + PYMINOR.replace(".", "")    # "cp312" — 휠 ABI 태그
+#: 오프라인 빌드용 사전 수집 자산 루트 — scripts/collect_offline_bundle.py 가 채운다.
+#: (venv 경로가 쓰는 vendor/wheels 와 일부러 분리한다. 그쪽은 호스트 ABI 기준 평평한
+#:  디렉터리이고, 여기는 타깃 ABI 별로 나뉘어 있어 섞이면 안 된다.)
+OFFLINE_DIR = ROOT / "vendor" / "bundle"
 PYPLAT = "win_amd64"                        # 타깃 플랫폼(임베디드가 amd64)
-EMBED_URL = f"https://www.python.org/ftp/python/{PYVER}/python-{PYVER}-embed-amd64.zip"
 STAGE = ROOT.parent / "_advisory_allinone_stage"
-OUT = ROOT.parent / "advisory-platform_allinone.zip"
 PREFIX = "advisory-platform"
+REQUIREMENTS = ROOT / "requirements-bundle.txt"
 
 INCLUDE_TOP = {"app", "web", "samples", "scripts", "docs", "nvd_powershell_sync",
                "README.md", "requirements.txt", "smoke_test.py"}
+# 주의: 여기 이름은 경로의 '모든' 구성요소와 대조된다. 최상위 vendor/ 는 INCLUDE_TOP 에
+# 없어 애초에 복사되지 않으므로 넣지 말 것 — 넣으면 web/public/vendor(React·Pretendard)까지
+# 함께 빠져 폐쇄망에서 관리자 화면이 깨진다(외부 CDN 폴백이 없다).
 SKIP_DIR = {".venv", "__pycache__", "data", ".claude", ".git", "_cache",
             "_advisory_allinone_stage"}
 SKIP_EXT = {".pyc", ".pyo", ".log"}
+
+
+@dataclass(frozen=True)
+class Runtime:
+    """번들에 넣을 임베디드 파이썬 하나.
+
+    sha256 은 python.org 공식 배포본의 해시다. 다운로드분·캐시분 모두 매번 검증한다 —
+    폐쇄망으로 들어갈 런타임이므로 중간에 바뀐 파일을 조용히 통과시키면 안 된다.
+    """
+
+    minor: str      # "3.12"  — pip --python-version
+    full: str       # "3.12.10"
+    sha256: str
+    size: int       # 바이트(빠른 사전 판별용, 검증의 근거는 sha256)
+
+    @property
+    def abi(self) -> str:               # "cp312" — 휠 ABI 태그
+        return "cp" + self.minor.replace(".", "")
+
+    @property
+    def embed_name(self) -> str:
+        return f"python-{self.full}-embed-amd64.zip"
+
+    @property
+    def embed_url(self) -> str:
+        return f"https://www.python.org/ftp/python/{self.full}/{self.embed_name}"
+
+    @property
+    def out_zip(self) -> Path:
+        return ROOT.parent / f"advisory-platform_allinone-py{self.minor.replace('.', '')}.zip"
+
+    @property
+    def out_7z(self) -> Path:
+        return self.out_zip.with_suffix(".7z")
+
+    @property
+    def wheel_dir(self) -> Path:
+        return OFFLINE_DIR / self.abi
+
+
+#: 지원 런타임 고정표. 올릴 때는 sha256 도 함께 갱신할 것
+#: (`python scripts/collect_offline_bundle.py --print-hashes` 가 새 값을 뽑아 준다).
+PY_RUNTIMES: dict[str, Runtime] = {
+    "3.12": Runtime("3.12", "3.12.10",
+                    "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3",
+                    11_133_606),
+    "3.13": Runtime("3.13", "3.13.7",
+                    "f6cca216a359be84797cabb54149ce5e062afb16cc7567eb7fc51cacb2d86b65",
+                    10_922_561),
+}
+DEFAULT_PY = "3.12"
 
 
 def log(m: str) -> None:
     print(f"[allinone] {m}", flush=True)
 
 
-def download_embed() -> Path:
+def sha256_of(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def download_embed(rt: Runtime, offline: bool) -> Path:
+    """임베디드 런타임 zip 확보 — 오프라인 자산 → 캐시 → 다운로드 순. 항상 해시 검증."""
+    for src in (OFFLINE_DIR / rt.embed_name, CACHE / rt.embed_name):
+        if not src.exists():
+            continue
+        got = sha256_of(src)
+        if got == rt.sha256:
+            log(f"embed ok (cached): {src.relative_to(ROOT) if ROOT in src.parents else src}")
+            return src
+        sys.exit(f"[allinone] {src} 해시 불일치 — 파일이 손상/변조됐습니다.\n"
+                 f"  expected {rt.sha256}\n  actual   {got}\n"
+                 f"  파일을 지우고 다시 받으세요.")
+
+    if offline:
+        sys.exit(f"[allinone] 오프라인 빌드인데 런타임이 없습니다: {OFFLINE_DIR / rt.embed_name}\n"
+                 f"  인터넷 PC 에서  python scripts/collect_offline_bundle.py --python {rt.minor}\n"
+                 f"  를 실행해 vendor/bundle 을 만든 뒤 통째로 복사하세요.")
+
     CACHE.mkdir(exist_ok=True)
-    dst = CACHE / f"python-{PYVER}-embed-amd64.zip"
-    if dst.exists() and dst.stat().st_size > 1_000_000:
-        log(f"embed cached: {dst.name}")
-        return dst
-    log(f"downloading {EMBED_URL}")
-    urllib.request.urlretrieve(EMBED_URL, dst)
+    dst = CACHE / rt.embed_name
+    log(f"downloading {rt.embed_url}")
+    with tempfile.NamedTemporaryFile(dir=CACHE, delete=False, suffix=".part") as tmp:
+        part = Path(tmp.name)
+    try:                                # 부분 다운로드가 캐시로 승격되지 않게 임시파일 경유
+        urllib.request.urlretrieve(rt.embed_url, part)
+        got = sha256_of(part)
+        if got != rt.sha256:
+            sys.exit(f"[allinone] 내려받은 {rt.embed_name} 해시 불일치 — 중단합니다.\n"
+                     f"  expected {rt.sha256}\n  actual   {got}")
+        part.replace(dst)
+    finally:
+        part.unlink(missing_ok=True)
+    log(f"embed ok (sha256 verified): {dst.name}")
     return dst
 
 
@@ -65,8 +168,18 @@ def copy_app(app: Path) -> None:
             dst = app / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(p, dst)
-    if not (app / "web" / "app.dc.html").exists():
-        sys.exit("web/app.dc.html missing — 프론트 자산 누락")
+    # 관리자 셸(web/admin)과 공개 자산(web/public)이 모두 있어야 한다 —
+    # 정적 마운트는 public 만 서빙하고 admin 은 세션 확인 라우트로만 나간다.
+    # vendor/* 는 React·ReactDOM·Pretendard 로, 폐쇄망에는 CDN 폴백이 없어 하나만 빠져도
+    # 화면이 통째로 뜨지 않는다. SKIP_DIR 실수로 누락되는 사고를 여기서 잡는다.
+    for rel in ("admin/app.dc.html", "admin/history.html", "public/board.html",
+                "public/login.html", "public/support.js",
+                "public/vendor/react.production.min.js",
+                "public/vendor/react-dom.production.min.js",
+                "public/vendor/pretendard.css",
+                "public/vendor/PretendardVariable.woff2"):
+        if not (app / "web" / rel).exists():
+            sys.exit(f"web/{rel} missing — 프론트 자산 누락")
 
 
 def place_python(app: Path, embed_zip: Path) -> None:
@@ -83,26 +196,38 @@ def place_python(app: Path, embed_zip: Path) -> None:
     log(f"patched {pth.name}: + ..\\site + ..\\..")
 
 
-def install_site(app: Path) -> None:
+def install_site(app: Path, rt: Runtime, offline: bool) -> list[str]:
+    """의존성을 runtime/site 에 설치하고 설치된 배포본 이름 목록을 돌려준다.
+
+    중요(폐쇄망 자립): 휠은 '빌드 호스트의 파이썬'이 아니라 '번들에 들어갈 임베디드 런타임'
+    (cp312/cp313 · win_amd64) 기준으로 받는다. 빌드 PC 에 어떤 파이썬이 깔려 있든, 심지어
+    OS 가 리눅스여도 타깃과 ABI 가 일치한다. --platform/--abi/--python-version 을 쓰려면
+    --only-binary=:all: 가 필요하다(크로스 설치).
+    """
     site = app / "runtime" / "site"
     site.mkdir(parents=True)
-    # 중요(폐쇄망 자립): 휠은 '빌드 호스트의 파이썬'이 아니라 '번들에 들어갈 임베디드 런타임'
-    # (cp312 / win_amd64) 기준으로 받는다. 빌드 PC에 3.11 등 다른 버전이 깔려 PATH로 실행되더라도
-    # 바이너리 휠(pydantic-core·pypdfium2 등)이 타깃 3.12와 ABI 일치하도록 강제한다.
-    # --platform/--abi/--python-version 을 쓰려면 --only-binary=:all: 가 필요(크로스 설치).
-    log(f"pip install --target runtime/site ({PYABI}/{PYPLAT} wheels — host python={sys.version.split()[0]})")
-    subprocess.check_call([
+    cmd = [
         sys.executable, "-m", "pip", "install",
         "--target", str(site),
         "--only-binary=:all:",
-        "--python-version", PYMINOR,
+        "--python-version", rt.minor,
         "--implementation", "cp",
-        "--abi", PYABI,
+        "--abi", rt.abi,
         "--platform", PYPLAT,
-        "-r", str(ROOT / "requirements.txt"),
-    ])
+        "-r", str(REQUIREMENTS),
+    ]
+    if offline:
+        if not rt.wheel_dir.is_dir() or not any(rt.wheel_dir.glob("*.whl")):
+            sys.exit(f"[allinone] 오프라인 빌드인데 휠이 없습니다: {rt.wheel_dir}\n"
+                     f"  인터넷 PC 에서  python scripts/collect_offline_bundle.py --python {rt.minor}")
+        cmd += ["--no-index", "--find-links", str(rt.wheel_dir)]
+    log(f"pip install --target runtime/site "
+        f"({rt.abi}/{PYPLAT} wheels, {'offline' if offline else 'online'}"
+        f" — host python={sys.version.split()[0]})")
+    subprocess.check_call(cmd)
     for pc in site.rglob("__pycache__"):
         shutil.rmtree(pc, ignore_errors=True)
+    return sorted(p.name for p in site.glob("*.dist-info"))
 
 
 def write_launcher(app: Path) -> None:
@@ -133,11 +258,174 @@ def write_launcher(app: Path) -> None:
     )
 
 
-def zip_bundle(app: Path) -> int:
-    if OUT.exists():
-        OUT.unlink()
+def write_bundle_info(app: Path, rt: Runtime, dists: list[str], offline: bool) -> None:
+    """번들에 뭐가 들었는지 타깃에서도 확인 가능하게 남긴다(폐쇄망 감사·문의 대응용)."""
+    lines = [
+        "Advisory Platform - all-in-one bundle",
+        "",
+        f"embedded python : {rt.full} ({rt.abi} / {PYPLAT})",
+        f"embed sha256    : {rt.sha256}",
+        f"build mode      : {'offline (vendor/bundle)' if offline else 'online (PyPI)'}",
+        f"build host      : {sys.platform} / python {sys.version.split()[0]}",
+        "",
+        "installed distributions (runtime/site):",
+        *(f"  {d.removesuffix('.dist-info')}" for d in dists),
+        "",
+        "Target requirement: Windows amd64. No Python install, no internet needed.",
+        "Run start.bat, then open http://localhost:8000",
+        "",
+    ]
+    (app / "runtime" / "BUNDLE_INFO.txt").write_text("\r\n".join(lines), encoding="ascii",
+                                                     errors="replace")
+
+
+def _clear_volumes(base: Path) -> None:
+    """같은 이름의 기존 볼륨 제거 — 이전 빌드가 더 잘게 쪼갰다면 남은 조각이 재조립을 오염시킨다."""
+    for stale in base.parent.glob(f"{base.name}.[0-9][0-9][0-9]"):
+        stale.unlink()
+
+
+def sevenzip_bundle(app: Path, out: Path, chunk_mb: int) -> list[Path]:
+    """7z 다중볼륨 생성 — 반디집·7-Zip 이 `.001` 하나만 열면 나머지를 알아서 합친다.
+
+    raw 분할과의 차이:
+      · LZMA2 라 deflate zip 보다 20% 남짓 작다 — 조각 수가 줄어 반입이 편하다.
+      · 재조립 스크립트가 필요 없다(압축 도구가 볼륨을 직접 인식).
+      · 대신 타깃에 반디집 같은 도구가 있어야 한다. 없으면 --split-mode raw 를 쓸 것.
+    무결성은 7z 컨테이너의 CRC 로 압축 해제 시 자동 검증된다.
+    """
+    exe = shutil.which("7z") or shutil.which("7za") or shutil.which("7zz")
+    if exe is None:
+        sys.exit("[allinone] --split-mode 7z 에는 7z 실행파일이 필요합니다.\n"
+                 "  Windows: https://www.7-zip.org 설치 후 PATH 등록\n"
+                 "  Debian/Ubuntu: apt-get install p7zip-full\n"
+                 "  (도구 없이 쪼개려면 --split-mode raw 를 쓰세요.)")
+    _clear_volumes(out)
+    out.unlink(missing_ok=True)
+    subprocess.check_call([
+        exe, "a", "-t7z", "-mx=9", "-m0=lzma2", "-mmt=on",
+        f"-v{chunk_mb * 1_000_000}b",   # 바이트 지정 — -v9m 은 9MiB 라 10진 기준과 어긋난다
+        str(out), str(app),
+    ], stdout=subprocess.DEVNULL)
+    parts = sorted(out.parent.glob(f"{out.name}.[0-9][0-9][0-9]"))
+    if not parts:
+        sys.exit(f"[allinone] 7z 볼륨이 생성되지 않았습니다: {out}")
+    total = sum(p.stat().st_size for p in parts)
+    log(f"7z volumes: {out.name}.001…{len(parts):03d} "
+        f"({total / 1024 / 1024:.1f} MB total, max {max(p.stat().st_size for p in parts) / 1024 / 1024:.2f} MiB/part)")
+    return parts
+
+
+def split_bundle(out: Path, chunk_mb: int) -> list[Path]:
+    """zip 을 고정 크기 조각으로 나눈다(`.001`, `.002`, …). 원본은 남긴다.
+
+    zip 자체의 다중볼륨 기능이 아니라 **단순 바이트 분할**이다. 폐쇄망 타깃에는 7-Zip 같은
+    도구가 없을 수 있는데, 바이트 분할은 Windows 기본 `copy /b` 만으로 되돌릴 수 있다.
+    (다중볼륨 zip 은 전용 도구가 있어야 열린다 — 반입 절차가 도구 반입에 발목 잡힌다.)
+    """
+    size = chunk_mb * 1_000_000     # 10진 MB — "10MB 이하" 요건은 보통 이 기준으로 본다
+    total = out.stat().st_size
+    parts: list[Path] = []
+    with out.open("rb") as f:
+        while True:
+            chunk = f.read(size)
+            if not chunk:
+                break
+            p = out.with_name(f"{out.name}.{len(parts) + 1:03d}")
+            p.write_bytes(chunk)
+            parts.append(p)
+    log(f"split {out.name} → {len(parts)} parts "
+        f"({total / 1024 / 1024:.1f} MB, max {size / 1024 / 1024:.2f} MiB/part)")
+    return parts
+
+
+def write_join_script(out: Path, parts: list[Path], digest: str) -> Path:
+    """타깃에서 도구 없이 재조립하는 .bat 생성 — copy /b 로 합치고 certutil 로 검증.
+
+    ASCII 전용 + CRLF: 한국어(CP949) 콘솔에서 한글이나 LF 는 .bat 파싱을 깨뜨린다.
+    """
+    name = out.name
+    plus = "+".join(f'"{p.name}"' for p in parts)
+    exists_checks = "".join(
+        f'if not exist "{p.name}" (\r\n'
+        f'    echo [ERROR] Missing part: {p.name}\r\n'
+        f'    goto :fail\r\n'
+        f')\r\n'
+        for p in parts)
+    body = (
+        "@echo off\r\n"
+        "setlocal enabledelayedexpansion\r\n"
+        "cd /d \"%~dp0\"\r\n"
+        "\r\n"
+        f"REM Rejoin the split all-in-one bundle: {name}\r\n"
+        "REM Uses only built-in Windows commands (copy, certutil) - no 7-Zip needed.\r\n"
+        "REM Put every .001/.002/... part in THIS folder, then run this file.\r\n"
+        "\r\n"
+        f'set "NAME={name}"\r\n'
+        f'set "WANT={digest}"\r\n'
+        "\r\n"
+        "echo [join] Checking parts...\r\n"
+        + exists_checks +
+        "\r\n"
+        'if exist "%NAME%" del /q "%NAME%"\r\n'
+        "echo [join] Joining into %NAME% ...\r\n"
+        f'copy /b {plus} "%NAME%" >nul\r\n'
+        "if errorlevel 1 (\r\n"
+        "    echo [ERROR] copy /b failed.\r\n"
+        "    goto :fail\r\n"
+        ")\r\n"
+        "\r\n"
+        "echo [join] Verifying SHA256 ^(this takes a few seconds^)...\r\n"
+        "set \"GOT=\"\r\n"
+        "for /f \"skip=1 delims=\" %%H in ('certutil -hashfile \"%NAME%\" SHA256') do (\r\n"
+        "    if not defined GOT set \"GOT=%%H\"\r\n"
+        ")\r\n"
+        "set \"GOT=!GOT: =!\"\r\n"
+        "if not defined GOT (\r\n"
+        "    echo [WARN] certutil is unavailable - could not verify the checksum.\r\n"
+        "    echo        The file was joined; verify it by hand if you can:\r\n"
+        "    echo          expected %WANT%\r\n"
+        "    goto :done\r\n"
+        ")\r\n"
+        "if /i not \"!GOT!\"==\"%WANT%\" (\r\n"
+        "    echo [ERROR] SHA256 mismatch - the parts are damaged or incomplete.\r\n"
+        "    echo         expected %WANT%\r\n"
+        "    echo         actual   !GOT!\r\n"
+        "    echo   Copy every part again and make sure none was truncated.\r\n"
+        '    del /q "%NAME%"\r\n'
+        "    goto :fail\r\n"
+        ")\r\n"
+        "\r\n"
+        "echo [join] OK - %NAME% rebuilt and verified.\r\n"
+        "\r\n"
+        ":done\r\n"
+        "echo.\r\n"
+        "echo Next:\r\n"
+        "echo   1^) Extract %NAME% ^(right-click - Extract All, or: tar -xf %NAME%^)\r\n"
+        "echo   2^) Run advisory-platform\\start.bat\r\n"
+        "echo   3^) The console prints the initial admin password once - write it down.\r\n"
+        "echo   4^) Open http://localhost:8000 and log in ^(password change is forced^).\r\n"
+        "echo.\r\n"
+        "pause\r\n"
+        "exit /b 0\r\n"
+        "\r\n"
+        ":fail\r\n"
+        "echo.\r\n"
+        "echo [FAILED] See the message above.\r\n"
+        "pause\r\n"
+        "exit /b 1\r\n"
+    )
+    script = out.with_name(f"join_{out.stem}.bat")
+    script.write_text(body, encoding="ascii")
+    log(f"wrote {script.name}")
+    return script
+
+
+def zip_bundle(app: Path, out: Path) -> int:
+    if out.exists():
+        out.unlink()
     n = 0
-    with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED) as z:
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for p in app.rglob("*"):
             if p.is_file():
                 z.write(p, f"{PREFIX}/{p.relative_to(app).as_posix()}")
@@ -145,40 +433,74 @@ def zip_bundle(app: Path) -> int:
     return n
 
 
-def _check_build_host() -> None:
-    """빌드 호스트 사전 점검.
-
-    · 파이썬 '버전'은 무관하다 — install_site 가 임베디드 cp312/win_amd64 휠을 명시적으로 받으므로
-      빌드 PC에 3.11 등 다른 버전이 깔려 PATH 로 실행돼도 타깃과 ABI 가 일치한다.
-    · 다만 'OS'는 Windows 여야 한다 — requirements 의 uvicorn[standard] → uvloop(유닉스 전용)이
-      비-Windows 호스트에서 환경 마커(sys_platform)상 요구돼 cross-OS 휠 해석이 실패하기 때문.
-      (Windows 호스트에서는 sys_platform=='win32' 라 uvloop 이 마커로 제외되어 정상 해석된다.)
-    """
-    import platform
-
-    if platform.system() != "Windows":
-        sys.exit(
-            "이 올인원 빌더는 Windows 에서 실행해야 합니다(임베디드 런타임=Windows, "
-            "uvicorn[standard]→uvloop 마커 때문).\n"
-            "  · 빌드 PC 의 파이썬 '버전'은 상관없습니다(타깃 cp312 휠을 따로 받음).\n"
-            "  · Windows 에서  py build_allinone.py  로 실행하세요.\n"
-            "  · 휠 해석/메커니즘만 비-Windows 에서 점검하려면 scripts/verify_bundle_wheels.py 를 사용하세요."
-        )
+def write_part_sums(parts: list[Path]) -> Path:
+    """조각별 SHA256 목록 — 반입 후 `certutil -hashfile <part> SHA256` 으로 대조한다."""
+    sums = parts[0].with_name(parts[0].name.rsplit(".", 1)[0] + ".sha256")
+    sums.write_text("".join(f"{sha256_of(p)}  {p.name}\n" for p in parts), encoding="ascii")
+    return sums
 
 
-def main() -> None:
-    _check_build_host()
-    embed = download_embed()
+def build_one(rt: Runtime, offline: bool, split_mb: int = 0, split_mode: str = "raw") -> None:
+    log(f"=== building for Python {rt.full} ({rt.abi}) ===")
+    embed = download_embed(rt, offline)
     if STAGE.exists():
         shutil.rmtree(STAGE)
     app = STAGE / PREFIX
     app.mkdir(parents=True)
     copy_app(app)
     place_python(app, embed)
-    install_site(app)
+    dists = install_site(app, rt, offline)
     write_launcher(app)
-    n = zip_bundle(app)
-    log(f"wrote {OUT} : {n} files, {OUT.stat().st_size/1024/1024:.1f} MB")
+    write_bundle_info(app, rt, dists, offline)
+
+    if split_mb > 0 and split_mode == "7z":
+        # 7z 는 스테이지 디렉터리에서 바로 볼륨을 만든다 — 중간 zip 을 거치지 않아
+        # 시간·디스크가 절약되고, 압축률도 zip 보다 좋아 조각 수가 줄어든다.
+        parts = sevenzip_bundle(app, rt.out_7z, split_mb)
+        shutil.rmtree(STAGE, ignore_errors=True)
+        log(f"wrote {write_part_sums(parts).name} (조각별 해시)")
+        return
+
+    n = zip_bundle(app, rt.out_zip)
+    shutil.rmtree(STAGE, ignore_errors=True)
+    log(f"wrote {rt.out_zip} : {n} files, {rt.out_zip.stat().st_size / 1024 / 1024:.1f} MB")
+
+    if split_mb > 0:
+        _clear_volumes(rt.out_zip)
+        digest = sha256_of(rt.out_zip)
+        parts = split_bundle(rt.out_zip, split_mb)
+        rt.out_zip.with_suffix(rt.out_zip.suffix + ".sha256").write_text(
+            f"{digest}  {rt.out_zip.name}\n", encoding="ascii")
+        write_join_script(rt.out_zip, parts, digest)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--python", default=DEFAULT_PY, choices=[*PY_RUNTIMES, "all"],
+                    help=f"번들에 넣을 임베디드 파이썬 (기본 {DEFAULT_PY})")
+    ap.add_argument("--offline", action="store_true",
+                    help="인터넷 없이 vendor/bundle 의 사전 수집 자산만으로 빌드")
+    ap.add_argument("--split-mb", type=int, default=0, metavar="N",
+                    help="산출물을 N MB 조각으로 분할(.001, .002 …) + 재조립 join_*.bat 생성. "
+                         "메일·USB 용량 제한이 있는 반입 경로용. 0=분할 안 함(기본)")
+    ap.add_argument("--split-mode", default="raw", choices=("raw", "7z"),
+                    help="raw=바이트 분할 + join_*.bat(타깃에 압축 도구 불필요, 기본) / "
+                         "7z=다중볼륨 7z(반디집·7-Zip 이 .001 만 열면 됨, 더 작음)")
+    return ap.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    if not REQUIREMENTS.exists():
+        sys.exit(f"{REQUIREMENTS.name} 이 없습니다 — 번들 의존성 목록이 필요합니다.")
+    if args.split_mb < 0:
+        sys.exit("--split-mb 는 0 이상이어야 합니다.")
+    if args.split_mode == "7z" and args.split_mb == 0:
+        sys.exit("--split-mode 7z 는 --split-mb N 과 함께 써야 합니다.")
+    targets = list(PY_RUNTIMES.values()) if args.python == "all" else [PY_RUNTIMES[args.python]]
+    for rt in targets:
+        build_one(rt, args.offline, args.split_mb, args.split_mode)
 
 
 if __name__ == "__main__":

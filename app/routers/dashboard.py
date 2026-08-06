@@ -8,12 +8,14 @@ from sqlalchemy.orm import Session
 from collections import defaultdict
 
 from .. import enums
+from ..auth import require_admin
 from ..core import remediation
 from ..db import get_db
 from ..models import Advisory, AdvisoryCve, Asset, Department, Match, Notification
 from ..serializers import advisory_brief
 
-router = APIRouter(prefix="/api/v1", tags=["dashboard"])
+router = APIRouter(prefix="/api/v1", tags=["dashboard"],
+                   dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
 
 _IN_PROGRESS = [
     enums.AdvisoryStatus.UPLOADED, enums.AdvisoryStatus.EXTRACTING, enums.AdvisoryStatus.EXTRACTED,

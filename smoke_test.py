@@ -6,12 +6,20 @@
 import os
 import tempfile
 import io
+import hashlib
+import hmac
+import json
+import time
 
 TMP = tempfile.mkdtemp(prefix="advisory_smoke_")
 os.environ["ADVISORY_DATA_DIR"] = TMP
 os.environ["ADVISORY_DATABASE_URL"] = f"sqlite:///{os.path.join(TMP, 'test.db')}"
 os.environ["ADVISORY_SEED"] = "true"
 os.environ["ADVISORY_BUNDLED_FEEDS"] = "false"  # 결정적 테스트 — 동봉 CVE 대량적재 비활성
+os.environ["ADVISORY_CORS_ORIGINS"] = ""        # 동일 출처 전용(쿠키 인증)
+os.environ["ADVISORY_BOOTSTRAP_ADMIN"] = "smokeadmin"
+os.environ["ADVISORY_BOOTSTRAP_PASSWORD"] = "smoke-admin-pw-1"
+os.environ["ADVISORY_WEBHOOK_SECRET"] = "smoke-webhook-secret"
 
 from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402
@@ -19,6 +27,19 @@ from app.seed import _minimal_pdf  # noqa: E402
 
 ok = 0
 fail = 0
+
+
+def signed_webhook_post(client, path, payload):
+    """HMAC 서명된 웹훅 POST — 서명 대상이 raw body 라 json= 대신 content= 로 보낸다."""
+    body = json.dumps(payload).encode("utf-8")
+    ts = str(int(time.time()))
+    sig = hmac.new(os.environ["ADVISORY_WEBHOOK_SECRET"].encode(),
+                   f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
+    return client.post(path, content=body, headers={
+        "Content-Type": "application/json",
+        "X-Advisory-Timestamp": ts,
+        "X-Advisory-Signature": f"sha256={sig}",
+    })
 
 
 def check(name, cond, extra=""):
@@ -34,6 +55,37 @@ def check(name, cond, extra=""):
 with TestClient(app) as c:
     # health
     check("health", c.get("/api/health").json()["status"] == "ok")
+
+    # ── 관리자 로그인 — 이후 모든 c.* 호출이 인증 세션을 탄다 ──
+    anon = TestClient(app)     # 익명 대조군(게이트가 실제로 닫혔는지 확인)
+    check("무인증 관리자 API 거부", anon.get("/api/v1/dashboard").status_code == 401)
+    check("무인증 게시판 열람 유지", anon.get("/api/v1/board/advisories").status_code == 200)
+    _shell = anon.get("/admin", follow_redirects=False)
+    check("무인증 관리자 화면 → 로그인",
+          _shell.status_code == 303 and _shell.headers["location"].startswith("/ui/login.html"),
+          _shell.status_code)
+    check("관리자 HTML 은 정적 마운트에 없음",
+          anon.get("/ui/app.dc.html").status_code == 404)
+    check("공개 자산은 그대로 서빙",
+          anon.get("/ui/board.html").status_code == 200 and anon.get("/ui/login.html").status_code == 200)
+
+    from sqlalchemy import select as _select  # noqa: E402
+    from app.db import SessionLocal as _SL  # noqa: E402
+    from app.models import AppUser as _AppUser  # noqa: E402
+    with _SL() as _db:      # 최초 로그인 강제 변경은 스모크 범위 밖 — 플래그만 내린다
+        _u = _db.scalar(_select(_AppUser).where(_AppUser.username == "smokeadmin"))
+        _u.must_change_password = False
+        _db.commit()
+    r = c.post("/api/v1/auth/login",
+               json={"username": "smokeadmin", "password": "smoke-admin-pw-1"})
+    check("관리자 로그인", r.status_code == 200, r.text)
+    # CSRF 는 '로그인은 됐지만 헤더가 없는' 요청에서만 의미가 있다 — 익명은 401 로 먼저 걸린다.
+    _no_csrf = c.post("/api/v1/departments", json={"name": "csrf-probe"},
+                      headers={"X-CSRF-Token": ""})
+    check("로그인 상태에서 CSRF 헤더 없으면 거부",
+          _no_csrf.status_code == 403 and _no_csrf.json()["detail"]["code"] == "CSRF_FAILED",
+          _no_csrf.status_code)
+    c.headers["X-CSRF-Token"] = r.json()["csrf_token"]
 
     # dashboard
     dash = c.get("/api/v1/dashboard").json()
@@ -153,7 +205,7 @@ with TestClient(app) as c:
     r = c.patch(f"/api/v1/notifications/{nid}/ack", json={"ack_status": "DONE", "note": "완료"})
     check("ack 완료", r.json()["ack_status"] == "DONE")
     r = c.post(f"/api/v1/notifications/{nid}/evidence",
-               files={"file": ("patch.png", io.BytesIO(b"\x89PNG evidence"), "image/png")})
+               files={"file": ("patch.png", io.BytesIO(b"\x89PNG\r\n\x1a\nevidence"), "image/png")})
     check("증빙 업로드", r.json()["evidence"] == "patch.png", r.json())
     # ── 보안: 파일명 sanitize(경로 traversal 차단) ──
     from app.core.files import safe_filename
@@ -203,8 +255,11 @@ with TestClient(app) as c:
     # ── 그룹웨어 게시판 + 웹훅 ack ──
     r = c.post(f"/api/v1/advisories/{aid}/board").json()
     check("게시판 게시", str(r.get("board_post_id", "")).startswith("BOARD-"), r)
-    r = c.post("/api/v1/webhooks/groupware/ack", json={"department": "도로국", "status": "완료", "by": "댓글회신"})
+    r = signed_webhook_post(c, "/api/v1/webhooks/groupware/ack",
+                            {"department": "도로국", "status": "완료", "by": "댓글회신"})
     check("게시판 회신→ack 동기화", r.status_code == 200 and r.json()["ack_status"] == "DONE", r.status_code)
+    r = c.post("/api/v1/webhooks/groupware/ack", json={"department": "도로국", "status": "완료"})
+    check("무서명 웹훅 거부(H-4)", r.status_code == 401, r.status_code)
     # ── 대시보드 SLA ──
     dash2 = c.get("/api/v1/dashboard").json()
     check("대시보드 SLA+리마인드", "sla" in dash2 and "due_reminders" in dash2, list(dash2.keys()))

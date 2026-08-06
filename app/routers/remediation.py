@@ -10,14 +10,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import enums
+from ..auth import require_admin
 from ..audit import record
 from ..core import exclusions, groupware, notify, remediation, reports
 from ..db import get_db
 from ..deps import get_actor_id
 from ..models import Advisory, Department, Notification
-from ..schemas import GroupwareAckWebhook
 
-router = APIRouter(prefix="/api/v1", tags=["remediation"])
+router = APIRouter(prefix="/api/v1", tags=["remediation"],
+                   dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
 
 
 def _adv(db: Session, advisory_id: int) -> Advisory:
@@ -51,7 +52,8 @@ def report_xlsx(advisory_id: int, db: Session = Depends(get_db)):
 @router.get("/advisories/{advisory_id}/report.html", response_class=HTMLResponse)
 def report_html(advisory_id: int, db: Session = Depends(get_db)):
     """브라우저 인쇄(Ctrl+P)로 PDF 저장 가능한 한글 보고서."""
-    return reports.build_html(db, _adv(db, advisory_id))
+    return HTMLResponse(reports.build_html(db, _adv(db, advisory_id)),
+                        headers={"X-Content-Type-Options": "nosniff"})
 
 
 # ── SLA / 리마인드 (§★★★★) ──
@@ -154,51 +156,6 @@ def unpublish_board(advisory_id: int, request: Request, db: Session = Depends(ge
            entity_id=adv.id, detail=None, request=request)
     db.commit()
     return {"board_published": False}
-
-
-@router.post("/webhooks/groupware/ack")
-def groupware_ack(payload: GroupwareAckWebhook, request: Request, db: Session = Depends(get_db)):
-    """그룹웨어 댓글 회신 → ack 동기화. (게시판 회신과 시스템 상태 연결)
-
-    부서에 미종료 발송이 여러 권고문에 걸쳐 있으면 advisory_id/doc_no 로 대상을 특정해야 한다 —
-    '가장 최근 것'을 임의로 고르면 엉뚱한 권고문이 종결될 수 있다.
-    """
-    norm = groupware.parse_ack_webhook(payload.model_dump())
-    if not norm:
-        raise HTTPException(400, "해석할 수 없는 회신 payload")
-    dept = db.scalar(select(Department).where(Department.name == norm["department"]))
-    if not dept:
-        raise HTTPException(404, f"부서 없음: {norm['department']}")
-
-    q = select(Notification).where(
-        Notification.department_id == dept.id,
-        Notification.ack_status.notin_([enums.AckStatus.DONE, enums.AckStatus.UNABLE]),
-    )
-    if payload.advisory_id is not None:
-        q = q.where(Notification.advisory_id == payload.advisory_id)
-    elif payload.doc_no:
-        adv_ids = db.scalars(select(Advisory.id).where(Advisory.doc_no == payload.doc_no)).all()
-        if not adv_ids:
-            raise HTTPException(404, f"문서번호 없음: {payload.doc_no}")
-        q = q.where(Notification.advisory_id.in_(adv_ids))
-    candidates = db.scalars(q.order_by(Notification.sent_at.desc())).all()
-    if not candidates:
-        raise HTTPException(404, "해당 부서의 미종료 발송 내역 없음")
-    open_advisories = {c.advisory_id for c in candidates}
-    if len(open_advisories) > 1:
-        raise HTTPException(409, detail={
-            "code": "AMBIGUOUS_ADVISORY",
-            "message": "해당 부서에 미종료 권고문이 여러 건입니다. advisory_id 또는 doc_no 로 지정하세요.",
-            "candidates": sorted(open_advisories),
-        })
-    n = candidates[0]
-    synced = remediation.apply_department_ack(
-        db, n, enums.AckStatus(norm["ack_status"]), norm.get("note"), norm.get("by"))
-    record(db, action="GROUPWARE_ACK", actor_id=None, entity_type="notification",
-           entity_id=n.id, detail={"department": dept.name, "ack": norm["ack_status"],
-                                   "assets_synced": synced}, request=request)
-    db.commit()
-    return {"ok": True, "notification_id": n.id, "ack_status": n.ack_status.value}
 
 
 # ── 오탐 제외 기억 (§★★★) ──

@@ -6,11 +6,13 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import enums
+from ..auth import require_admin
 from ..db import get_db
 from ..models import Cve
 from ..serializers import cve_item
 
-router = APIRouter(prefix="/api/v1", tags=["cves"])
+router = APIRouter(prefix="/api/v1", tags=["cves"],
+                   dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
 
 
 @router.get("/cves")

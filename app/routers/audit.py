@@ -9,11 +9,13 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..auth import require_admin
 from ..db import get_db
 from ..models import Advisory, AppUser, AuditLog
 from ..serializers import _d
 
-router = APIRouter(prefix="/api/v1", tags=["audit"])
+router = APIRouter(prefix="/api/v1", tags=["audit"],
+                   dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
 
 ACTION_KO: dict[str, str] = {
     "ADVISORY_UPLOAD": "권고문 업로드",
@@ -30,6 +32,15 @@ ACTION_KO: dict[str, str] = {
     "NOTIFY_EVIDENCE": "증빙 등록",
     "NOTIFY_REMIND": "미회신 리마인드",
     "BOARD_POST": "게시판 게시",
+    # 관리자 인증(§관리자 로그인)
+    "LOGIN_SUCCESS": "로그인",
+    "LOGIN_FAILURE": "로그인 실패",
+    "LOGIN_LOCKED": "계정 잠김",
+    "LOGOUT": "로그아웃",
+    "PASSWORD_CHANGE": "비밀번호 변경",
+    "USER_CREATE": "계정 생성",
+    "USER_UPDATE": "계정 수정",
+    "USER_PASSWORD_RESET": "비밀번호 초기화",
 }
 
 

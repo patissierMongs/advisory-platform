@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -18,16 +19,17 @@ from sqlalchemy.orm import Session
 
 from .. import enums, serializers
 from ..audit import record
-from ..config import DATA_DIR, settings
-from ..core.files import evidence_response, safe_filename
+from ..auth import require_admin
+from ..config import DATA_DIR, secure_dir, secure_write_bytes, settings
+from ..core.files import check_evidence_upload, evidence_response
 from ..db import get_db
+from ..deps import get_actor_id
 from ..models import Advisory, AdvisoryComment, Asset, Department, Match, Notification
 from ..schemas import AssetAckIn, CommentIn
 
 router = APIRouter(prefix="/api/v1/board", tags=["board"])
 
-EVIDENCE_DIR = DATA_DIR / "evidence"
-EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+EVIDENCE_DIR = secure_dir(DATA_DIR / "evidence")
 
 
 def _published(db: Session, advisory_id: int) -> Advisory:
@@ -268,7 +270,8 @@ def board_file(advisory_id: int, db: Session = Depends(get_db)):
     if not adv.file_path or not os.path.exists(adv.file_path):
         raise HTTPException(404, "원본 PDF 파일이 없습니다")
     return FileResponse(adv.file_path, media_type="application/pdf",
-                        headers={"Content-Disposition": "inline"})
+                        headers={"Content-Disposition": "inline",
+                                 "X-Content-Type-Options": "nosniff"})
 
 
 def _public_comment(c) -> dict:
@@ -577,11 +580,18 @@ async def upload_comment_evidence(comment_id: int, request: Request,
     if not c:
         raise HTTPException(404, "댓글 없음")
     content = await file.read()
+    # 크기 검사가 형식 검사보다 먼저다 — 거대한 파일은 형식과 무관하게 413 이어야 한다.
     if len(content) > settings.max_upload_bytes:
         raise HTTPException(413, f"파일 크기 초과(최대 {settings.MAX_UPLOAD_MB}MB)")
-    display_name = safe_filename(file.filename, default="evidence")
-    path = EVIDENCE_DIR / f"comment{comment_id}_{display_name}"
-    path.write_bytes(content)
+    # 무인증 엔드포인트라, 이미 증빙이 붙은 댓글은 교체를 거부한다(보안검토 H-1).
+    # 이전에는 임의 comment_id 로 POST 하나만 보내면 남의 조치증빙을 갈아치우고
+    # 연결된 발송이력(ack_evidence_path)까지 함께 재지정할 수 있었다.
+    if c.evidence_path:
+        raise HTTPException(409, "이미 증빙이 첨부된 댓글입니다. 새 댓글로 첨부하세요.")
+    display_name = check_evidence_upload(file.filename, content)
+    # 파일명에 난수를 넣어 디스크상 덮어쓰기 자체를 불가능하게 한다(표시명은 그대로).
+    path = EVIDENCE_DIR / f"comment{comment_id}_{secrets.token_hex(8)}_{display_name}"
+    secure_write_bytes(path, content, exclusive=True)
     c.evidence_path = str(path)
     c.evidence_name = display_name
 
@@ -607,9 +617,15 @@ async def upload_comment_evidence(comment_id: int, request: Request,
     return {"comment": serializers.comment_item(c), "ack_synced_notification": synced}
 
 
-@router.get("/comments/{comment_id}/evidence")
+@router.get("/comments/{comment_id}/evidence", dependencies=[Depends(require_admin)])
 def get_comment_evidence(comment_id: int, db: Session = Depends(get_db)):
-    """댓글 증빙 파일 열람 — 안전 타입만 inline, 그 외 첨부(stored-XSS 차단). 첨부 없으면 404."""
+    """댓글 증빙 파일 열람 — 관리자 전용(보안검토 H-1 의 IDOR).
+
+    게시판 응답은 이미 _public_comment 가 증빙을 제거하지만, 이 엔드포인트는 정수 ID 만
+    바꾸면 전 부서의 증빙(개인정보 포함 가능)을 열람할 수 있었다. 공개 범위를 화면과
+    일치시킨다 — 업로드(POST)는 직원 회신 동선이므로 무인증 그대로다.
+    안전 타입만 inline, 그 외 첨부(stored-XSS 차단). 첨부 없으면 404.
+    """
     import os
 
     c = db.get(AdvisoryComment, comment_id)
@@ -618,15 +634,21 @@ def get_comment_evidence(comment_id: int, db: Session = Depends(get_db)):
     return evidence_response(c.evidence_path, c.evidence_name)
 
 
-@router.delete("/comments/{comment_id}", status_code=204)
+@router.delete("/comments/{comment_id}", status_code=204,
+               dependencies=[Depends(require_admin)])
 def delete_comment(comment_id: int, request: Request, db: Session = Depends(get_db)):
-    """댓글 삭제(관리자 모더레이션). 무인증 환경이라 관리자 화면에서만 호출."""
+    """댓글 삭제(관리자 모더레이션) — 관리자 전용(보안검토 H-2).
+
+    이전에는 '관리자 화면에서만 호출'이라는 관례에만 의존해, 네트워크상 누구나 임의
+    공식 회신을 지울 수 있었다.
+    """
     c = db.get(AdvisoryComment, comment_id)
     if not c:
         raise HTTPException(404, "댓글 없음")
     advisory_id = c.advisory_id
     db.delete(c)
-    record(db, action="BOARD_COMMENT_DELETE", actor_id=None, entity_type="advisory",
+    # 관리자 전용 모더레이션이므로 삭제한 사람을 남긴다(익명 게시판 쓰기와 달리 주체가 있다).
+    record(db, action="BOARD_COMMENT_DELETE", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=advisory_id, detail={"comment_id": comment_id}, request=request)
     db.commit()
     return None

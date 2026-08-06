@@ -15,12 +15,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import enums, serializers
+from ..auth import require_admin
 from ..audit import record
 from ..db import get_db
 from ..models import Advisory, Asset, Match, MessageTemplate, Notification
 from ..schemas import MessageTemplateIn
 
-router = APIRouter(prefix="/api/v1", tags=["history"])
+router = APIRouter(prefix="/api/v1", tags=["history"],
+                   dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
 
 _SEV_RANK = {
     enums.Severity.CRITICAL: 4, enums.Severity.HIGH: 3,

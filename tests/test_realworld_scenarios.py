@@ -7,6 +7,7 @@ from __future__ import annotations
 import io
 
 import pytest
+from conftest import signed_webhook_post
 from openpyxl import Workbook
 
 from app.db import SessionLocal
@@ -249,12 +250,12 @@ def test_groupware_webhook_requires_advisory_when_ambiguous(client, matched_advi
 
     with SessionLocal() as db:
         dept_name = db.get(Department, dept_id).name
-    r = client.post("/api/v1/webhooks/groupware/ack",
-                    json={"department": dept_name, "status": "DONE"})
+    r = signed_webhook_post(client, "/api/v1/webhooks/groupware/ack",
+                            {"department": dept_name, "status": "DONE"})
     assert r.status_code == 409, r.text                 # 모호 → 특정 요구
     assert r.json()["detail"]["code"] == "AMBIGUOUS_ADVISORY"
-    r = client.post("/api/v1/webhooks/groupware/ack",
-                    json={"department": dept_name, "status": "DONE", "advisory_id": aid})
+    r = signed_webhook_post(client, "/api/v1/webhooks/groupware/ack",
+                            {"department": dept_name, "status": "DONE", "advisory_id": aid})
     assert r.status_code == 200, r.text
     with SessionLocal() as db:
         n = db.query(Notification).filter(Notification.advisory_id == aid).one()

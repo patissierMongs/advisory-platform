@@ -25,6 +25,29 @@ _SKIP_REWORK = (enums.AdvisoryStatus.COMPLETED, enums.AdvisoryStatus.ARCHIVED,
                 enums.AdvisoryStatus.UPLOADED, enums.AdvisoryStatus.EXTRACTING)
 
 
+def _extract_products_for(adv: Advisory, text: str) -> list[dict]:
+    """표 우선, 평문 정규식 폴백. adv.table_status 를 함께 기록한다.
+
+    권고문의 주 서식은 표이고 열 의미가 명시적이라, 표에서 뽑은 결과가 본문 스캔보다
+    정확하다. 표가 없거나(일반 공지·산문형) 파싱이 안 되면 기존 경로로 떨어진다.
+    """
+    from . import pdf_tables
+
+    if not adv.file_path:
+        adv.table_status = pdf_tables.NO_TABLE
+        return product_extract.extract_products(text)
+
+    result = pdf_tables.extract_tables(adv.file_path)
+    adv.table_status = result.status
+    if result.status == pdf_tables.TABLE_OK:
+        items = product_extract.extract_products_from_table(result.rows)
+        if items:
+            return items
+        # 표는 읽었는데 쓸 만한 제품이 없다 — 관리자에게 보정 대상으로 보이게 한다.
+        adv.table_status = pdf_tables.TABLE_UNPARSED
+    return product_extract.extract_products(text)
+
+
 def refresh_extracted_products(db: Session, adv: Advisory, text: str,
                                *, revive_deleted: bool) -> int:
     """본문에서 제품·버전 추출 → advisory_product 갱신(§개편).
@@ -35,7 +58,7 @@ def refresh_extracted_products(db: Session, adv: Advisory, text: str,
       True 면 다시 SUGGESTED 로 복원(관리자가 '수동 재추출'로 명시 요청한 경우).
     반환: 제안 건수.
     """
-    extracted = product_extract.extract_products(text)
+    extracted = _extract_products_for(adv, text)
     keep_keys: set[str] = set()
     for p in list(adv.products):
         if p.status == "DELETED" and revive_deleted and p.origin == "EXTRACTED":
@@ -72,6 +95,13 @@ def _versions_text(rule) -> str:
     if isinstance(rule, list):
         return ", ".join(str(v) for v in rule)
     if isinstance(rule, dict):
+        # any(OR) — 한 제품에 영향 범위가 여럿인 표. 분기가 없으면 다중 범위 제품이
+        # 검색 색인과 화면에서 통째로 깨진다.
+        subs = rule.get("any")
+        if subs is not None:
+            if isinstance(subs, (list, tuple)) and subs:
+                return " 또는 ".join(_versions_text(s) for s in subs)
+            return str(subs)
         rng = rule.get("range")
         if rng is not None:
             # 방어: API 로 임의 object 가 들어올 수 있어 형태 검증(색인 전체 중단 방지)

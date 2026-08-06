@@ -50,6 +50,11 @@ _AFTER_GT = re.compile(r"^\s*(?:버전\s*)?초과", re.IGNORECASE)
 _BEFORE_LT = re.compile(r"(?:prior\s+to|before|earlier\s+than)\s*$", re.IGNORECASE)
 # 물결형 범위 구분자("1.20 ~ 1.24").
 _RANGE_TILDE = re.compile(r"^\s*[~∼〜–—]\s*")
+# 영문 범위("8.1.0 to 8.1.2"). 한국어 권고문에도 영문 표가 흔히 섞여 들어온다.
+# 이게 없으면 범위가 '정확 버전 열거'로 저장돼 경계 사이(8.1.1)의 취약 자산이 조용히
+# 누락된다 — D1~D3 와 같은 '확신하는 오답' 계열이라 여기서 함께 막는다.
+# 뒤에 버전 토큰이 이어질 때만 범위로 본다("~ 이후 별도 안내" 같은 문구에 오작동 방지).
+_RANGE_TO_EN = re.compile(r"^\s*(?:to|through|thru|up\s+to)\s+(?=v?\d)", re.IGNORECASE)
 # 한국어 범위 시작어("1.20.0 부터 …"). "부터/에서" 뒤에 상한 버전이 이어진다.
 # 예전엔 `부터…$` 로 앵커돼 문장 중간의 "부터"를 못 잡아, 가장 흔한 "X 부터 Y 까지"
 # 표현이 범위가 아니라 열거로 저장되는 확신-미탐 결함이 있었다(§매칭 정확성 수정).
@@ -191,7 +196,7 @@ def _scan_window(text: str, win_start: int, win_end: int) -> dict:
             range_pair = [pending_range_lo, tok]
             pending_range_lo = None
             continue
-        if _RANGE_TILDE.match(after):
+        if _RANGE_TILDE.match(after) or _RANGE_TO_EN.match(after):
             pending_range_lo = tok
             continue
         if _RANGE_FROM.match(after):
@@ -260,6 +265,99 @@ class _FakeMatch:
 def _shift_match(m: re.Match, text: str, abs_start: int) -> _FakeMatch:
     """창 내부 match 를 전체 텍스트 좌표로 옮긴 경량 래퍼(_is_noise_version 용)."""
     return _FakeMatch(abs_start, abs_start + (m.end() - m.start()), m.group(1))
+
+
+def _product_identity(cell: str) -> tuple[str, str] | None:
+    """제품명 셀 → (표시명, product_key).
+
+    별칭 사전을 먼저 태워 정식 키로 정규화한다("Microsoft Windows 11" → windows_11).
+    사전에 없으면 slugify 로 떨어뜨린다 — 표에 적힌 제품을 사전에 없다고 버리면
+    관리자가 그 권고문에 대상이 없다고 오해한다.
+    """
+    cell = (cell or "").strip()
+    if not cell:
+        return None
+    mentions = _find_product_mentions(cell)
+    if mentions:
+        return mentions[0]["name"], mentions[0]["key"]
+    key = slugify(cell)
+    return (cell[:200], key) if key else None
+
+
+def _fixed_versions(cell: str) -> list[str]:
+    """해결 버전 셀 → 버전 문자열 목록. '9.0.90, 10.1.25' 같은 다중 표기를 그대로 살린다."""
+    return [_norm_ver(m.group(1)) for m in _VER_TOKEN.finditer(cell or "")]
+
+
+def _merge_rules(rules: list[object]) -> object:
+    """한 제품의 여러 영향 규칙 → 단일 규칙.
+
+    표는 같은 제품에 범위를 여러 줄로 적는데 AdvisoryProduct 는 제품당 1행이다.
+    리스트로 담으면 '정확 버전 열거'로 오해되므로 any(OR) 형식을 쓴다(versioning.py 참조).
+    """
+    uniq: list[object] = []
+    for r in rules:
+        if r not in uniq:
+            uniq.append(r)
+    if not uniq:
+        return "*"
+    if "*" in uniq:
+        return "*"          # 해석 불가가 하나라도 있으면 그게 상위집합 — 좁히면 자산을 놓친다
+    if len(uniq) == 1:
+        return uniq[0]
+    return {"any": uniq}
+
+
+def extract_products_from_table(rows) -> list[dict]:
+    """복원된 표 행 → 영향 제품·버전 규칙. 반환 스키마는 extract_products 와 동일.
+
+    버전 구문 해석은 새로 만들지 않고 _scan_window 를 셀 텍스트에 그대로 태운다 —
+    "8.1.0 이상 8.1.2 미만"·"9.0.90 미만"·"3.0.0 ~ 3.0.14"·"22H2, 23H2" 전부 이미 처리된다.
+    열 의미가 명시적이라 본문 스캔보다 신뢰도가 높다.
+    """
+    merged: dict[str, dict] = {}
+    for row in rows:
+        ident = _product_identity(getattr(row, "product", ""))
+        if ident is None:
+            continue
+        name, key = ident
+        affected = (getattr(row, "affected", "") or "").strip()
+        info = _scan_window(affected, 0, len(affected)) if affected else {
+            "rule": "*", "fixed_version": None, "confidence": 0.4, "snippet": ""}
+        fixes = _fixed_versions(getattr(row, "fixed", ""))
+
+        rule = info["rule"]
+        # 범위별 해결버전은 규칙 안에 실어 둔다. _eval_op 는 비교 연산자 키만 보므로
+        # 매칭에는 영향이 없고, 화면에서 '이 범위는 어디로 올려야 하나'를 보여줄 수 있다.
+        if isinstance(rule, dict) and "any" not in rule and fixes:
+            rule = dict(rule, fixed=", ".join(fixes))
+
+        snippet = " · ".join(p for p in (getattr(row, "cve", ""), name, affected,
+                                         getattr(row, "fixed", "")) if p)[:200]
+        cur = merged.get(key)
+        if cur is None:
+            merged[key] = {
+                "product_name": name,
+                "product_key": key,
+                "_rules": [rule],
+                "_fixes": list(fixes),
+                "source_snippet": snippet,
+                "confidence": 0.95 if affected else 0.6,
+            }
+        else:
+            cur["_rules"].append(rule)
+            for f in fixes:
+                if f not in cur["_fixes"]:
+                    cur["_fixes"].append(f)
+
+    out = []
+    for item in merged.values():
+        rules = item.pop("_rules")
+        fixes = item.pop("_fixes")
+        item["affected_versions"] = _merge_rules(rules)
+        item["fixed_version"] = (", ".join(fixes))[:120] or None
+        out.append(item)
+    return out
 
 
 def extract_products(text: str) -> list[dict]:

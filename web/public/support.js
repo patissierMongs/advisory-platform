@@ -939,9 +939,11 @@
     }
     return cur;
   }
-  // 폐쇄망: Babel 도 외부 CDN 으로 나가지 않는다(동일 출처 ./vendor 만).
+  // 폐쇄망: Babel 도 외부 CDN 으로 나가지 않는다(동일 출처 /ui/vendor 만).
   // 현재 앱은 x-import(jsx/tsx)를 쓰지 않아 이 경로는 호출되지 않는다.
-  var BABEL_URL = "./vendor/babel.min.js";
+  // 절대 경로인 이유: 이 파일은 /ui/support.js 지만 상대 경로는 문서 URL(/admin 등)
+  // 기준으로 해석돼, 관리자 화면에서 /vendor/... 로 잘못 나간다.
+  var BABEL_URL = "/ui/vendor/babel.min.js";
   var GLOBAL_POLL_INTERVAL_MS = 50;
   var GLOBAL_POLL_TIMEOUT_MS = 3e4;
   function createExternalModules(onResolved) {
@@ -957,10 +959,10 @@
         s.src = BABEL_URL;
         s.onload = () => res();
         // 폐쇄망: 외부 CDN 으로 폴백하지 않는다. jsx/tsx x-import 를 쓰려면
-        // web/vendor/babel.min.js 를 동봉해야 한다(현재 앱은 x-import 미사용).
+        // web/public/vendor/babel.min.js 를 동봉해야 한다(현재 앱은 x-import 미사용).
         s.onerror = () => rej(new Error(
           "Babel(jsx/tsx 변환) 로드 실패: " + BABEL_URL +
-          " — 폐쇄망에서는 web/vendor/babel.min.js 를 동봉하세요."));
+          " — 폐쇄망에서는 web/public/vendor/babel.min.js 를 동봉하세요."));
         document.head.appendChild(s);
       });
       return babelLoading;
@@ -1381,10 +1383,10 @@
   // src/index.ts
   // 폐쇄망(인트라넷) 전제 — React/ReactDOM 은 로컬 vendor 에서만 로드한다(외부 CDN 미사용).
   // 정상 부팅 시엔 app.dc.html 의 <script> 태그가 먼저 로드하므로 아래 폴백은 거의 쓰이지 않으며,
-  // 쓰이더라도 동일 출처(./vendor)에서만 받는다.
-  var REACT_URL = "./vendor/react.production.min.js";
+  // 쓰이더라도 동일 출처(/ui/vendor)에서만 받는다.
+  var REACT_URL = "/ui/vendor/react.production.min.js";
   var REACT_SRI = "";
-  var REACT_DOM_URL = "./vendor/react-dom.production.min.js";
+  var REACT_DOM_URL = "/ui/vendor/react-dom.production.min.js";
   var REACT_DOM_SRI = "";
   function hideRawTemplate() {
     const s = document.createElement("style");
