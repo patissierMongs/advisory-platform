@@ -66,6 +66,8 @@
         <span style="font-size:12px; color:#8a98ab; font-weight:500;">{{ pageSub }}</span>
       </div>
       <div style="display:flex; align-items:center; gap:14px;">
+        <a href="/board" title="사내 게시판 열기(새 탭) — 사내 누구나 열람·댓글 회신" target="_blank" rel="noopener"
+           style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:#43536b; background:#fff; border:1px solid #d3dbe8; border-radius:8px; padding:6px 12px; text-decoration:none;">게시판 ↗</a>
         <div style="display:flex; align-items:center; gap:7px; background:#f4f6f9; border:1px solid #e3e8ef; border-radius:8px; padding:6px 11px;">
           <span style="width:7px; height:7px; border-radius:50%; background:#0f766e;"></span>
           <span style="font-size:12px; color:#43536b; font-weight:600;">로컬 처리 · 오프라인</span>
@@ -82,6 +84,26 @@
     </header>
 
     <div style="flex:1; overflow-y:auto; padding:24px 26px 60px;">
+
+      <!-- 초기 데이터 로딩 진행 표시 — 첫 진입에서만. 이후 폴링 갱신에는 뜨지 않는다. -->
+      <sc-if value="{{ booting }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#fff; border:1px solid #e1e7ef; border-radius:12px; padding:22px 24px; margin-bottom:14px;">
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#dbe6f5" stroke-width="3"/><path d="M21 12a9 9 0 0 0-9-9" stroke="#2f5bd0" stroke-width="3" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/></path></svg>
+            <span style="font-size:13.5px; font-weight:700; color:#15294a;">데이터를 불러오는 중…</span>
+            <span style="font-size:12px; color:#8a98ab;">{{ loadLabel }}</span>
+          </div>
+          <div style="height:6px; border-radius:99px; background:#eef1f5; overflow:hidden;">
+            <span style="{{ loadBarStyle }}"></span>
+          </div>
+          <div style="margin-top:14px; display:flex; flex-direction:column; gap:9px;">
+            <span style="height:13px; border-radius:5px; background:#eef1f5; width:38%;"></span>
+            <span style="height:13px; border-radius:5px; background:#f2f5f9; width:72%;"></span>
+            <span style="height:13px; border-radius:5px; background:#f2f5f9; width:56%;"></span>
+          </div>
+        </div>
+      </sc-if>
+
 
       <!-- ============ 권고문 처리 ============ -->
       <sc-if value="{{ navProcess }}" hint-placeholder-val="{{ true }}">
@@ -171,6 +193,9 @@
                           </sc-if>
                           <sc-if value="{{ a.ddayLabel }}" hint-placeholder-val="">
                             <span style="{{ a.ddayStyle }}">{{ a.ddayLabel }}</span>
+                          </sc-if>
+                          <sc-if value="{{ a.hasTableWarn }}" hint-placeholder-val="">
+                            <span style="{{ a.tableStyle }}" title="{{ a.tableHint }}">{{ a.tableLabel }}</span>
                           </sc-if>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
@@ -1347,6 +1372,8 @@ function readCookie(name) {
 class Component extends DCLogic {
   state = {
     me: null,              // GET /auth/me — 헤더의 현재 계정 표시
+    loadDone: 0,           // 초기 로딩 진행(완료한 API 호출 수)
+    loadTotal: 15,
     nav: 'process',
     procView: 'board',     // 권고문 처리: 'board'(통합 목록) | 'detail'(권고문별 처리)
     detailId: null,        // 상세 처리 중인 권고문 id
@@ -1531,28 +1558,39 @@ class Component extends DCLogic {
 
   _backToBoard() { this.setState({ procView: 'board', excluded: {}, sent: {} }); this._refreshBoard(); }
 
+  // 초기 로딩 진행 카운터. 첫 진입에서만 화면에 뜨고, 이후 갱신(_refreshBoard·폴링)은
+  // 조용히 반영한다 — 폴링마다 스피너가 깜빡이면 화면이 못 쓰게 된다.
+  _tick(v) {
+    if (this.state.loaded) return v;
+    this.setState(st => ({ loadDone: (st.loadDone || 0) + 1 }));
+    return v;
+  }
+
   async load() {
+    const LOAD_STEPS = 15;
+    if (!this.state.loaded) this.setState({ loadDone: 0, loadTotal: LOAD_STEPS });
+    const step = (p) => p.then(r => this._tick(r));
     try {
-      const advs = await this.api('GET', '/advisories');
+      const advs = await step(this.api('GET', '/advisories'));
       const active = (advs.items || []).find(a => a.status !== 'COMPLETED' && a.status !== 'ARCHIVED')
                    || (advs.items || [])[0];
       this._advisoryId = active ? active.id : null;
       const [cves, cveList, assets, history, dash, feeds, stats, rem, audit, pdfView, notifyStatus] = await Promise.all([
-        this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/cves') : Promise.resolve({ items: [] }),
-        this.api('GET', '/cves?size=500'),
-        this.api('GET', '/assets?size=500'),
-        this.api('GET', '/notifications'),
-        this.api('GET', '/dashboard'),
-        this.api('GET', '/cve-feeds'),
-        this.api('GET', '/cves/stats'),
-        this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/remediation') : Promise.resolve(null),
-        this.api('GET', '/audit?size=100').catch(() => ({ items: [] })),
-        this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/pdf-view').catch(() => null) : Promise.resolve(null),
-        this.api('GET', '/notify/status').catch(() => null),
+        step(this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/cves') : Promise.resolve({ items: [] })),
+        step(this.api('GET', '/cves?size=500')),
+        step(this.api('GET', '/assets?size=500')),
+        step(this.api('GET', '/notifications')),
+        step(this.api('GET', '/dashboard')),
+        step(this.api('GET', '/cve-feeds')),
+        step(this.api('GET', '/cves/stats')),
+        step(this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/remediation') : Promise.resolve(null)),
+        step(this.api('GET', '/audit?size=100').catch(() => ({ items: [] }))),
+        step(this._advisoryId ? this.api('GET', '/advisories/' + this._advisoryId + '/pdf-view').catch(() => null) : Promise.resolve(null)),
+        step(this.api('GET', '/notify/status').catch(() => null)),
       ]);
-      const counts = await this._loadCommentCounts();
-      const histRollup = await this.api('GET', '/history/advisories').catch(() => ({ items: [] }));
-      await this._loadMatches();
+      const counts = await step(this._loadCommentCounts());
+      const histRollup = await step(this.api('GET', '/history/advisories').catch(() => ({ items: [] })));
+      await step(this._loadMatches());
       this.setState({
         loaded: true,
         apiAdvisory: active || null,
@@ -2527,7 +2565,6 @@ class Component extends DCLogic {
     if (kind === 'grid') return wrap([p('M4 4h7v7H4z', { key: 1 }), p('M13 4h7v7h-7z', { key: 2 }), p('M4 13h7v7H4z', { key: 3 }), p('M13 13h7v7h-7z', { key: 4 })]);
     if (kind === 'clock') return wrap([React.createElement('circle', { key: 1, cx: 12, cy: 12, r: 9, stroke: c, strokeWidth: 1.7 }), p('M12 7v5l3 2', { key: 2 })]);
     if (kind === 'doc') return wrap([p('M6 2h8l4 4v16H6z', { key: 1 }), p('M14 2v4h4', { key: 2 }), p('M9 13h6M9 17h6', { key: 3 })]);
-    if (kind === 'board') return wrap([p('M5 4h14v16H5z', { key: 1 }), p('M8 8h8M8 12h8M8 16h5', { key: 2 })]);
     if (kind === 'db') return wrap([React.createElement('ellipse', { key: 1, cx: 12, cy: 5.5, rx: 8, ry: 3, stroke: c, strokeWidth: 1.7 }), p('M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13', { key: 2 }), p('M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3', { key: 3 })]);
     if (kind === 'server') return wrap([p('M3 4h18v6H3zM3 14h18v6H3z', { key: 1 }), React.createElement('circle', { key: 2, cx: 7, cy: 7, r: 1, fill: c }), React.createElement('circle', { key: 3, cx: 7, cy: 17, r: 1, fill: c })]);
     if (kind === 'send') return wrap([p('M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z', { key: 1 })]);
@@ -2548,7 +2585,8 @@ class Component extends DCLogic {
     const items = [
       { id: 'dashboard', label: '대시보드', icon: this.icon('grid') },
       { id: 'process', label: '권고문 처리', icon: this.icon('doc') },
-      { id: 'board', label: '게시판', icon: this.icon('board') },
+      // 게시판은 내부 뷰가 아니라 외부 페이지(/board)라 좌측 네비의 다른 항목과 성격이
+      // 다르다 — 우측 상단 링크로 옮겼다(헤더 마크업 참조).
       { id: 'cvedb', label: 'CVE 데이터베이스', icon: this.icon('db'), badge: unresolved ? String(unresolved) : null },
       { id: 'assets', label: '자산관리대장', icon: this.icon('server') },
       { id: 'history', label: '발송 이력', icon: this.icon('send') },
@@ -2557,10 +2595,7 @@ class Component extends DCLogic {
     return items.map(it => {
       const active = S.nav === it.id;
       return Object.assign({}, it, {
-        onClick: () => {
-          if (it.id === 'board') window.location.href = '/board';
-          else this.setState({ nav: it.id });
-        },
+        onClick: () => this.setState({ nav: it.id }),
         style: 'display:flex; align-items:center; gap:11px; width:100%; border:none; cursor:pointer; font-family:inherit; font-size:13.5px; font-weight:' + (active ? '700' : '500') + '; padding:10px 12px; border-radius:9px; text-align:left; '
           + (active ? 'background:#15385c; color:#fff;' : 'background:transparent; color:#9fb1c6;'),
         badgeStyle: 'background:#e8a33d; color:#3a2a08; font-size:10.5px; font-weight:800; padding:1px 7px; border-radius:9px;',
@@ -2987,6 +3022,30 @@ class Component extends DCLogic {
           connStyle: 'width:16px; height:2px; border-radius:2px; background:' + (done ? '#b8e0da' : '#e8ecf2') + ';',
         };
       });
+      // ── 카드 배경색 = 처리 단계. 단 손봐야 하는 건은 경고색으로 덮어써 먼저 눈에 띄게 한다.
+      // 색 하나에만 의존하지 않도록 좌측 보더 + 배지까지 3중으로 표시한다(색각 이상 대응).
+      const noTable = a.table_status === 'NO_TABLE';
+      const badTable = a.table_status === 'TABLE_UNPARSED';
+      let cardBg = '#ffffff', cardEdge = '#e1e7ef';
+      if (a.status === 'UPLOADED') { cardBg = '#f7f9fc'; cardEdge = '#94a1b4'; }
+      else if (processing) { cardBg = '#f2f7fd'; cardEdge = '#2f5bd0'; }
+      else if (a.status === 'EXTRACTED' || a.status === 'NEEDS_CVE_UPDATE') { cardBg = '#f4f9f7'; cardEdge = '#0f766e'; }
+      else if (a.status === 'MATCHED') { cardBg = '#f0f7f3'; cardEdge = '#2e7d52'; }
+      else if (a.status === 'NOTIFYING') { cardBg = '#f8f6ff'; cardEdge = '#6b4fd8'; }
+      else if (a.status === 'COMPLETED' || a.status === 'ARCHIVED') { cardBg = '#f5f7fa'; cardEdge = '#c3cbd8'; }
+      if (noTable) { cardBg = '#fdf6e9'; cardEdge = '#d39d00'; }
+      if (badTable) { cardBg = '#fdf1e8'; cardEdge = '#d35400'; }
+      if (isErr) { cardBg = '#fdecec'; cardEdge = '#c0392b'; }
+      const tableLabel = noTable ? '표 형태 아님' : (badTable ? '표 인식 실패' : '');
+      const tableStyle = tableLabel
+        ? ('font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:5px; border:1px solid; '
+           + (noTable ? 'background:#fdf6e9; color:#8a6300; border-color:#f0dca8;'
+                      : 'background:#fdf1e8; color:#9c3d00; border-color:#f2cdb0;'))
+        : '';
+      const tableHint = noTable
+        ? '제품·버전 표를 찾지 못했습니다 — 아래 제품 목록을 직접 확인·보정하세요.'
+        : (badTable ? '표는 있으나 제품·버전 행을 읽지 못했습니다 — 직접 확인·보정하세요.' : '');
+
       const mc = a.match_count || 0, md = a.asset_done || 0;
       const prog = mc ? Math.round(md / mc * 100) : 0;
       // 제품 칩(§개편 후속) — 제목 우측 나열, 클릭 시 그 제품으로 필터.
@@ -3019,7 +3078,12 @@ class Component extends DCLogic {
         notifiedDepts: a.notified_depts || 0, ackedDepts: a.acked_depts || 0,
         progBarStyle: 'height:100%; border-radius:99px; background:' + (prog >= 100 ? '#2e9e5b' : (prog >= 50 ? '#e0a82e' : '#d9544a')) + '; width:' + prog + '%;',
         cveSummary: showSummary ? ('CVE ' + (a.extracted || 0) + '건 · 조회 ' + (a.found || 0) + ' · 미등록 ' + (a.not_found || 0)) : '',
-        cardStyle: 'background:#fff; border:1px solid ' + (isErr ? '#f3c9c4' : ((S.boardSel || {})[a.id] ? '#5fbfb2' : '#e1e7ef')) + '; border-radius:12px; padding:15px 18px;',
+        tableLabel, tableStyle, hasTableWarn: !!tableLabel, tableHint,
+        // 테두리는 기존처럼 옅게 두고 좌측만 상태색으로 — 카드 전체를 상태색으로 두르면
+        // 목록이 시끄러워져 오히려 문제건이 묻힌다.
+        cardStyle: 'background:' + cardBg + '; border:1px solid '
+          + ((S.boardSel || {})[a.id] ? '#5fbfb2' : '#e1e7ef')
+          + '; border-left:3px solid ' + cardEdge + '; border-radius:12px; padding:15px 18px;',
         canRetry: isErr,
         checked: !!(S.boardSel || {})[a.id],
         onCheck: () => this.setState(st => ({ boardSel: Object.assign({}, st.boardSel, { [a.id]: !(st.boardSel || {})[a.id] }) })),
@@ -3100,6 +3164,12 @@ class Component extends DCLogic {
       navProcess: S.nav === 'process', navCvedb: S.nav === 'cvedb', navAssets: S.nav === 'assets',
       navHistory: S.nav === 'history', navDashboard: S.nav === 'dashboard',
       pageTitle: pg[0], pageSub: pg[1],
+
+      // 초기 로딩 진행 표시
+      booting: !S.loaded,
+      loadLabel: (S.loadDone || 0) + ' / ' + (S.loadTotal || 15),
+      loadBarStyle: 'display:block; height:100%; border-radius:99px; background:#2f5bd0; transition:width .2s; width:'
+        + Math.min(100, Math.round((S.loadDone || 0) / (S.loadTotal || 15) * 100)) + '%;',
 
       // 로그인 계정 표시 + 로그아웃 (하드코딩된 '정보보호팀 · 관제' 자리)
       meName: (S.me && S.me.display_name) || '—',
