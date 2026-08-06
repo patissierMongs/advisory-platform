@@ -192,7 +192,12 @@ def extract_cves(advisory_id: int, request: Request, db: Session = Depends(get_d
 
 
 def _run_extract(advisory_id: int) -> None:
-    """백그라운드 추출 워커 — 자체 DB 세션. 단계별로 extract_phase 를 갱신·커밋해 보드가 본다."""
+    """백그라운드 추출 워커 — 자체 DB 세션. 단계별로 extract_phase 를 갱신·커밋해 보드가 본다.
+
+    주의: 스레드풀 워커에는 요청 ContextVar 가 전파되지 않는다. 여기서 get_actor_id() 를
+    부르면 로그인 사용자가 아니라 폴백(ANALYST)이 찍힌다 — 감사 기록이 필요하면
+    submit 시점에 actor_id 를 캡처해 인자로 넘길 것.
+    """
     db = None
     try:
         db = SessionLocal()  # try 내부에서 생성 → 세션 생성 실패도 failed 로 기록
