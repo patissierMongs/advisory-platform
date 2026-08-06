@@ -52,6 +52,31 @@ class AppUser(TimestampMixin, Base):
         _enum(enums.UserRole), default=enums.UserRole.ANALYST, nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # 자격증명 — password_hash 가 NULL 이면 로그인 불가(시드 analyst 등 감사용 주체).
+    password_hash: Mapped[str | None] = mapped_column(Text)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AdminSession(TimestampMixin, Base):
+    """관리자 세션 — 서버측 상태. 쿠키에는 불투명 토큰만 실린다.
+
+    DB 에는 토큰 원문이 아니라 sha256 해시만 둔다(DB 파일 유출로 세션이 탈취되지 않게).
+    csrf_token 은 원문 보관 — 상태변경 요청의 X-CSRF-Token 헤더를 쿠키가 아니라
+    이 값과 대조한다(형제 호스트의 쿠키 주입으로 위조 불가).
+    """
+    __tablename__ = "admin_session"
+    user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    csrf_token: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ip: Mapped[str | None] = mapped_column(String(64))
+    user_agent: Mapped[str | None] = mapped_column(String(400))
 
 
 class Department(TimestampMixin, Base):

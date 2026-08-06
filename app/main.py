@@ -126,12 +126,17 @@ def _reconcile_stuck_extractions() -> None:
 
 app = FastAPI(title="보안권고문 처리 시스템 API", version="1.0.0", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS or ["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# 동일 출처 서빙이 기본이라 CORS 는 명시 설정이 있을 때만 붙인다.
+# 쿠키 세션을 쓰므로 allow_credentials 가 필요하고, 그 조합에 와일드카드는 쓸 수 없다
+# (설정 단계에서 '*' 는 이미 거부된다 — app/config.py).
+if settings.CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "X-CSRF-Token"],
+    )
 
 for r in (advisories, cve_feeds, cves, assets, matches, notifications, departments, dashboard,
           remediation, audit, board, history):
