@@ -12,7 +12,7 @@ from .config import WEB_DIR, settings
 from .db import SessionLocal, init_db
 from .routers import (
     advisories, assets, audit, auth, board, cve_feeds, cves, dashboard, departments, history,
-    matches, notifications, remediation,
+    matches, notifications, remediation, webhooks,
 )
 
 
@@ -150,7 +150,7 @@ if settings.CORS_ORIGINS:
     )
 
 for r in (auth, advisories, cve_feeds, cves, assets, matches, notifications, departments,
-          dashboard, remediation, audit, board, history):
+          dashboard, remediation, audit, board, history, webhooks):
     app.include_router(r.router)
 
 

@@ -14,8 +14,28 @@ os.environ["ADVISORY_DATABASE_URL"] = f"sqlite:///{Path(_TMP, 'test.db').as_posi
 os.environ["ADVISORY_DATA_DIR"] = _TMP
 os.environ["ADVISORY_SEED"] = "false"           # 데모 시드 비활성 → 깨끗한 DB
 os.environ["ADVISORY_BUNDLED_FEEDS"] = "false"  # 번들 CVE 피드 자동적재 비활성
+os.environ["ADVISORY_WEBHOOK_SECRET"] = "test-webhook-secret"
+os.environ["ADVISORY_CORS_ORIGINS"] = ""        # 동일 출처 전용(쿠키 인증)
+
+import hashlib  # noqa: E402
+import hmac  # noqa: E402
+import json  # noqa: E402
+import time  # noqa: E402
 
 import pytest  # noqa: E402
+
+
+def signed_webhook_post(client, path: str, payload: dict):
+    """HMAC 서명된 웹훅 POST — 서명 대상이 raw body 라 json= 대신 content= 로 보낸다."""
+    body = json.dumps(payload).encode("utf-8")
+    ts = str(int(time.time()))
+    sig = hmac.new(os.environ["ADVISORY_WEBHOOK_SECRET"].encode(),
+                   f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
+    return client.post(path, content=body, headers={
+        "Content-Type": "application/json",
+        "X-Advisory-Timestamp": ts,
+        "X-Advisory-Signature": f"sha256={sig}",
+    })
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -40,6 +60,16 @@ def _clean_tables():
 
 @pytest.fixture(scope="session")
 def client():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture(scope="session")
+def public_client():
+    """로그인하지 않은 클라이언트 — 익명 접근이 실제로 막히는지 확인할 때 쓴다."""
     from fastapi.testclient import TestClient
 
     from app.main import app
