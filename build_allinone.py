@@ -82,6 +82,10 @@ class Runtime:
         return ROOT.parent / f"advisory-platform_allinone-py{self.minor.replace('.', '')}.zip"
 
     @property
+    def out_7z(self) -> Path:
+        return self.out_zip.with_suffix(".7z")
+
+    @property
     def wheel_dir(self) -> Path:
         return OFFLINE_DIR / self.abi
 
@@ -275,6 +279,43 @@ def write_bundle_info(app: Path, rt: Runtime, dists: list[str], offline: bool) -
                                                      errors="replace")
 
 
+def _clear_volumes(base: Path) -> None:
+    """같은 이름의 기존 볼륨 제거 — 이전 빌드가 더 잘게 쪼갰다면 남은 조각이 재조립을 오염시킨다."""
+    for stale in base.parent.glob(f"{base.name}.[0-9][0-9][0-9]"):
+        stale.unlink()
+
+
+def sevenzip_bundle(app: Path, out: Path, chunk_mb: int) -> list[Path]:
+    """7z 다중볼륨 생성 — 반디집·7-Zip 이 `.001` 하나만 열면 나머지를 알아서 합친다.
+
+    raw 분할과의 차이:
+      · LZMA2 라 deflate zip 보다 20% 남짓 작다 — 조각 수가 줄어 반입이 편하다.
+      · 재조립 스크립트가 필요 없다(압축 도구가 볼륨을 직접 인식).
+      · 대신 타깃에 반디집 같은 도구가 있어야 한다. 없으면 --split-mode raw 를 쓸 것.
+    무결성은 7z 컨테이너의 CRC 로 압축 해제 시 자동 검증된다.
+    """
+    exe = shutil.which("7z") or shutil.which("7za") or shutil.which("7zz")
+    if exe is None:
+        sys.exit("[allinone] --split-mode 7z 에는 7z 실행파일이 필요합니다.\n"
+                 "  Windows: https://www.7-zip.org 설치 후 PATH 등록\n"
+                 "  Debian/Ubuntu: apt-get install p7zip-full\n"
+                 "  (도구 없이 쪼개려면 --split-mode raw 를 쓰세요.)")
+    _clear_volumes(out)
+    out.unlink(missing_ok=True)
+    subprocess.check_call([
+        exe, "a", "-t7z", "-mx=9", "-m0=lzma2", "-mmt=on",
+        f"-v{chunk_mb * 1_000_000}b",   # 바이트 지정 — -v9m 은 9MiB 라 10진 기준과 어긋난다
+        str(out), str(app),
+    ], stdout=subprocess.DEVNULL)
+    parts = sorted(out.parent.glob(f"{out.name}.[0-9][0-9][0-9]"))
+    if not parts:
+        sys.exit(f"[allinone] 7z 볼륨이 생성되지 않았습니다: {out}")
+    total = sum(p.stat().st_size for p in parts)
+    log(f"7z volumes: {out.name}.001…{len(parts):03d} "
+        f"({total / 1024 / 1024:.1f} MB total, max {max(p.stat().st_size for p in parts) / 1024 / 1024:.2f} MiB/part)")
+    return parts
+
+
 def split_bundle(out: Path, chunk_mb: int) -> list[Path]:
     """zip 을 고정 크기 조각으로 나눈다(`.001`, `.002`, …). 원본은 남긴다.
 
@@ -392,7 +433,14 @@ def zip_bundle(app: Path, out: Path) -> int:
     return n
 
 
-def build_one(rt: Runtime, offline: bool, split_mb: int = 0) -> None:
+def write_part_sums(parts: list[Path]) -> Path:
+    """조각별 SHA256 목록 — 반입 후 `certutil -hashfile <part> SHA256` 으로 대조한다."""
+    sums = parts[0].with_name(parts[0].name.rsplit(".", 1)[0] + ".sha256")
+    sums.write_text("".join(f"{sha256_of(p)}  {p.name}\n" for p in parts), encoding="ascii")
+    return sums
+
+
+def build_one(rt: Runtime, offline: bool, split_mb: int = 0, split_mode: str = "raw") -> None:
     log(f"=== building for Python {rt.full} ({rt.abi}) ===")
     embed = download_embed(rt, offline)
     if STAGE.exists():
@@ -404,13 +452,21 @@ def build_one(rt: Runtime, offline: bool, split_mb: int = 0) -> None:
     dists = install_site(app, rt, offline)
     write_launcher(app)
     write_bundle_info(app, rt, dists, offline)
+
+    if split_mb > 0 and split_mode == "7z":
+        # 7z 는 스테이지 디렉터리에서 바로 볼륨을 만든다 — 중간 zip 을 거치지 않아
+        # 시간·디스크가 절약되고, 압축률도 zip 보다 좋아 조각 수가 줄어든다.
+        parts = sevenzip_bundle(app, rt.out_7z, split_mb)
+        shutil.rmtree(STAGE, ignore_errors=True)
+        log(f"wrote {write_part_sums(parts).name} (조각별 해시)")
+        return
+
     n = zip_bundle(app, rt.out_zip)
     shutil.rmtree(STAGE, ignore_errors=True)
     log(f"wrote {rt.out_zip} : {n} files, {rt.out_zip.stat().st_size / 1024 / 1024:.1f} MB")
 
     if split_mb > 0:
-        for stale in rt.out_zip.parent.glob(f"{rt.out_zip.name}.[0-9][0-9][0-9]"):
-            stale.unlink()          # 이전 빌드가 더 잘게 쪼갰다면 남은 파트가 재조립을 오염시킨다
+        _clear_volumes(rt.out_zip)
         digest = sha256_of(rt.out_zip)
         parts = split_bundle(rt.out_zip, split_mb)
         rt.out_zip.with_suffix(rt.out_zip.suffix + ".sha256").write_text(
@@ -428,6 +484,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--split-mb", type=int, default=0, metavar="N",
                     help="산출물을 N MB 조각으로 분할(.001, .002 …) + 재조립 join_*.bat 생성. "
                          "메일·USB 용량 제한이 있는 반입 경로용. 0=분할 안 함(기본)")
+    ap.add_argument("--split-mode", default="raw", choices=("raw", "7z"),
+                    help="raw=바이트 분할 + join_*.bat(타깃에 압축 도구 불필요, 기본) / "
+                         "7z=다중볼륨 7z(반디집·7-Zip 이 .001 만 열면 됨, 더 작음)")
     return ap.parse_args(argv)
 
 
@@ -437,9 +496,11 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(f"{REQUIREMENTS.name} 이 없습니다 — 번들 의존성 목록이 필요합니다.")
     if args.split_mb < 0:
         sys.exit("--split-mb 는 0 이상이어야 합니다.")
+    if args.split_mode == "7z" and args.split_mb == 0:
+        sys.exit("--split-mode 7z 는 --split-mb N 과 함께 써야 합니다.")
     targets = list(PY_RUNTIMES.values()) if args.python == "all" else [PY_RUNTIMES[args.python]]
     for rt in targets:
-        build_one(rt, args.offline, args.split_mb)
+        build_one(rt, args.offline, args.split_mb, args.split_mode)
 
 
 if __name__ == "__main__":

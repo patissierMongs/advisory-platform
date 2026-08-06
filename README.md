@@ -107,26 +107,41 @@ python build_allinone.py --python all --offline
 
 ### 분할 파일로 반입 (메일·USB 용량 제한이 있을 때)
 
+타깃에 **압축 도구가 있는지**에 따라 두 방식 중 고릅니다.
+
+| 방식 | 타깃 요건 | 조각 수(9MB 기준) | 재조립 |
+|---|---|---|---|
+| `--split-mode 7z` | 반디집·7-Zip 등 | **2개** (16.6MB) | `.001` 을 열면 끝 |
+| `--split-mode raw` (기본) | 없음 | 3개 (22.4MB) | `join_*.bat` 실행 |
+
+**① 다중볼륨 7z — 반디집이 있을 때 (권장)**
+```bash
+python build_allinone.py --python all --offline --split-mb 9 --split-mode 7z
+```
+```
+advisory-platform_allinone-py312.7z.001      8.58 MiB
+advisory-platform_allinone-py312.7z.002      8.00 MiB
+advisory-platform_allinone-py312.7z.sha256   조각별 해시(전송 확인용, 선택)
+```
+타깃에서 두 조각을 **같은 폴더**에 두고 **`.001` 을 반디집으로 열면** 나머지는 알아서 합쳐집니다
+(`.002` 를 따로 열 필요 없습니다). LZMA2 라 zip 보다 작아 조각이 하나 줄고, 무결성은 7z 컨테이너
+CRC 로 압축 해제 시 자동 검증됩니다. 빌드 PC 에는 `7z` 실행파일이 필요합니다
+(Windows: 7-Zip 설치 후 PATH, Debian/Ubuntu: `apt-get install p7zip-full`).
+
+**② 바이트 분할 — 타깃에 압축 도구가 없을 때**
 ```bash
 python build_allinone.py --python all --offline --split-mb 9
 ```
-→ 버전별로 아래가 생성됩니다.
 ```
 advisory-platform_allinone-py312.zip          원본(빌드 PC 보관용)
-advisory-platform_allinone-py312.zip.001      8.58 MiB
-advisory-platform_allinone-py312.zip.002      8.58 MiB
-advisory-platform_allinone-py312.zip.003      5.24 MiB
+advisory-platform_allinone-py312.zip.001/.002/.003
 advisory-platform_allinone-py312.zip.sha256   합친 뒤 대조할 원본 해시
 join_advisory-platform_allinone-py312.bat     재조립 스크립트
 ```
-
-**타깃(폐쇄망)에서**: `.001`~`.003` 과 `join_*.bat` 을 **같은 폴더**에 두고 `join_*.bat` 실행 →
-zip 압축 해제 → `advisory-platform\start.bat`.
-
-zip 다중볼륨이 아니라 **단순 바이트 분할**이라 재조립에 Windows 기본 `copy /b` 만 씁니다 —
-타깃에 7-Zip 같은 압축 도구가 없어도 됩니다. 검증도 기본 내장 `certutil` 로 하므로
-반입 절차가 도구 반입에 발목 잡히지 않습니다. 파트가 하나라도 빠지거나 전송 중 잘리면
-해시 불일치로 중단하고 무엇이 문제인지 알려 줍니다.
+파트와 `join_*.bat` 을 같은 폴더에 두고 `join_*.bat` 실행 → zip 해제 → `start.bat`.
+zip 다중볼륨이 아닌 **단순 바이트 분할**이라 재조립에 Windows 기본 `copy /b` 만 쓰고, 검증도
+기본 내장 `certutil` 로 합니다 — 반입 절차가 도구 반입에 발목 잡히지 않습니다. 파트가 빠지거나
+전송 중 잘리면 해시 불일치로 중단하고 무엇이 문제인지 알려 줍니다.
 
 ### 최초 구동 (외부망 0건)
 
