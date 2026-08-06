@@ -10,13 +10,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import enums
+from ..auth import require_admin
 from ..audit import record
 from ..core import exclusions, groupware, notify, remediation, reports
 from ..db import get_db
 from ..deps import get_actor_id
 from ..models import Advisory, Department, Notification
 
-router = APIRouter(prefix="/api/v1", tags=["remediation"])
+router = APIRouter(prefix="/api/v1", tags=["remediation"],
+                   dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
 
 
 def _adv(db: Session, advisory_id: int) -> Advisory:

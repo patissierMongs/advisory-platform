@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import enums
+from ..auth import require_admin
 from ..audit import record
 from ..config import UPLOAD_DIR, settings
 from ..core import extract, product_extract
@@ -38,7 +39,8 @@ from ..serializers import (
     advisory_product_item,
 )
 
-router = APIRouter(prefix="/api/v1", tags=["advisories"])
+router = APIRouter(prefix="/api/v1", tags=["advisories"],
+                   dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
 
 # 비동기 추출용 작업 풀 — 업로드/추출 응답을 막지 않고 백그라운드에서 진행(보드가 상태 폴링).
 _EXTRACT_POOL = ThreadPoolExecutor(max_workers=3, thread_name_prefix="extract")

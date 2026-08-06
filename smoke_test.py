@@ -56,6 +56,29 @@ with TestClient(app) as c:
     # health
     check("health", c.get("/api/health").json()["status"] == "ok")
 
+    # ── 관리자 로그인 — 이후 모든 c.* 호출이 인증 세션을 탄다 ──
+    anon = TestClient(app)     # 익명 대조군(게이트가 실제로 닫혔는지 확인)
+    check("무인증 관리자 API 거부", anon.get("/api/v1/dashboard").status_code == 401)
+    check("무인증 게시판 열람 유지", anon.get("/api/v1/board/advisories").status_code == 200)
+
+    from sqlalchemy import select as _select  # noqa: E402
+    from app.db import SessionLocal as _SL  # noqa: E402
+    from app.models import AppUser as _AppUser  # noqa: E402
+    with _SL() as _db:      # 최초 로그인 강제 변경은 스모크 범위 밖 — 플래그만 내린다
+        _u = _db.scalar(_select(_AppUser).where(_AppUser.username == "smokeadmin"))
+        _u.must_change_password = False
+        _db.commit()
+    r = c.post("/api/v1/auth/login",
+               json={"username": "smokeadmin", "password": "smoke-admin-pw-1"})
+    check("관리자 로그인", r.status_code == 200, r.text)
+    # CSRF 는 '로그인은 됐지만 헤더가 없는' 요청에서만 의미가 있다 — 익명은 401 로 먼저 걸린다.
+    _no_csrf = c.post("/api/v1/departments", json={"name": "csrf-probe"},
+                      headers={"X-CSRF-Token": ""})
+    check("로그인 상태에서 CSRF 헤더 없으면 거부",
+          _no_csrf.status_code == 403 and _no_csrf.json()["detail"]["code"] == "CSRF_FAILED",
+          _no_csrf.status_code)
+    c.headers["X-CSRF-Token"] = r.json()["csrf_token"]
+
     # dashboard
     dash = c.get("/api/v1/dashboard").json()
     check("dashboard stats", len(dash["stats"]) >= 3, dash["stats"])

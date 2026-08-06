@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import enums
+from ..auth import require_admin
 from ..audit import record
 from ..core import exclusions
 from ..core.matching import all_cves_found, run_matching
@@ -15,7 +16,8 @@ from ..models import Advisory, Match
 from ..schemas import MatchPatch
 from ..serializers import match_item
 
-router = APIRouter(prefix="/api/v1", tags=["matches"])
+router = APIRouter(prefix="/api/v1", tags=["matches"],
+                   dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
 
 
 @router.post("/advisories/{advisory_id}/match")

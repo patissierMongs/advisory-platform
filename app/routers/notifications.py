@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import enums
+from ..auth import require_admin
 from ..audit import record
 from ..config import DATA_DIR, settings
 from ..core import notify, remediation
@@ -22,7 +23,8 @@ from ..serializers import notification_item
 EVIDENCE_DIR = DATA_DIR / "evidence"
 EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
-router = APIRouter(prefix="/api/v1", tags=["notifications"])
+router = APIRouter(prefix="/api/v1", tags=["notifications"],
+                   dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
 
 
 def _default_channels() -> list[enums.NotifyChannel]:

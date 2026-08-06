@@ -16,6 +16,8 @@ os.environ["ADVISORY_SEED"] = "false"           # 데모 시드 비활성 → �
 os.environ["ADVISORY_BUNDLED_FEEDS"] = "false"  # 번들 CVE 피드 자동적재 비활성
 os.environ["ADVISORY_WEBHOOK_SECRET"] = "test-webhook-secret"
 os.environ["ADVISORY_CORS_ORIGINS"] = ""        # 동일 출처 전용(쿠키 인증)
+os.environ["ADVISORY_BOOTSTRAP_ADMIN"] = "testadmin"
+os.environ["ADVISORY_BOOTSTRAP_PASSWORD"] = "test-admin-pw-1"
 
 import hashlib  # noqa: E402
 import hmac  # noqa: E402
@@ -46,7 +48,11 @@ def _init_db():
 
 @pytest.fixture(autouse=True)
 def _clean_tables():
-    """각 테스트 전 cve/cve_feed_import 를 비워 격리. (FK: cve → cve_feed_import 자식 먼저)"""
+    """각 테스트 전 cve/cve_feed_import 를 비워 격리. (FK: cve → cve_feed_import 자식 먼저)
+
+    app_user / admin_session 은 절대 건드리지 않는다 — 지우면 세션 스코프 client 가
+    로그아웃돼 이후 전 테스트가 401 로 무너진다.
+    """
     from sqlalchemy import delete
 
     from app.db import SessionLocal
@@ -58,12 +64,47 @@ def _clean_tables():
     yield
 
 
+ADMIN_USERNAME = "testadmin"
+ADMIN_PASSWORD = "test-admin-pw-1"
+
+
+def _ensure_admin() -> None:
+    """부트스트랩 관리자의 강제 비밀번호 변경을 해제한다.
+
+    부트스트랩은 must_change_password=True 로 계정을 만든다(운영에서는 그래야 한다).
+    테스트는 매번 변경 절차를 밟을 이유가 없으므로 플래그만 내려 준다.
+    """
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import AppUser
+    with SessionLocal() as db:
+        user = db.scalar(select(AppUser).where(AppUser.username == ADMIN_USERNAME))
+        assert user is not None, "부트스트랩 관리자가 생성되지 않았다"
+        user.must_change_password = False
+        db.commit()
+
+
 @pytest.fixture(scope="session")
 def client():
+    """관리자로 로그인된 클라이언트.
+
+    기존 테스트 대부분이 관리자 API 를 두드리므로, 익명 클라이언트를 기본으로 두면
+    ~200개 호출부를 전부 고쳐야 한다. 반대로 두면(로그인된 client + 별도 public_client)
+    공개 게시판 엔드포인트는 세션이 있어도 그대로 동작하므로 기존 파일이 거의 그대로 통과한다.
+
+    CSRF 토큰을 기본 헤더로 심는다 — httpx TestClient 는 인스턴스 기본 헤더를 매 요청에
+    병합하므로 개별 post/patch/delete 호출을 손대지 않아도 된다.
+    """
     from fastapi.testclient import TestClient
 
     from app.main import app
     with TestClient(app) as c:
+        _ensure_admin()
+        r = c.post("/api/v1/auth/login",
+                   json={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD})
+        assert r.status_code == 200, r.text
+        c.headers["X-CSRF-Token"] = r.json()["csrf_token"]
         yield c
 
 

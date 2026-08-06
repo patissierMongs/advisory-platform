@@ -6,6 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import enums
+from ..auth import require_admin
 from ..audit import record
 from ..config import DATA_DIR, settings
 from ..core import assets_import
@@ -16,7 +17,8 @@ from ..models import Asset, AssetImport, AssetImportMapping, Department
 from ..schemas import AssetCommitRequest, MappingPresetIn
 from ..serializers import asset_item
 
-router = APIRouter(prefix="/api/v1", tags=["assets"])
+router = APIRouter(prefix="/api/v1", tags=["assets"],
+                   dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
 ASSET_DIR = DATA_DIR / "assets"
 ASSET_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -5,11 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..auth import require_admin
 from ..db import get_db
 from ..models import Department
 from ..schemas import DepartmentIn
 
-router = APIRouter(prefix="/api/v1", tags=["departments"])
+router = APIRouter(prefix="/api/v1", tags=["departments"],
+                   dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
 
 
 def _item(d: Department) -> dict:

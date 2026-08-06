@@ -9,11 +9,13 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..auth import require_admin
 from ..db import get_db
 from ..models import Advisory, AppUser, AuditLog
 from ..serializers import _d
 
-router = APIRouter(prefix="/api/v1", tags=["audit"])
+router = APIRouter(prefix="/api/v1", tags=["audit"],
+                   dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
 
 ACTION_KO: dict[str, str] = {
     "ADVISORY_UPLOAD": "권고문 업로드",

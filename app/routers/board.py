@@ -18,9 +18,11 @@ from sqlalchemy.orm import Session
 
 from .. import enums, serializers
 from ..audit import record
+from ..auth import require_admin
 from ..config import DATA_DIR, settings
 from ..core.files import evidence_response, safe_filename
 from ..db import get_db
+from ..deps import get_actor_id
 from ..models import Advisory, AdvisoryComment, Asset, Department, Match, Notification
 from ..schemas import AssetAckIn, CommentIn
 
@@ -607,9 +609,15 @@ async def upload_comment_evidence(comment_id: int, request: Request,
     return {"comment": serializers.comment_item(c), "ack_synced_notification": synced}
 
 
-@router.get("/comments/{comment_id}/evidence")
+@router.get("/comments/{comment_id}/evidence", dependencies=[Depends(require_admin)])
 def get_comment_evidence(comment_id: int, db: Session = Depends(get_db)):
-    """댓글 증빙 파일 열람 — 안전 타입만 inline, 그 외 첨부(stored-XSS 차단). 첨부 없으면 404."""
+    """댓글 증빙 파일 열람 — 관리자 전용(보안검토 H-1 의 IDOR).
+
+    게시판 응답은 이미 _public_comment 가 증빙을 제거하지만, 이 엔드포인트는 정수 ID 만
+    바꾸면 전 부서의 증빙(개인정보 포함 가능)을 열람할 수 있었다. 공개 범위를 화면과
+    일치시킨다 — 업로드(POST)는 직원 회신 동선이므로 무인증 그대로다.
+    안전 타입만 inline, 그 외 첨부(stored-XSS 차단). 첨부 없으면 404.
+    """
     import os
 
     c = db.get(AdvisoryComment, comment_id)
@@ -618,15 +626,21 @@ def get_comment_evidence(comment_id: int, db: Session = Depends(get_db)):
     return evidence_response(c.evidence_path, c.evidence_name)
 
 
-@router.delete("/comments/{comment_id}", status_code=204)
+@router.delete("/comments/{comment_id}", status_code=204,
+               dependencies=[Depends(require_admin)])
 def delete_comment(comment_id: int, request: Request, db: Session = Depends(get_db)):
-    """댓글 삭제(관리자 모더레이션). 무인증 환경이라 관리자 화면에서만 호출."""
+    """댓글 삭제(관리자 모더레이션) — 관리자 전용(보안검토 H-2).
+
+    이전에는 '관리자 화면에서만 호출'이라는 관례에만 의존해, 네트워크상 누구나 임의
+    공식 회신을 지울 수 있었다.
+    """
     c = db.get(AdvisoryComment, comment_id)
     if not c:
         raise HTTPException(404, "댓글 없음")
     advisory_id = c.advisory_id
     db.delete(c)
-    record(db, action="BOARD_COMMENT_DELETE", actor_id=None, entity_type="advisory",
+    # 관리자 전용 모더레이션이므로 삭제한 사람을 남긴다(익명 게시판 쓰기와 달리 주체가 있다).
+    record(db, action="BOARD_COMMENT_DELETE", actor_id=get_actor_id(db), entity_type="advisory",
            entity_id=advisory_id, detail={"comment_id": comment_id}, request=request)
     db.commit()
     return None
