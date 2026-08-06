@@ -87,7 +87,7 @@ def _load_bundled_cve_feeds() -> None:
     소스: NVD(Public Domain) · CISA KEV(Public Domain) · KISA. 멱등(표식 파일로 1회만).
     1.6GB급 NVD(.gz 포함)도 스트리밍으로 상수 메모리 적재(저사양 PC 안전).
     """
-    from .config import BASE_DIR, DATA_DIR
+    from .config import BASE_DIR, DATA_DIR, secure_write_bytes
     from .core import feeds
 
     feed_dir = BASE_DIR / "samples" / "cve_feeds"
@@ -110,7 +110,7 @@ def _load_bundled_cve_feeds() -> None:
                 continue
             total += added
             print(f"[cve-feeds]   {f.name}: 신규 +{added} (누적 {total})", flush=True)
-    sentinel.write_text(str(total), encoding="utf-8")
+    secure_write_bytes(sentinel, str(total).encode("utf-8"))
     if total:
         print(f"[cve-feeds] 동봉 CVE 피드 적재 완료: {total}건", flush=True)
 

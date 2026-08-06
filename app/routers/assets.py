@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import enums
 from ..auth import require_admin
 from ..audit import record
-from ..config import DATA_DIR, settings
+from ..config import DATA_DIR, secure_dir, secure_write_bytes, settings
 from ..core import assets_import
 from ..core.files import safe_filename
 from ..db import get_db
@@ -19,8 +19,8 @@ from ..serializers import asset_item
 
 router = APIRouter(prefix="/api/v1", tags=["assets"],
                    dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
-ASSET_DIR = DATA_DIR / "assets"
-ASSET_DIR.mkdir(parents=True, exist_ok=True)
+ASSET_DIR = secure_dir(DATA_DIR / "assets")
+
 
 
 @router.get("/assets")
@@ -60,7 +60,7 @@ async def import_preview(
     if len(content) > settings.max_upload_bytes:
         raise HTTPException(413, f"파일 크기 초과(최대 {settings.MAX_UPLOAD_MB}MB)")
     path = ASSET_DIR / f"import_{safe_filename(file.filename)}"
-    path.write_bytes(content)
+    secure_write_bytes(path, content)
     imp = AssetImport(file_name=file.filename, sheet_name=sheet,
                       status=enums.AssetImportStatus.PREVIEW, file_path=str(path))
     db.add(imp)

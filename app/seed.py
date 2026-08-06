@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import enums
-from .config import UPLOAD_DIR
+from .config import UPLOAD_DIR, secure_write_bytes
 from .core import extract
 from .models import (
     AdvisoryCve, Advisory, AppUser, Asset, Cve, Department, Notification,
@@ -134,7 +134,7 @@ def seed(db: Session) -> None:
                              + [c for c in ADVISORY_CVE_CODES])
     sha = extract.sha256_bytes(pdf_bytes)
     pdf_path = UPLOAD_DIR / f"{sha}.pdf"
-    pdf_path.write_bytes(pdf_bytes)
+    secure_write_bytes(pdf_path, pdf_bytes)
 
     adv = Advisory(
         doc_no="국정원-사이버-2026-0612",
@@ -166,7 +166,7 @@ def seed(db: Session) -> None:
     )
     ppdf = _minimal_pdf(["Linux Kernel EoP Advisory", "Doc: 국토부-정보보호-2026-0521"])
     psha = extract.sha256_bytes(ppdf)
-    (UPLOAD_DIR / f"{psha}.pdf").write_bytes(ppdf)
+    secure_write_bytes(UPLOAD_DIR / f"{psha}.pdf", ppdf)
     past.file_path = str(UPLOAD_DIR / f"{psha}.pdf")
     past.file_sha256 = psha
     db.add(past)

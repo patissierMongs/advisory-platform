@@ -197,7 +197,7 @@ with TestClient(app) as c:
     r = c.patch(f"/api/v1/notifications/{nid}/ack", json={"ack_status": "DONE", "note": "완료"})
     check("ack 완료", r.json()["ack_status"] == "DONE")
     r = c.post(f"/api/v1/notifications/{nid}/evidence",
-               files={"file": ("patch.png", io.BytesIO(b"\x89PNG evidence"), "image/png")})
+               files={"file": ("patch.png", io.BytesIO(b"\x89PNG\r\n\x1a\nevidence"), "image/png")})
     check("증빙 업로드", r.json()["evidence"] == "patch.png", r.json())
     # ── 보안: 파일명 sanitize(경로 traversal 차단) ──
     from app.core.files import safe_filename

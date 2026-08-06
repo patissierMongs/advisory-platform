@@ -14,10 +14,10 @@ import threading
 import zlib
 from pathlib import Path
 
-from ..config import DATA_DIR
+from ..config import DATA_DIR, secure_dir, secure_write_bytes
 
-RENDER_DIR = DATA_DIR / "render"
-RENDER_DIR.mkdir(parents=True, exist_ok=True)
+RENDER_DIR = secure_dir(DATA_DIR / "render")
+
 
 _LOCK = threading.Lock()
 
@@ -70,7 +70,7 @@ def render_page_png(pdf_path: str, page_index: int, scale: float = 2.0) -> bytes
             png = _encode_png(bytes(bmp.buffer), bmp.width, bmp.height, bmp.stride, bmp.n_channels)
         finally:
             doc.close()
-    cache.write_bytes(png)
+    secure_write_bytes(cache, png)
     return png
 
 

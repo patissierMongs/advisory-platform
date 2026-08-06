@@ -1,6 +1,7 @@
 """부서 알림 — 미리보기/발송/이력/회신 (명세서 §5.5, §4.7). 멱등성+게이트."""
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -11,17 +12,16 @@ from sqlalchemy.orm import Session
 from .. import enums
 from ..auth import require_admin
 from ..audit import record
-from ..config import DATA_DIR, settings
+from ..config import DATA_DIR, secure_dir, secure_write_bytes, settings
 from ..core import notify, remediation
-from ..core.files import evidence_response, safe_filename
+from ..core.files import check_evidence_upload, evidence_response
 from ..db import get_db
 from ..deps import get_actor_id
 from ..models import Advisory, Department, Match, Notification
 from ..schemas import AckPatch, NotifyRequest, NotifyTestRequest
 from ..serializers import notification_item
 
-EVIDENCE_DIR = DATA_DIR / "evidence"
-EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+EVIDENCE_DIR = secure_dir(DATA_DIR / "evidence")
 
 router = APIRouter(prefix="/api/v1", tags=["notifications"],
                    dependencies=[Depends(require_admin)])  # 관리자 전용 — 라우터 전체 게이트
@@ -208,21 +208,37 @@ def ack(notification_id: int, body: AckPatch, request: Request, db: Session = De
 @router.post("/notifications/{notification_id}/evidence")
 async def upload_evidence(notification_id: int, request: Request,
                           file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """조치 증빙 파일 업로드(§★★★★★)."""
+    """조치 증빙 파일 업로드(§★★★★★) — 관리자 전용이라 재업로드(교체)를 허용한다.
+
+    공개 게시판 쪽(board.upload_comment_evidence)은 무인증이라 교체를 409 로 막지만,
+    여기는 인증된 관리자가 잘못 올린 파일을 바로잡는 정상 동선이다.
+    """
+    import os
+
     n = db.get(Notification, notification_id)
     if not n:
         raise HTTPException(404, "발송 내역 없음")
     content = await file.read()
+    # 크기 검사가 형식 검사보다 먼저 — 거대한 파일은 형식과 무관하게 413.
     if len(content) > settings.max_upload_bytes:
         raise HTTPException(413, f"파일 크기 초과(최대 {settings.MAX_UPLOAD_MB}MB)")
-    # 온디스크 경로는 sanitize(traversal 차단), 표시용 원본명은 보존.
-    path = EVIDENCE_DIR / f"notif{notification_id}_{safe_filename(file.filename)}"
-    path.write_bytes(content)
+    display_name = check_evidence_upload(file.filename, content)
+    previous = n.ack_evidence_path
+    # 난수 접미사로 디스크상 덮어쓰기를 없앤다(동시 업로드 충돌·선점 방지).
+    path = EVIDENCE_DIR / f"notif{notification_id}_{secrets.token_hex(8)}_{display_name}"
+    secure_write_bytes(path, content, exclusive=True)
     n.ack_evidence_path = str(path)
-    n.ack_evidence_name = file.filename
+    # 표시명도 안전화된 값을 저장한다 — 원본명을 그대로 두면 Content-Disposition 헤더와
+    # 화면 양쪽에서 매번 정제에 의존하게 된다(게시판 쪽과도 불일치였다).
+    n.ack_evidence_name = display_name
+    if previous and previous != str(path):
+        try:
+            os.unlink(previous)
+        except OSError:
+            pass  # 이미 없거나 잠김 — 교체 자체를 실패시킬 이유는 없다
     db.flush()
     record(db, action="NOTIFY_EVIDENCE", actor_id=get_actor_id(db), entity_type="notification",
-           entity_id=n.id, detail={"file": file.filename}, request=request)
+           entity_id=n.id, detail={"file": display_name}, request=request)
     db.commit()
     return notification_item(n)
 

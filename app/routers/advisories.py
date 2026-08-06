@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from .. import enums
 from ..auth import require_admin
 from ..audit import record
-from ..config import UPLOAD_DIR, settings
+from ..config import UPLOAD_DIR, secure_write_bytes, settings
 from ..core import extract, product_extract
 from ..core.advisory_ops import (
     refresh_extracted_products,
@@ -89,7 +89,7 @@ async def upload_advisory(
 
     path = UPLOAD_DIR / f"{sha}.pdf"
     if not path.exists():
-        path.write_bytes(content)
+        secure_write_bytes(path, content)
     text, pages = extract.extract_text_from_pdf(str(path))
 
     # 조치기한(§8): 본문 추출 우선 → 폼 수동입력 → 미지정(관리자 입력 대기).
@@ -688,7 +688,8 @@ def get_file(advisory_id: int, download: bool = Query(False), db: Session = Depe
     else:
         disp = "inline"
     return FileResponse(adv.file_path, media_type="application/pdf",
-                        headers={"Content-Disposition": disp})
+                        headers={"Content-Disposition": disp,
+                                 "X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/advisories/{advisory_id}/pdf-view")
@@ -732,8 +733,10 @@ def get_page_png(advisory_id: int, page: int, scale: float = Query(2.0, ge=1.0, 
         raise HTTPException(404, "해당 페이지 없음")
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"PDF 렌더 실패: {e}")
+    # 관리자 게이트 뒤 콘텐츠다 — public 캐시는 공유 프록시에 남을 수 있어 private 로.
     return Response(content=png, media_type="image/png",
-                    headers={"Cache-Control": "public, max-age=86400"})
+                    headers={"Cache-Control": "private, max-age=86400",
+                             "X-Content-Type-Options": "nosniff"})
 
 
 def _download_name(adv: Advisory) -> str:

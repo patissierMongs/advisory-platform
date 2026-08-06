@@ -52,7 +52,8 @@ def report_xlsx(advisory_id: int, db: Session = Depends(get_db)):
 @router.get("/advisories/{advisory_id}/report.html", response_class=HTMLResponse)
 def report_html(advisory_id: int, db: Session = Depends(get_db)):
     """브라우저 인쇄(Ctrl+P)로 PDF 저장 가능한 한글 보고서."""
-    return reports.build_html(db, _adv(db, advisory_id))
+    return HTMLResponse(reports.build_html(db, _adv(db, advisory_id)),
+                        headers={"X-Content-Type-Options": "nosniff"})
 
 
 # ── SLA / 리마인드 (§★★★★) ──

@@ -125,7 +125,9 @@ def test_comment_evidence_upload_syncs_and_sanitizes_filename(client, fixture_id
         n = db.get(Notification, nid)
         saved = Path(c.evidence_path)
         assert saved.parent == EVIDENCE_DIR
-        assert saved.name == f"comment{cid}_evidence_.txt"
+        # 디스크 파일명에는 난수가 들어간다(덮어쓰기 차단) — 표시명은 아래에서 그대로 확인.
+        assert saved.name.startswith(f"comment{cid}_")
+        assert saved.name.endswith("_evidence_.txt")
         assert c.evidence_name == "evidence_.txt"
         assert n.ack_evidence_path == c.evidence_path
         assert n.ack_evidence_name == "evidence_.txt"
