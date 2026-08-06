@@ -275,6 +275,111 @@ def write_bundle_info(app: Path, rt: Runtime, dists: list[str], offline: bool) -
                                                      errors="replace")
 
 
+def split_bundle(out: Path, chunk_mb: int) -> list[Path]:
+    """zip 을 고정 크기 조각으로 나눈다(`.001`, `.002`, …). 원본은 남긴다.
+
+    zip 자체의 다중볼륨 기능이 아니라 **단순 바이트 분할**이다. 폐쇄망 타깃에는 7-Zip 같은
+    도구가 없을 수 있는데, 바이트 분할은 Windows 기본 `copy /b` 만으로 되돌릴 수 있다.
+    (다중볼륨 zip 은 전용 도구가 있어야 열린다 — 반입 절차가 도구 반입에 발목 잡힌다.)
+    """
+    size = chunk_mb * 1_000_000     # 10진 MB — "10MB 이하" 요건은 보통 이 기준으로 본다
+    total = out.stat().st_size
+    parts: list[Path] = []
+    with out.open("rb") as f:
+        while True:
+            chunk = f.read(size)
+            if not chunk:
+                break
+            p = out.with_name(f"{out.name}.{len(parts) + 1:03d}")
+            p.write_bytes(chunk)
+            parts.append(p)
+    log(f"split {out.name} → {len(parts)} parts "
+        f"({total / 1024 / 1024:.1f} MB, max {size / 1024 / 1024:.2f} MiB/part)")
+    return parts
+
+
+def write_join_script(out: Path, parts: list[Path], digest: str) -> Path:
+    """타깃에서 도구 없이 재조립하는 .bat 생성 — copy /b 로 합치고 certutil 로 검증.
+
+    ASCII 전용 + CRLF: 한국어(CP949) 콘솔에서 한글이나 LF 는 .bat 파싱을 깨뜨린다.
+    """
+    name = out.name
+    plus = "+".join(f'"{p.name}"' for p in parts)
+    exists_checks = "".join(
+        f'if not exist "{p.name}" (\r\n'
+        f'    echo [ERROR] Missing part: {p.name}\r\n'
+        f'    goto :fail\r\n'
+        f')\r\n'
+        for p in parts)
+    body = (
+        "@echo off\r\n"
+        "setlocal enabledelayedexpansion\r\n"
+        "cd /d \"%~dp0\"\r\n"
+        "\r\n"
+        f"REM Rejoin the split all-in-one bundle: {name}\r\n"
+        "REM Uses only built-in Windows commands (copy, certutil) - no 7-Zip needed.\r\n"
+        "REM Put every .001/.002/... part in THIS folder, then run this file.\r\n"
+        "\r\n"
+        f'set "NAME={name}"\r\n'
+        f'set "WANT={digest}"\r\n'
+        "\r\n"
+        "echo [join] Checking parts...\r\n"
+        + exists_checks +
+        "\r\n"
+        'if exist "%NAME%" del /q "%NAME%"\r\n'
+        "echo [join] Joining into %NAME% ...\r\n"
+        f'copy /b {plus} "%NAME%" >nul\r\n'
+        "if errorlevel 1 (\r\n"
+        "    echo [ERROR] copy /b failed.\r\n"
+        "    goto :fail\r\n"
+        ")\r\n"
+        "\r\n"
+        "echo [join] Verifying SHA256 ^(this takes a few seconds^)...\r\n"
+        "set \"GOT=\"\r\n"
+        "for /f \"skip=1 delims=\" %%H in ('certutil -hashfile \"%NAME%\" SHA256') do (\r\n"
+        "    if not defined GOT set \"GOT=%%H\"\r\n"
+        ")\r\n"
+        "set \"GOT=!GOT: =!\"\r\n"
+        "if not defined GOT (\r\n"
+        "    echo [WARN] certutil is unavailable - could not verify the checksum.\r\n"
+        "    echo        The file was joined; verify it by hand if you can:\r\n"
+        "    echo          expected %WANT%\r\n"
+        "    goto :done\r\n"
+        ")\r\n"
+        "if /i not \"!GOT!\"==\"%WANT%\" (\r\n"
+        "    echo [ERROR] SHA256 mismatch - the parts are damaged or incomplete.\r\n"
+        "    echo         expected %WANT%\r\n"
+        "    echo         actual   !GOT!\r\n"
+        "    echo   Copy every part again and make sure none was truncated.\r\n"
+        '    del /q "%NAME%"\r\n'
+        "    goto :fail\r\n"
+        ")\r\n"
+        "\r\n"
+        "echo [join] OK - %NAME% rebuilt and verified.\r\n"
+        "\r\n"
+        ":done\r\n"
+        "echo.\r\n"
+        "echo Next:\r\n"
+        "echo   1^) Extract %NAME% ^(right-click - Extract All, or: tar -xf %NAME%^)\r\n"
+        "echo   2^) Run advisory-platform\\start.bat\r\n"
+        "echo   3^) The console prints the initial admin password once - write it down.\r\n"
+        "echo   4^) Open http://localhost:8000 and log in ^(password change is forced^).\r\n"
+        "echo.\r\n"
+        "pause\r\n"
+        "exit /b 0\r\n"
+        "\r\n"
+        ":fail\r\n"
+        "echo.\r\n"
+        "echo [FAILED] See the message above.\r\n"
+        "pause\r\n"
+        "exit /b 1\r\n"
+    )
+    script = out.with_name(f"join_{out.stem}.bat")
+    script.write_text(body, encoding="ascii")
+    log(f"wrote {script.name}")
+    return script
+
+
 def zip_bundle(app: Path, out: Path) -> int:
     if out.exists():
         out.unlink()
@@ -287,7 +392,7 @@ def zip_bundle(app: Path, out: Path) -> int:
     return n
 
 
-def build_one(rt: Runtime, offline: bool) -> None:
+def build_one(rt: Runtime, offline: bool, split_mb: int = 0) -> None:
     log(f"=== building for Python {rt.full} ({rt.abi}) ===")
     embed = download_embed(rt, offline)
     if STAGE.exists():
@@ -303,6 +408,15 @@ def build_one(rt: Runtime, offline: bool) -> None:
     shutil.rmtree(STAGE, ignore_errors=True)
     log(f"wrote {rt.out_zip} : {n} files, {rt.out_zip.stat().st_size / 1024 / 1024:.1f} MB")
 
+    if split_mb > 0:
+        for stale in rt.out_zip.parent.glob(f"{rt.out_zip.name}.[0-9][0-9][0-9]"):
+            stale.unlink()          # 이전 빌드가 더 잘게 쪼갰다면 남은 파트가 재조립을 오염시킨다
+        digest = sha256_of(rt.out_zip)
+        parts = split_bundle(rt.out_zip, split_mb)
+        rt.out_zip.with_suffix(rt.out_zip.suffix + ".sha256").write_text(
+            f"{digest}  {rt.out_zip.name}\n", encoding="ascii")
+        write_join_script(rt.out_zip, parts, digest)
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__,
@@ -311,6 +425,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help=f"번들에 넣을 임베디드 파이썬 (기본 {DEFAULT_PY})")
     ap.add_argument("--offline", action="store_true",
                     help="인터넷 없이 vendor/bundle 의 사전 수집 자산만으로 빌드")
+    ap.add_argument("--split-mb", type=int, default=0, metavar="N",
+                    help="산출물을 N MB 조각으로 분할(.001, .002 …) + 재조립 join_*.bat 생성. "
+                         "메일·USB 용량 제한이 있는 반입 경로용. 0=분할 안 함(기본)")
     return ap.parse_args(argv)
 
 
@@ -318,9 +435,11 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     if not REQUIREMENTS.exists():
         sys.exit(f"{REQUIREMENTS.name} 이 없습니다 — 번들 의존성 목록이 필요합니다.")
+    if args.split_mb < 0:
+        sys.exit("--split-mb 는 0 이상이어야 합니다.")
     targets = list(PY_RUNTIMES.values()) if args.python == "all" else [PY_RUNTIMES[args.python]]
     for rt in targets:
-        build_one(rt, args.offline)
+        build_one(rt, args.offline, args.split_mb)
 
 
 if __name__ == "__main__":

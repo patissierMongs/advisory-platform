@@ -105,6 +105,41 @@ python build_allinone.py --python all --offline
 `--offline` 은 `--no-index --find-links vendor/bundle/<abi>` 로만 설치하므로 **PyPI 에 접속하지 않습니다.**
 자산이 없으면 조용히 온라인으로 빠지지 않고, 무엇을 어디서 수집해야 하는지 알려주며 중단합니다.
 
+### 분할 파일로 반입 (메일·USB 용량 제한이 있을 때)
+
+```bash
+python build_allinone.py --python all --offline --split-mb 9
+```
+→ 버전별로 아래가 생성됩니다.
+```
+advisory-platform_allinone-py312.zip          원본(빌드 PC 보관용)
+advisory-platform_allinone-py312.zip.001      8.58 MiB
+advisory-platform_allinone-py312.zip.002      8.58 MiB
+advisory-platform_allinone-py312.zip.003      5.24 MiB
+advisory-platform_allinone-py312.zip.sha256   합친 뒤 대조할 원본 해시
+join_advisory-platform_allinone-py312.bat     재조립 스크립트
+```
+
+**타깃(폐쇄망)에서**: `.001`~`.003` 과 `join_*.bat` 을 **같은 폴더**에 두고 `join_*.bat` 실행 →
+zip 압축 해제 → `advisory-platform\start.bat`.
+
+zip 다중볼륨이 아니라 **단순 바이트 분할**이라 재조립에 Windows 기본 `copy /b` 만 씁니다 —
+타깃에 7-Zip 같은 압축 도구가 없어도 됩니다. 검증도 기본 내장 `certutil` 로 하므로
+반입 절차가 도구 반입에 발목 잡히지 않습니다. 파트가 하나라도 빠지거나 전송 중 잘리면
+해시 불일치로 중단하고 무엇이 문제인지 알려 줍니다.
+
+### 최초 구동 (외부망 0건)
+
+`start.bat` 실행 → 콘솔에 **초기 관리자 계정과 무작위 비밀번호가 1회 출력**됩니다
+(`app/auth.py` `ensure_bootstrap_admin`). 적어 두고 http://localhost:8000 에서 로그인하면
+비밀번호 변경이 강제됩니다. `data/` 폴더와 SQLite DB 는 첫 기동에 자동 생성되고,
+NTFS ACL 도 함께 적용됩니다. **기동 경로에 네트워크 접속은 없습니다.**
+
+> **CVE 피드는 번들에 없습니다**(공개 피드 ~290MB). 앱은 정상 기동하고 권고문 업로드·표 추출·
+> 자산 매칭까지 모두 동작하며, CVE 상세만 비어 있습니다. 관리자 화면에서 피드 파일을 올리면
+> 채워집니다(`POST /api/v1/cve-feeds`) — 원래 폐쇄망 운영 동선입니다. 형식 확인용 소형 샘플
+> `samples/krcert_cve_feed_2026-06-15.json` 은 번들에 들어 있습니다.
+
 ### 번들 내용 확인
 
 각 zip 의 `runtime/BUNDLE_INFO.txt` 에 임베디드 파이썬 버전·해시·빌드 방식(온라인/오프라인)과
