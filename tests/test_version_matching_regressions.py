@@ -11,7 +11,9 @@
 """
 from __future__ import annotations
 
-from app.core.product_extract import extract_products
+import pytest
+
+from app.core.product_extract import _scan_window, extract_products
 from app.core.versioning import version_matches
 
 
@@ -174,3 +176,33 @@ def test_existing_rule_forms_are_unaffected():
     assert version_matches("22H2", ["22H2", "23H2"]) == (True, False)
     assert version_matches("DC2021", {"range": ["DC2019", "DC2023"]}) == (True, False)
     assert version_matches("1.0", "*") == (True, False)
+
+
+# ── D5: 영문 범위가 열거로 저장되던 결함 ───────────────────────────────────────
+#
+# "8.1.0 to 8.1.2" 를 범위가 아니라 정확 버전 열거 ['8.1.0','8.1.2'] 로 저장하면
+# 경계 사이의 8.1.1 이 확정 미매칭이 된다. D3(한국어 '부터~까지')와 같은 계열의
+# 확신-미탐이며, 한국어 권고문에도 영문 표가 흔히 섞여 들어와 실제로 발생한다.
+
+@pytest.mark.parametrize("phrase", [
+    "8.1.0 to 8.1.2",
+    "8.1.0 through 8.1.2",
+    "8.1.0 thru 8.1.2",
+])
+def test_english_range_is_a_range_not_an_enumeration(phrase):
+    rule = _scan_window(phrase, 0, len(phrase))["rule"]
+    assert rule == {"range": ["8.1.0", "8.1.2"]}, rule
+    assert version_matches("8.1.1", rule) == (True, False), "범위 사이 버전이 누락됐다"
+
+
+def test_comma_list_stays_an_enumeration():
+    """쉼표 나열까지 범위로 오인하면 반대 방향 오탐이 생긴다."""
+    for phrase in ("22H2, 23H2", "8.1.2, 9.0.1"):
+        rule = _scan_window(phrase, 0, len(phrase))["rule"]
+        assert isinstance(rule, list), (phrase, rule)
+
+
+def test_to_without_following_version_is_not_a_range():
+    """'to' 뒤에 버전이 없으면 범위가 아니다('8.1.0 to be announced')."""
+    rule = _scan_window("8.1.0 to be announced", 0, 21)["rule"]
+    assert rule == ["8.1.0"], rule

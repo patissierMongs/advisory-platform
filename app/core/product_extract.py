@@ -50,6 +50,11 @@ _AFTER_GT = re.compile(r"^\s*(?:버전\s*)?초과", re.IGNORECASE)
 _BEFORE_LT = re.compile(r"(?:prior\s+to|before|earlier\s+than)\s*$", re.IGNORECASE)
 # 물결형 범위 구분자("1.20 ~ 1.24").
 _RANGE_TILDE = re.compile(r"^\s*[~∼〜–—]\s*")
+# 영문 범위("8.1.0 to 8.1.2"). 한국어 권고문에도 영문 표가 흔히 섞여 들어온다.
+# 이게 없으면 범위가 '정확 버전 열거'로 저장돼 경계 사이(8.1.1)의 취약 자산이 조용히
+# 누락된다 — D1~D3 와 같은 '확신하는 오답' 계열이라 여기서 함께 막는다.
+# 뒤에 버전 토큰이 이어질 때만 범위로 본다("~ 이후 별도 안내" 같은 문구에 오작동 방지).
+_RANGE_TO_EN = re.compile(r"^\s*(?:to|through|thru|up\s+to)\s+(?=v?\d)", re.IGNORECASE)
 # 한국어 범위 시작어("1.20.0 부터 …"). "부터/에서" 뒤에 상한 버전이 이어진다.
 # 예전엔 `부터…$` 로 앵커돼 문장 중간의 "부터"를 못 잡아, 가장 흔한 "X 부터 Y 까지"
 # 표현이 범위가 아니라 열거로 저장되는 확신-미탐 결함이 있었다(§매칭 정확성 수정).
@@ -191,7 +196,7 @@ def _scan_window(text: str, win_start: int, win_end: int) -> dict:
             range_pair = [pending_range_lo, tok]
             pending_range_lo = None
             continue
-        if _RANGE_TILDE.match(after):
+        if _RANGE_TILDE.match(after) or _RANGE_TO_EN.match(after):
             pending_range_lo = tok
             continue
         if _RANGE_FROM.match(after):

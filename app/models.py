@@ -172,6 +172,9 @@ class Advisory(TimestampMixin, Base):
     extracted_text: Mapped[str | None] = mapped_column(Text)
     extract_phase: Mapped[str | None] = mapped_column(String(20))   # 비동기 추출: queued|regex|done|failed
     error_message: Mapped[str | None] = mapped_column(Text)         # 추출 실패/경고 사유(보드 표시)
+    # 표 서식 판정(§표 기반 추출): TABLE_OK | NO_TABLE | TABLE_UNPARSED | NULL(미추출).
+    # 표가 아니면 제품·버전을 관리자가 손봐야 하므로 목록에서 색·배지로 드러낸다.
+    table_status: Mapped[str | None] = mapped_column(String(20))
     status: Mapped[enums.AdvisoryStatus] = mapped_column(
         _enum(enums.AdvisoryStatus), default=enums.AdvisoryStatus.UPLOADED, nullable=False
     )
