@@ -115,3 +115,123 @@ def test_version_matches_multi_op_dict():
     assert version_matches("9.0.29", rule) == (True, False)
     assert version_matches("9.0.30", rule) == (False, False)
     assert version_matches("8.4", rule) == (False, False)
+
+
+# ── 표 셀에서 추출 (§표 기반 추출) ─────────────────────────────────────────────
+#
+# 권고문의 주 서식은 표다. 열 의미가 명시적이라 본문 스캔보다 정확해야 한다.
+
+import pytest  # noqa: E402
+from app.core.pdf_tables import TableRow  # noqa: E402
+from app.core.product_extract import extract_products_from_table  # noqa: E402
+from app.core.versioning import version_matches  # noqa: E402
+
+
+def _by_key(items):
+    return {p["product_key"]: p for p in items}
+
+
+def test_table_row_yields_bounded_range():
+    rows = [TableRow(cve="CVE-2026-8461", product="FFmpeg",
+                     affected="8.1.0 이상 8.1.2 미만", fixed="8.1.2")]
+    p = _by_key(extract_products_from_table(rows))["ffmpeg"]
+    assert p["product_name"] == "FFmpeg"
+    assert p["affected_versions"]["gte"] == "8.1.0"
+    assert p["affected_versions"]["lt"] == "8.1.2"
+    assert p["fixed_version"] == "8.1.2"
+
+
+def test_same_product_multiple_ranges_merge_into_any():
+    """사용자 예시 그대로 — 제품당 1행 제약 안에서 두 범위가 모두 살아남아야 한다."""
+    rows = [TableRow(cve="CVE-2026-8461", product="FFmpeg",
+                     affected="8.1.0 이상 8.1.2 미만", fixed="8.1.2"),
+            TableRow(cve="CVE-2026-8461", product="FFmpeg",
+                     affected="8.0.0 이상 8.0.3 미만", fixed="8.1.3")]
+    p = _by_key(extract_products_from_table(rows))["ffmpeg"]
+    rule = p["affected_versions"]
+    assert "any" in rule and len(rule["any"]) == 2, rule
+    assert p["fixed_version"] == "8.1.2, 8.1.3"
+
+    # 실제 매칭까지 확인 — 두 범위 모두 취약으로, 해결 버전은 안전으로 판정돼야 한다.
+    assert version_matches("8.1.1", rule) == (True, False)
+    assert version_matches("8.0.2", rule) == (True, False)
+    assert version_matches("8.1.2", rule) == (False, False)
+    assert version_matches("8.0.3", rule) == (False, False)
+
+
+def test_per_range_fixed_version_is_carried_but_ignored_by_matcher():
+    rows = [TableRow(product="FFmpeg", affected="8.1.0 이상 8.1.2 미만", fixed="8.1.2"),
+            TableRow(product="FFmpeg", affected="8.0.0 이상 8.0.3 미만", fixed="8.1.3")]
+    rule = _by_key(extract_products_from_table(rows))["ffmpeg"]["affected_versions"]
+    assert [s["fixed"] for s in rule["any"]] == ["8.1.2", "8.1.3"]
+    # fixed 키가 비교에 끼어들지 않는지 — 없는 규칙과 결과가 같아야 한다.
+    bare = {"any": [{k: v for k, v in s.items() if k != "fixed"} for s in rule["any"]]}
+    for v in ("8.0.2", "8.1.1", "8.1.2", "9.0.0"):
+        assert version_matches(v, rule) == version_matches(v, bare), v
+
+
+@pytest.mark.parametrize(("affected", "expected"), [
+    ("9.0.90 미만", {"lt": "9.0.90"}),
+    ("124 이하", {"lte": "124"}),
+    ("10.1.25 이상", {"gte": "10.1.25"}),
+    ("3.0.0 ~ 3.0.14", {"range": ["3.0.0", "3.0.14"]}),
+    ("3.0.0 부터 3.0.14 까지", {"range": ["3.0.0", "3.0.14"]}),
+])
+def test_single_bound_and_range_forms(affected, expected):
+    rows = [TableRow(product="OpenSSL", affected=affected)]
+    rule = _by_key(extract_products_from_table(rows))["openssl"]["affected_versions"]
+    assert {k: v for k, v in rule.items() if k != "fixed"} == expected
+
+
+def test_enumerated_versions_stay_a_list():
+    rows = [TableRow(product="Windows 11", affected="22H2, 23H2", fixed="")]
+    rule = _by_key(extract_products_from_table(rows))["windows_11"]["affected_versions"]
+    assert rule == ["22H2", "23H2"]
+
+
+def test_unparseable_version_text_is_kept_not_dropped():
+    """'특정 버전으로 마이그레이션' 같은 문구를 버리면 관리자가 대상 없음으로 오해한다."""
+    rows = [TableRow(cve="CVE-2026-5555", product="LegacyApp",
+                     affected="특정 버전으로 마이그레이션 필요", fixed="")]
+    p = _by_key(extract_products_from_table(rows))["legacyapp"]
+    assert p["affected_versions"] == "*"
+    assert "마이그레이션" in p["source_snippet"], "원문이 남아야 관리자가 보정할 수 있다"
+
+
+def test_unknown_rule_dominates_merge():
+    """해석 불가가 섞이면 좁은 범위로 줄이면 안 된다 — 상위집합('*')을 택한다."""
+    rows = [TableRow(product="LegacyApp", affected="1.0 이상 2.0 미만"),
+            TableRow(product="LegacyApp", affected="문자열 버전")]
+    rule = _by_key(extract_products_from_table(rows))["legacyapp"]["affected_versions"]
+    assert rule == "*"
+
+
+def test_product_alias_is_normalised_to_canonical_key():
+    rows = [TableRow(product="Microsoft Windows 11", affected="22H2")]
+    items = _by_key(extract_products_from_table(rows))
+    assert "windows_11" in items, list(items)
+
+
+def test_unknown_product_falls_back_to_slug():
+    """사전에 없는 제품도 표에 적혀 있으면 살린다."""
+    rows = [TableRow(product="SomeNewTool", affected="1.0 미만", fixed="1.0")]
+    items = _by_key(extract_products_from_table(rows))
+    assert "somenewtool" in items, list(items)
+
+
+def test_multiple_fixed_versions_are_preserved():
+    rows = [TableRow(product="Apache Tomcat", affected="9.0.90 미만", fixed="9.0.90, 10.1.25")]
+    p = _by_key(extract_products_from_table(rows))["apache_tomcat"]
+    assert p["fixed_version"] == "9.0.90, 10.1.25"
+
+
+def test_empty_or_blank_rows_are_skipped():
+    rows = [TableRow(), TableRow(product="", affected="1.0 미만")]
+    assert extract_products_from_table(rows) == []
+
+
+def test_return_schema_matches_text_extraction():
+    """하류(refresh_extracted_products)가 두 경로를 구분하지 않아야 한다."""
+    table = extract_products_from_table([TableRow(product="OpenSSL", affected="3.0.0 미만")])[0]
+    assert set(table) == {"product_name", "product_key", "affected_versions",
+                          "fixed_version", "source_snippet", "confidence"}
