@@ -18,6 +18,7 @@ from .routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _harden_data_dir()
     init_db()
     _bootstrap_auth()
     if settings.SEED_ON_START:
@@ -31,6 +32,14 @@ async def lifespan(app: FastAPI):
     _sync_extraction_aliases()
     _backfill_advisory_index()
     yield
+
+
+def _harden_data_dir() -> None:
+    """업로드·DB 가 있는 data 폴더 접근 제한(멱등). 상속 덕에 하위 폴더는 자동 적용된다."""
+    from .config import DATA_DIR
+    from .core.winacl import harden_dir
+
+    harden_dir(DATA_DIR)
 
 
 def _bootstrap_auth() -> None:
