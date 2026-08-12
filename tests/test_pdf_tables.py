@@ -192,6 +192,51 @@ def test_missing_file_does_not_raise():
     assert pdf_tables.extract_tables("/nonexistent/nope.pdf").status == NO_TABLE
 
 
+def test_body_cell_wider_than_header_is_not_truncated(tmp_path):
+    """실사용 확정 결함(WebSphere 권고문) — 가운데 정렬 표에서 본문 셀이 헤더보다 넓으면
+    헤더 시작 x 앵커 방식은 앞 글자를 왼쪽 열로 흡수했다:
+    "WebSphere Application Server" → "Application Server", "Web Server Plug-ins" → "erver Plug-ins".
+    열 경계는 헤더가 아니라 표 전체 셀 배치에서 복원돼야 한다."""
+    cells = [(55, 700, "Vulnerability"), (215, 700, "Product"),
+             (330, 700, "Affected Version"), (480, 700, "Fixed Version")]
+    # 본문 제품 셀을 헤더보다 왼쪽에서 시작시킨다(가운데 정렬 시뮬레이션).
+    cells += [(55, 678, "CVE-2026-1234"), (160, 678, "WebSphere Application Server"),
+              (330, 678, "19.1 to 19.1.1"), (480, 678, "19.1.1")]
+    cells += [(55, 656, "CVE-2026-5678"), (172, 656, "Web Server Plug-ins"),
+              (325, 656, "9.0 to 9.0.5"), (477, 656, "9.0.5")]
+    res = pdf_tables.extract_tables(write_pdf(tmp_path, [cells]))
+    assert res.status == TABLE_OK, res
+    assert len(res.rows) == 2
+    assert res.rows[0].product == "WebSphere Application Server", res.rows[0]
+    assert res.rows[0].affected == "19.1 to 19.1.1"
+    assert res.rows[0].fixed == "19.1.1"
+    assert res.rows[1].product == "Web Server Plug-ins", res.rows[1]
+    assert res.rows[1].affected == "9.0 to 9.0.5"
+
+
+def test_version_cell_extending_left_of_header_is_intact(tmp_path):
+    """버전 열도 마찬가지 — 본문 범위 구문이 헤더보다 왼쪽으로 뻗어도 잘리면 안 된다."""
+    cells = [(55, 700, "Product"), (280, 700, "Affected Version"), (470, 700, "Fixed Version")]
+    cells += [(55, 678, "Apache Tomcat"), (245, 678, "9.0.0 through 9.0.89"), (455, 678, "9.0.90")]
+    res = pdf_tables.extract_tables(write_pdf(tmp_path, [cells]))
+    assert res.status == TABLE_OK, res
+    assert res.rows[0].product == "Apache Tomcat"
+    assert res.rows[0].affected == "9.0.0 through 9.0.89", res.rows[0]
+    assert res.rows[0].fixed == "9.0.90"
+
+
+def test_roleless_leading_column_is_dropped(tmp_path):
+    """순번 등 역할 없는 열의 값이 취약점 열로 흘러들면 안 된다."""
+    cells = [(35, 700, "No."), (75, 700, "Vulnerability"), (215, 700, "Product"),
+             (330, 700, "Affected Version"), (480, 700, "Fixed Version")]
+    cells += [(35, 678, "1"), (75, 678, "CVE-2026-1111"), (215, 678, "Nginx"),
+              (330, 678, "1.24.0 to 1.26.1"), (480, 678, "1.26.2")]
+    res = pdf_tables.extract_tables(write_pdf(tmp_path, [cells]))
+    assert res.status == TABLE_OK, res
+    assert res.rows[0].cve == "CVE-2026-1111", res.rows[0]
+    assert res.rows[0].product == "Nginx"
+
+
 # ── 한글 헤더 키워드 (PDF 를 거치지 않는 순수 단위 테스트) ─────────────────────
 
 @pytest.mark.parametrize("labels", [

@@ -10,14 +10,19 @@
     엉뚱한 조합을 잡거나 아무것도 못 잡는다. 여기서는 pypdfium2 의 문자 좌표
     (`get_charbox`)로 행·열을 복원해 셀 단위로 넘겨준다. 새 의존성은 없다.
 
-알고리즘 (프로토타입으로 검증)
+알고리즘 (v2 — 열 경계를 표 전체에서 학습)
     1. 문자별 (글자, x0, x1, y0, y1) 수집
     2. 행 복원 — 세로 '중심'((y0+y1)/2) 기준 클러스터링.
        y0(밑변) 기준으로 하면 디센더(p·g·y)가 같은 줄을 두 줄로 쪼갠다.
-    3. 열 앵커 — 헤더 행을 키워드로 찾아 그 셀들의 시작 x 를 열 기준선으로 삼는다.
-       페이지 전체의 '세로 여백 통로'를 찾는 방식은 표 위·아래 산문이 통로를 가로질러
-       열 경계를 통째로 놓친다(실측 확인).
-    4. 본문 행을 앵커에 배정 + 병합셀 forward-fill + 줄바꿈 셀 병합
+    3. 행을 가로 여백(gap) 기준으로 셀 구간 [x0, x1] 로 분할
+    4. 열 복원 — 헤더 셀 + 표 본문 셀 '구간'들을 겹침 기준으로 병합해 열 구간을 만든다.
+       v1 은 헤더 셀의 시작 x 만 앵커로 썼는데, 가운데 정렬 표에서 본문 셀이 헤더보다
+       넓으면("WebSphere Application Server" vs "제품명") 앵커 왼쪽 글자들이 옆 열로
+       흡수돼 "Application Server" 처럼 앞이 잘렸다(실사용 확정 결함). 같은 열의 셀은
+       정렬(좌/중/우)과 무관하게 행끼리 가로로 겹치고, 열 사이엔 물리적 여백 통로가
+       있으므로 '구간 겹침 병합'이 정렬 방식을 가리지 않는다.
+    5. 열 사이 여백의 중간점을 경계로 각 문자를 열에 배정. 헤더 키워드에 안 걸린
+       열(순번·심각도 등)은 버린다. + 병합셀 forward-fill + 줄바꿈 셀 병합
 
 한계
     · 스캔본(이미지) PDF 는 문자가 없어 NO_TABLE 이 된다 — OCR 은 범위 밖.
@@ -27,6 +32,7 @@ from __future__ import annotations
 
 import re
 import threading
+from bisect import bisect_right
 from dataclasses import dataclass, field
 
 # pdfium 은 스레드 안전이 아니다. 추출은 ThreadPoolExecutor 에서 돌고 페이지 렌더도
@@ -136,21 +142,21 @@ def _row_centers(chars, tol: float) -> list[float]:
 
 # ── 3) 셀 분할 ────────────────────────────────────────────────────────────────
 
-def _segments(row, gap: float, space_gap: float) -> list[tuple[float, str]]:
-    """행을 셀로 분할 → [(시작 x, 텍스트)].
+def _segments(row, gap: float, space_gap: float) -> list[tuple[float, float, str]]:
+    """행을 셀로 분할 → [(x0, x1, 텍스트)].
 
     gap 이상 벌어지면 셀 경계, space_gap 이상이면 같은 셀 안의 띄어쓰기로 본다.
     임계값은 문자 '폭' 기준이다 — 높이 기준으로 하면 좁은 글리프(., 1) 주변에서
     숫자 내부가 쪼개진다("8.1 .0").
     """
-    cells: list[tuple[float, str]] = []
+    cells: list[tuple[float, float, str]] = []
     cur = ""
     start = None
     prev_end = None
     for ch, x0, x1, _y0, _y1 in row:
         if prev_end is not None and x0 - prev_end > gap:
             if cur.strip():
-                cells.append((start, cur.strip()))
+                cells.append((start, prev_end, cur.strip()))
             cur, start = "", None
         if start is None:
             start = x0
@@ -159,7 +165,7 @@ def _segments(row, gap: float, space_gap: float) -> list[tuple[float, str]]:
         cur += ch
         prev_end = x1
     if cur.strip():
-        cells.append((start, cur.strip()))
+        cells.append((start, prev_end, cur.strip()))
     return cells
 
 
@@ -168,7 +174,7 @@ def _norm_label(text: str) -> str:
 
 
 def _classify_header(cells: list[tuple[float, str]]) -> dict[str, float] | None:
-    """헤더 후보 행 → {열 역할: 앵커 x}. 필수 열이 없으면 None.
+    """헤더 후보 행 [(x, 텍스트)] → {열 역할: 앵커 x}. 필수 열이 없으면 None.
 
     같은 역할이 여러 셀에 걸리면 가장 왼쪽을 쓴다(예: '영향받는' '버전' 이 쪼개진 경우).
     """
@@ -188,19 +194,58 @@ def _classify_header(cells: list[tuple[float, str]]) -> dict[str, float] | None:
     return found
 
 
-def _assign(row, anchors: list[tuple[str, float]], space_gap: float) -> dict[str, str]:
-    """행의 문자들을 앵커(열)에 배정 → {역할: 텍스트}.
+# ── 4) 열 복원 ────────────────────────────────────────────────────────────────
+# Column = (역할|None, x0, x1). 역할 None 은 헤더 키워드에 안 걸린 열(순번·심각도 등).
 
-    각 문자는 '자신의 x 이하인 앵커 중 가장 오른쪽'에 들어간다. 앵커보다 살짝 왼쪽에서
-    시작하는 셀(중앙 정렬 등)을 흡수하려 약간의 여유를 둔다.
+def _build_columns(header_segs, body_seg_lists, roles: dict[str, float],
+                   pad: float) -> list[tuple[str | None, float, float]]:
+    """헤더 + 본문 셀 구간을 겹침 기준으로 병합해 열 구간을 만든다.
+
+    같은 열의 셀은 정렬 방식과 무관하게 행 간에 가로로 겹치고, 서로 다른 열 사이엔
+    여백 통로가 있다 — 그래서 '겹치는 구간 병합'만으로 열이 복원되며, 본문 셀이
+    헤더보다 넓은 경우(v1 결함)도 열 구간이 본문 폭까지 자연히 넓어진다.
     """
-    buckets: dict[str, str] = {role: "" for role, _ in anchors}
+    intervals = [(x0, x1) for x0, x1, _t in header_segs]
+    for segs in body_seg_lists:
+        intervals.extend((x0, x1) for x0, x1, _t in segs)
+    intervals.sort()
+    merged: list[list[float]] = []
+    for x0, x1 in intervals:
+        if merged and x0 <= merged[-1][1] + pad:
+            merged[-1][1] = max(merged[-1][1], x1)
+        else:
+            merged.append([x0, x1])
+
+    cols: list[tuple[str | None, float, float]] = []
+    for x0, x1 in merged:
+        anchors = sorted((ax, r) for r, ax in roles.items() if x0 - pad <= ax <= x1 + pad)
+        if not anchors:
+            cols.append((None, x0, x1))
+        elif len(anchors) == 1:
+            cols.append((anchors[0][1], x0, x1))
+        else:
+            # 드문 퇴화 — 두 역할의 열이 한 구간으로 붙었다(여백 통로가 gap 보다 좁음).
+            # 앵커 중간점에서 쪼개 역할당 한 열은 보장한다.
+            bounds = ([x0] + [(anchors[i][0] + anchors[i + 1][0]) / 2
+                              for i in range(len(anchors) - 1)] + [x1])
+            for i, (_ax, r) in enumerate(anchors):
+                cols.append((r, bounds[i], bounds[i + 1]))
+    return cols
+
+
+def _column_bounds(cols) -> list[float]:
+    """이웃한 열 사이 여백의 중간점 — 문자 배정 경계."""
+    return [(cols[i][2] + cols[i + 1][1]) / 2 for i in range(len(cols) - 1)]
+
+
+def _assign(row, cols, bounds: list[float], space_gap: float) -> dict[str, str]:
+    """행의 문자들을 열 경계로 배정 → {역할: 텍스트}. 역할 없는 열의 문자는 버린다."""
+    buckets: dict[str, str] = {r: "" for r, _x0, _x1 in cols if r}
     prev_end: dict[str, float] = {}
     for ch, x0, x1, _y0, _y1 in row:
-        role = anchors[0][0]
-        for r, ax in anchors:
-            if x0 >= ax - space_gap * 2:
-                role = r
+        role = cols[bisect_right(bounds, (x0 + x1) / 2)][0]
+        if role is None:
+            continue
         pe = prev_end.get(role)
         if pe is not None and x0 - pe > space_gap and buckets[role] and not buckets[role].endswith(" "):
             buckets[role] += " "
@@ -233,12 +278,13 @@ def _tidy(text: str) -> str:
     return text
 
 
-# ── 4) 페이지 처리 ────────────────────────────────────────────────────────────
+# ── 5) 페이지 처리 ────────────────────────────────────────────────────────────
 
-def _extract_page(chars, page_index: int, anchors: list[tuple[str, float]] | None):
-    """한 페이지에서 (행 목록, 앵커, 헤더 라벨) 추출. 앵커를 주면 이어받아 계속한다."""
+def _extract_page(chars, page_index: int,
+                  columns: list[tuple[str | None, float, float]] | None):
+    """한 페이지에서 (행 목록, 열, 헤더 라벨) 추출. 열을 주면 이어받아 계속한다."""
     if not chars:
-        return [], anchors, []
+        return [], columns, []
 
     heights = [c[4] - c[3] for c in chars]
     widths = [c[2] - c[1] for c in chars]
@@ -252,29 +298,49 @@ def _extract_page(chars, page_index: int, anchors: list[tuple[str, float]] | Non
     centers = _row_centers(chars, row_tol)
     pitches = [abs(centers[i] - centers[i + 1]) for i in range(len(centers) - 1)]
     med_pitch = _median(pitches) or med_h * 2
+    seg_lists = [_segments(row, cell_gap, space_gap) for row in rows]
 
     header_labels: list[str] = []
     start = 0
-    if anchors is None:
-        for i, row in enumerate(rows):
-            cells = _segments(row, cell_gap, space_gap)
-            if len(cells) < 2:
+    if columns is None:
+        roles = None
+        header_i = -1
+        for i, segs in enumerate(seg_lists):
+            if len(segs) < 2:
                 continue
-            found = _classify_header(cells)
-            if found:
-                anchors = sorted(found.items(), key=lambda kv: kv[1])
-                header_labels = [t for _, t in cells]
+            roles = _classify_header([(x0, t) for x0, _x1, t in segs])
+            if roles:
+                header_i = i
+                header_labels = [t for _x0, _x1, t in segs]
                 start = i + 1
                 break
-        if anchors is None:
+        if roles is None:
             return [], None, []
+
+        # 열 클러스터링 표본 — 헤더 아래 표 범위(행 간격 규칙) 안의 '다중 셀 본문 행'만.
+        #   · 단일 셀 행 제외: 열 정보가 없고, 산문 한 줄(넓은 단일 구간)이 섞이면
+        #     열들이 통째로 병합되는 최악 실패가 난다.
+        #   · CVE/버전 토큰 없는 행 제외: 표 아래 산문 방어(_looks_like_body 와 동일 기준).
+        sample: list[list[tuple[float, float, str]]] = []
+        prev_c = centers[start] if start < len(centers) else None
+        for i in range(start, len(rows)):
+            c = centers[i] if i < len(centers) else None
+            if prev_c is not None and c is not None and abs(prev_c - c) > med_pitch * 2.2:
+                break
+            prev_c = c
+            segs = seg_lists[i]
+            joined = " ".join(t for _x0, _x1, t in segs)
+            if len(segs) >= 2 and (CVE_RE.search(joined) or VERSION_HINT_RE.search(joined)):
+                sample.append(segs)
+        columns = _build_columns(seg_lists[header_i], sample, roles, pad=space_gap)
     else:
         # 이어지는 페이지: 첫 행이 헤더 반복이면 건너뛴다.
-        for i, row in enumerate(rows[:3]):
-            if _classify_header(_segments(row, cell_gap, space_gap)):
+        for i, segs in enumerate(seg_lists[:3]):
+            if _classify_header([(x0, t) for x0, _x1, t in segs]):
                 start = i + 1
                 break
 
+    bounds = _column_bounds(columns)
     out: list[TableRow] = []
     carry = {"cve": "", "product": "", "affected": "", "fixed": ""}
     misses = 0
@@ -289,7 +355,7 @@ def _extract_page(chars, page_index: int, anchors: list[tuple[str, float]] | Non
                 break
         prev_center = center
 
-        cells = {r: _tidy(v) for r, v in _assign(row, anchors, space_gap).items()}
+        cells = {r: _tidy(v) for r, v in _assign(row, columns, bounds, space_gap).items()}
         for role in ("cve", "product", "affected", "fixed"):
             cells.setdefault(role, "")
         if not any(cells.values()):
@@ -321,10 +387,10 @@ def _extract_page(chars, page_index: int, anchors: list[tuple[str, float]] | Non
         if not tr.is_empty():
             out.append(tr)
 
-    return out, anchors, header_labels
+    return out, columns, header_labels
 
 
-# ── 5) 공개 API ───────────────────────────────────────────────────────────────
+# ── 6) 공개 API ───────────────────────────────────────────────────────────────
 
 def extract_tables(pdf_path: str) -> TableExtraction:
     """PDF 에서 제품·버전 표를 복원. 실패해도 예외를 올리지 않는다(추출 전체를 막지 않게)."""
@@ -337,7 +403,7 @@ def extract_tables(pdf_path: str) -> TableExtraction:
             try:
                 total = len(doc)
                 result.truncated = total > MAX_PAGES
-                anchors = None
+                columns = None
                 for pi in range(min(total, MAX_PAGES)):
                     page = doc[pi]
                     tp = page.get_textpage()
@@ -346,7 +412,7 @@ def extract_tables(pdf_path: str) -> TableExtraction:
                     finally:
                         tp.close()
                     result.pages_scanned = pi + 1
-                    rows, anchors, labels = _extract_page(chars, pi, anchors)
+                    rows, columns, labels = _extract_page(chars, pi, columns)
                     if labels and not result.header_labels:
                         result.header_labels = labels
                     result.rows.extend(rows)
