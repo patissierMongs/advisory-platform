@@ -192,6 +192,79 @@ def test_missing_file_does_not_raise():
     assert pdf_tables.extract_tables("/nonexistent/nope.pdf").status == NO_TABLE
 
 
+def test_body_cell_wider_than_header_is_not_truncated(tmp_path):
+    """실사용 확정 결함(WebSphere 권고문) — 가운데 정렬 표에서 본문 셀이 헤더보다 넓으면
+    헤더 시작 x 앵커 방식은 앞 글자를 왼쪽 열로 흡수했다:
+    "WebSphere Application Server" → "Application Server", "Web Server Plug-ins" → "erver Plug-ins".
+    열 경계는 헤더가 아니라 표 전체 셀 배치에서 복원돼야 한다."""
+    cells = [(55, 700, "Vulnerability"), (215, 700, "Product"),
+             (330, 700, "Affected Version"), (480, 700, "Fixed Version")]
+    # 본문 제품 셀을 헤더보다 왼쪽에서 시작시킨다(가운데 정렬 시뮬레이션).
+    cells += [(55, 678, "CVE-2026-1234"), (160, 678, "WebSphere Application Server"),
+              (330, 678, "19.1 to 19.1.1"), (480, 678, "19.1.1")]
+    cells += [(55, 656, "CVE-2026-5678"), (172, 656, "Web Server Plug-ins"),
+              (325, 656, "9.0 to 9.0.5"), (477, 656, "9.0.5")]
+    res = pdf_tables.extract_tables(write_pdf(tmp_path, [cells]))
+    assert res.status == TABLE_OK, res
+    assert len(res.rows) == 2
+    assert res.rows[0].product == "WebSphere Application Server", res.rows[0]
+    assert res.rows[0].affected == "19.1 to 19.1.1"
+    assert res.rows[0].fixed == "19.1.1"
+    assert res.rows[1].product == "Web Server Plug-ins", res.rows[1]
+    assert res.rows[1].affected == "9.0 to 9.0.5"
+
+
+def test_version_cell_extending_left_of_header_is_intact(tmp_path):
+    """버전 열도 마찬가지 — 본문 범위 구문이 헤더보다 왼쪽으로 뻗어도 잘리면 안 된다."""
+    cells = [(55, 700, "Product"), (280, 700, "Affected Version"), (470, 700, "Fixed Version")]
+    cells += [(55, 678, "Apache Tomcat"), (245, 678, "9.0.0 through 9.0.89"), (455, 678, "9.0.90")]
+    res = pdf_tables.extract_tables(write_pdf(tmp_path, [cells]))
+    assert res.status == TABLE_OK, res
+    assert res.rows[0].product == "Apache Tomcat"
+    assert res.rows[0].affected == "9.0.0 through 9.0.89", res.rows[0]
+    assert res.rows[0].fixed == "9.0.90"
+
+
+def test_roleless_leading_column_is_dropped(tmp_path):
+    """순번 등 역할 없는 열의 값이 취약점 열로 흘러들면 안 된다."""
+    cells = [(35, 700, "No."), (75, 700, "Vulnerability"), (215, 700, "Product"),
+             (330, 700, "Affected Version"), (480, 700, "Fixed Version")]
+    cells += [(35, 678, "1"), (75, 678, "CVE-2026-1111"), (215, 678, "Nginx"),
+              (330, 678, "1.24.0 to 1.26.1"), (480, 678, "1.26.2")]
+    res = pdf_tables.extract_tables(write_pdf(tmp_path, [cells]))
+    assert res.status == TABLE_OK, res
+    assert res.rows[0].cve == "CVE-2026-1111", res.rows[0]
+    assert res.rows[0].product == "Nginx"
+
+
+def test_contact_line_below_table_is_not_a_row(tmp_path):
+    """실사용 확정 결함 — 표 아래 '담당자/연락처' 줄의 전화번호(02-405-5118)가
+    버전 힌트(\\b\\d{4}\\b)에 걸려 표 본문 행으로 흡수됐다. 좌측 여백부터 이어 쓰는
+    산문 줄은 열 경계를 가로지르므로 구조로 걸러져야 한다."""
+    cells = layout(COLS4, HEADER4,
+                   [["CVE-2026-1234", "GitLab EE", "19.1 to 19.1.1", "19.1.1"],
+                    ["CVE-2026-5678", "GitLab CE", "19.0 to 19.0.3", "19.0.3"]])
+    cells.append((55, 700 - 3 * 22, "Contact: Hong Gildong (02-405-5118)"))
+    cells.append((55, 700 - 4 * 22, "Please see the attachment for details."))
+    res = pdf_tables.extract_tables(write_pdf(tmp_path, [cells]))
+    assert res.status == TABLE_OK, res
+    assert len(res.rows) == 2, [(r.product, r.affected) for r in res.rows]
+    assert res.rows[1].affected == "19.0 to 19.0.3"
+    assert "5118" not in " ".join(r.affected + r.fixed for r in res.rows)
+
+
+def test_contact_phone_inside_column_is_not_merged(tmp_path):
+    """전화번호 줄이 우연히 한 열 폭 안에 있어도 — 앞 행 셀에 병합되거나
+    새 행이 되면 안 된다."""
+    cells = layout(COLS4, HEADER4,
+                   [["CVE-2026-1234", "GitLab EE", "19.1 to 19.1.1", "19.1.1"]])
+    cells.append((330, 700 - 2 * 22, "Tel. 02-405-5118"))
+    res = pdf_tables.extract_tables(write_pdf(tmp_path, [cells]))
+    assert res.status == TABLE_OK, res
+    assert len(res.rows) == 1
+    assert res.rows[0].affected == "19.1 to 19.1.1", res.rows[0]
+
+
 # ── 한글 헤더 키워드 (PDF 를 거치지 않는 순수 단위 테스트) ─────────────────────
 
 @pytest.mark.parametrize("labels", [
@@ -232,6 +305,52 @@ def test_header_role_takes_leftmost_when_split():
     ("3.0.1 5, 3.1 .7", "3.0.15, 3.1.7"),
     ("8.1.0 이상 8.1.2 미만", "8.1.0 이상 8.1.2 미만"),
     ("특정 버전으로 마이그레이션", "특정 버전으로 마이그레이션"),
+    # 정상 표기 보존(§실사용 결함) — 무조건 '숫자 공백 숫자'를 붙이면 아래가 전부 깨졌다.
+    ("Windows 10 21H2", "Windows 10 21H2"),
+    ("22H2 23H2", "22H2 23H2"),
+    ("1.0 2.0 3.0", "1.0 2.0 3.0"),
 ])
 def test_tidy_absorbs_spurious_spaces_in_numbers(raw, expected):
     assert pdf_tables._tidy(raw) == expected
+
+
+# ── 세로 병합·페이지 경계·제품명 줄바꿈 (§실사용 결함 회귀) ────────────────────
+
+def test_vertically_merged_version_cells_are_inherited(tmp_path):
+    """여러 제품이 하나의 영향버전 셀을 세로 병합으로 공유하는 표 — 2행(제품만 있음)이
+    앞 행 제품명에 이어붙어 '행 유실 + 제품 오염'이 나던 결함."""
+    body = [["CVE-2026-1", "GitLab EE", "19.1 to 19.1.1", "19.1.1"],
+            ["", "GitLab CE", "", ""]]
+    res = pdf_tables.extract_tables(write_pdf(tmp_path, [layout(COLS4, HEADER4, body)]))
+    assert res.status == TABLE_OK, res
+    assert len(res.rows) == 2, [(r.product, r.affected) for r in res.rows]
+    assert res.rows[0].product == "GitLab EE"
+    assert res.rows[1].product == "GitLab CE"
+    assert res.rows[1].affected == "19.1 to 19.1.1", "병합된 영향버전이 상속되지 않았다"
+    assert res.rows[1].fixed == "19.1.1"
+
+
+def test_merged_cells_are_inherited_across_pages(tmp_path):
+    """병합셀 상속(carry)이 페이지마다 초기화돼 다음 페이지 연속 행이 빈 제품으로
+    나오던 결함 — 하류에서 조용히 폐기된다."""
+    p1 = layout(COLS4, HEADER4, [["CVE-2026-1", "ProductA", "1.0 to 1.2", "1.2"]])
+    p2 = layout(COLS4, HEADER4, [["", "", "2.0 to 2.4", "2.4"]])
+    res = pdf_tables.extract_tables(write_pdf(tmp_path, [p1, p2]))
+    assert res.status == TABLE_OK
+    assert len(res.rows) == 2
+    assert res.rows[1].cve == "CVE-2026-1", res.rows[1]
+    assert res.rows[1].product == "ProductA"
+    assert res.rows[1].affected == "2.0 to 2.4"
+
+
+def test_wrapped_product_name_at_line_spacing_still_merges(tmp_path):
+    """제품명이 셀 안에서 줄바꿈된 경우(줄 간격) — 세로 병합 새 행이 아니라
+    앞 행 제품명에 이어붙어야 한다."""
+    cols = [55, 175, 330, 480]
+    cells = layout(cols, HEADER4,
+                   [["CVE-2026-1", "WebSphere Application", "19.1 to 19.1.1", "19.1.1"]])
+    cells.append((175, 700 - 22 - 11, "Server"))   # 줄 간격(11pt)의 이어지는 조각
+    res = pdf_tables.extract_tables(write_pdf(tmp_path, [cells]))
+    assert res.status == TABLE_OK, res
+    assert len(res.rows) == 1, [(r.product, r.affected) for r in res.rows]
+    assert res.rows[0].product == "WebSphere Application Server", res.rows[0]
