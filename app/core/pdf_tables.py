@@ -87,10 +87,11 @@ class TableExtraction:
 
 # ── 1) 문자 수집 ──────────────────────────────────────────────────────────────
 
-def _page_chars(textpage) -> list[tuple[str, float, float, float, float]]:
-    """(글자, x0, x1, y0, y1) 목록. 공백류는 버린다(좌표로 띄어쓰기를 재구성하므로)."""
+def _page_chars(textpage) -> tuple[list[tuple[str, float, float, float, float]], bool]:
+    """(글자, x0, x1, y0, y1) 목록과 '상한 절단 여부'. 공백류는 버린다."""
     out = []
-    n = min(textpage.count_chars(), MAX_CHARS_PER_PAGE)
+    total = textpage.count_chars()
+    n = min(total, MAX_CHARS_PER_PAGE)
     for i in range(n):
         try:
             ch = textpage.get_text_range(i, 1)
@@ -99,7 +100,14 @@ def _page_chars(textpage) -> list[tuple[str, float, float, float, float]]:
         if not ch or not ch.strip():
             continue
         try:
+            # 가로는 loose(전진폭·advance) 박스: tight 박스는 좁은 글리프(1·.) 뒤에
+            # 가짜 간격을 만들어 "1111"이 "1 1 1 1"로 벌어지고, 그 가짜 공백은 텍스트
+            # 수준에서 정상 나열("1.0 2.0")과 구분이 불가능하다. 세로는 tight 박스:
+            # loose 높이는 줄 간격까지 포함해 행 묶기·간격 판정 기준을 흔든다.
             x0, y0, x1, y1 = textpage.get_charbox(i)
+            lx0, _ly0, lx1, _ly1 = textpage.get_charbox(i, loose=True)
+            if lx1 > lx0:
+                x0, x1 = min(x0, lx0), max(x1, lx1)
         except Exception:  # noqa: BLE001
             continue
         if x1 < x0:
@@ -107,7 +115,7 @@ def _page_chars(textpage) -> list[tuple[str, float, float, float, float]]:
         if y1 < y0:
             y0, y1 = y1, y0
         out.append((ch, x0, x1, y0, y1))
-    return out
+    return out, total > MAX_CHARS_PER_PAGE
 
 
 def _median(values: list[float]) -> float:
@@ -305,14 +313,18 @@ def _crosses_columns(segs, cols, tol: float) -> bool:
 
 
 def _tidy(text: str) -> str:
-    """셀 텍스트 정리 — 숫자·점 주변의 가짜 공백을 흡수한다.
+    """셀 텍스트 정리 — 숫자·점 주변의 '가짜' 공백만 흡수한다.
 
     좌표로 띄어쓰기를 재구성하다 보면 좁은 글리프 주변에서 '8.1 .0', '1 0.1' 처럼
-    숫자 내부가 벌어진다. 버전 파서가 오해하지 않도록 여기서 붙인다.
+    숫자 내부가 벌어진다. 다만 무조건 '숫자 공백 숫자'를 붙이면 정상 표기까지 파괴한다
+    ("Windows 10 21H2"→"1021H2", "1.0 2.0"→"1.02.0" — 실측 확정 결함). 가짜 공백은
+    점 인접부, 또는 '맨숫자 조각 ↔ 점 포함 숫자'의 경계에서만 생기므로 그 경우만 붙인다.
     """
     text = re.sub(r"\s+", " ", text).strip()
-    for _ in range(3):   # '1 0 . 1 . 2' 처럼 여러 번 벌어진 경우까지 수렴
-        new = re.sub(r"(?<=\d)\s+(?=[.\d])|(?<=[.])\s+(?=\d)", "", text)
+    for _ in range(4):   # '1 0 . 1 . 2' 처럼 여러 번 벌어진 경우까지 수렴
+        new = re.sub(r"(?<=\d)\s+(?=\.)|(?<=\.)\s+(?=\d)", "", text)          # 점 인접
+        new = re.sub(r"(?<![\d.])(\d{1,3})\s+(?=\d+\.)", r"\1", new)          # '1 0.1' 조각
+        new = re.sub(r"(\d\.\d[\d.]*)\s+(\d{1,3})(?![\w.])", r"\1\2", new)    # '3.0.1 5' 조각
         if new == text:
             break
         text = new
@@ -322,8 +334,15 @@ def _tidy(text: str) -> str:
 # ── 5) 페이지 처리 ────────────────────────────────────────────────────────────
 
 def _extract_page(chars, page_index: int,
-                  columns: list[tuple[str | None, float, float]] | None):
-    """한 페이지에서 (행 목록, 열, 헤더 라벨) 추출. 열을 주면 이어받아 계속한다."""
+                  columns: list[tuple[str | None, float, float]] | None,
+                  carry: dict[str, str] | None = None):
+    """한 페이지에서 (행 목록, 열, 헤더 라벨) 추출.
+
+    열/carry(병합셀 상속값)를 주면 이어받아 계속한다 — 페이지 경계에서 carry 를
+    끊으면 다음 페이지로 이어진 병합셀 행이 빈 제품으로 나와 조용히 유실된다.
+    """
+    if carry is None:
+        carry = {"cve": "", "product": "", "affected": "", "fixed": ""}
     if not chars:
         return [], columns, []
 
@@ -333,7 +352,9 @@ def _extract_page(chars, page_index: int,
     med_w = _median(widths) or 5.0
     row_tol = med_h * 0.6
     cell_gap = max(med_w * 2.5, med_h * 1.2)
-    space_gap = med_w * 0.6
+    # advance(loose) 박스 기준: 같은 단어 안 이웃 글자는 간격이 ~0 이고, 단어 사이는
+    # 스페이스 전진폭(~0.28em)만큼 벌어진다. 그 사이(0.35 × 중앙값 폭)를 임계로 잡는다.
+    space_gap = med_w * 0.35
 
     rows = _group_rows(chars, row_tol)
     centers = _row_centers(chars, row_tol)
@@ -383,7 +404,6 @@ def _extract_page(chars, page_index: int,
 
     bounds = _column_bounds(columns)
     out: list[TableRow] = []
-    carry = {"cve": "", "product": "", "affected": "", "fixed": ""}
     misses = 0
     prev_center = centers[start] if start < len(centers) else None
 
@@ -394,6 +414,10 @@ def _extract_page(chars, page_index: int,
         if prev_center is not None and center is not None and med_pitch > 0:
             if abs(prev_center - center) > med_pitch * 2.2:
                 break
+        # 직전 줄과의 간격 — '줄바꿈 셀 뒷부분'(줄 간격)과 '세로 병합 표의 새 행'
+        # (행 간격)을 가르는 신호. 셀 안 줄바꿈은 글자 높이의 ~1.5배 안쪽이다.
+        line_gap = (abs(prev_center - center)
+                    if prev_center is not None and center is not None else None)
         prev_center = center
 
         # 열 경계를 가로지르는 구간이 있는 행은 표가 아니다(산문·담당자 줄) —
@@ -411,14 +435,31 @@ def _extract_page(chars, page_index: int,
             continue
 
         if not _looks_like_body(cells):
-            # 버전도 CVE 도 없는 행 — 줄바꿈된 셀의 뒷부분일 수 있다.
-            # 단 연락처·전화 텍스트는 셀 뒷부분이 아니라 표 밖 산문이다(병합 금지).
+            # 버전도 CVE 도 없는 행 — 줄바꿈된 셀의 뒷부분이거나, 영향버전 셀이 세로
+            # 병합된 표의 '제품만 적힌 새 행'이다. 연락처·전화 텍스트는 어느 쪽도
+            # 아닌 표 밖 산문이다(병합 금지).
             filled = [r for r in ("product", "affected", "fixed") if cells[r]]
             if out and len(filled) == 1:
                 cell_text = cells[filled[0]]
                 if not _CONTACT_RE.search(cell_text) and _strip_phones(cell_text) == cell_text:
+                    if (filled[0] == "product" and carry["affected"]
+                            and line_gap is not None and line_gap > med_h * 1.9):
+                        # 행 간격만큼 떨어진 제품 단독 행 — 세로 병합 표의 새 행.
+                        # 종전엔 앞 행 제품명에 이어붙여 행 유실+제품 오염이 났다.
+                        carry["product"] = cell_text
+                        out.append(TableRow(cve=carry["cve"], product=cell_text,
+                                            affected=carry["affected"],
+                                            fixed=carry["fixed"], page=page_index))
+                        misses = 0
+                        continue
                     role = filled[0]
                     setattr(out[-1], role, _tidy(f"{getattr(out[-1], role)} {cell_text}"))
+                    # 이어붙인 결과를 carry 에도 반영 — 다음 병합셀 상속이 잘린 값을
+                    # 물려받지 않게 한다.
+                    if role in ("cve", "product"):
+                        carry[role] = getattr(out[-1], role)
+                    elif role == "affected":
+                        carry["affected"] = out[-1].affected
                     misses = 0
                     continue
             misses += 1
@@ -427,12 +468,18 @@ def _extract_page(chars, page_index: int,
             continue
         misses = 0
 
-        # 병합셀 — 빈 칸은 직전 행 값을 물려받는다.
+        # 병합셀 — 빈 칸은 직전 행 값을 물려받는다. 영향·해결 버전은 쌍으로 다룬다:
+        # 둘 다 비었으면 세로 병합(위 행과 같은 범위)으로 보고 함께 상속한다.
+        # 비워둔 채 두면 규칙이 '전체(*)'가 되는 확신-오답 방향이라 상속이 안전하다.
         for role in ("cve", "product"):
             if cells[role]:
                 carry[role] = cells[role]
             else:
                 cells[role] = carry[role]
+        if not cells["affected"] and not cells["fixed"] and carry["affected"]:
+            cells["affected"], cells["fixed"] = carry["affected"], carry["fixed"]
+        elif cells["affected"]:
+            carry["affected"], carry["fixed"] = cells["affected"], cells["fixed"]
 
         tr = TableRow(cve=cells["cve"], product=cells["product"],
                       affected=cells["affected"], fixed=cells["fixed"], page=page_index)
@@ -456,15 +503,18 @@ def extract_tables(pdf_path: str) -> TableExtraction:
                 total = len(doc)
                 result.truncated = total > MAX_PAGES
                 columns = None
+                carry = {"cve": "", "product": "", "affected": "", "fixed": ""}
                 for pi in range(min(total, MAX_PAGES)):
                     page = doc[pi]
                     tp = page.get_textpage()
                     try:
-                        chars = _page_chars(tp)
+                        chars, char_capped = _page_chars(tp)
                     finally:
                         tp.close()
+                    if char_capped:
+                        result.truncated = True   # 문자 상한 절단도 부분 결과다
                     result.pages_scanned = pi + 1
-                    rows, columns, labels = _extract_page(chars, pi, columns)
+                    rows, columns, labels = _extract_page(chars, pi, columns, carry)
                     if labels and not result.header_labels:
                         result.header_labels = labels
                     result.rows.extend(rows)

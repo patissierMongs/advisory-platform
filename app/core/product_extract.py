@@ -200,6 +200,8 @@ def _scan_window(text: str, win_start: int, win_end: int) -> dict:
     range_pair: list[str] | None = None
     fixed: str | None = None
     pending_range_lo: str | None = None
+    pending_pos = -1          # 하한 토큰의 끝 위치 — 상한 짝짓기 거리 제한용
+    pending_korean = False    # '부터' 유래인가(짝 못 찾으면 gte 로 강등)
 
     for m in _VER_TOKEN.finditer(window):
         abs_m_start = win_start + m.start()
@@ -208,6 +210,15 @@ def _scan_window(text: str, win_start: int, win_end: int) -> dict:
         tok = _norm_ver(m.group(1))
         before = window[max(0, m.start() - 24):m.start()]
         after = window[m.end():m.end() + 40]
+
+        # 대기 중인 하한이 너무 멀리 떨어져 있으면 이 토큰은 짝이 아니다 —
+        # "1.0 부터 … (긴 문장) … 2.0" 에서 무관한 2.0 이 상한이 되던 결함.
+        if pending_range_lo is not None and m.start() - pending_pos > 20:
+            if pending_korean:
+                rule_ops.setdefault("gte", pending_range_lo)   # "X 부터" 단독 = 이상
+            elif pending_range_lo not in enum:
+                enum.append(pending_range_lo)
+            pending_range_lo = None
 
         # ① 조치(fix) 버전 — 영향 규칙에서 제외
         if _FIX_BEFORE.search(before) or _FIX_AFTER_STRICT.match(after):
@@ -229,12 +240,17 @@ def _scan_window(text: str, win_start: int, win_end: int) -> dict:
             continue
         if _RANGE_TILDE.match(after) or _RANGE_TO_EN.match(after):
             pending_range_lo = tok
+            pending_pos = m.end()
+            pending_korean = False
             continue
         if _RANGE_FROM.match(after):
             # "X 부터 Y 까지" → 범위(다음 버전 토큰을 상한으로). "까지" 없이 "X 부터" 단독은
-            # 상한이 없으므로 '이상(gte)'으로 해석한다.
-            if _RANGE_TO.search(window[m.end():]):
+            # 상한이 없으므로 '이상(gte)'으로 해석한다. "까지" 탐색은 토큰 근처로 제한한다 —
+            # 창 끝까지 뒤지면 다른 문장의 "…까지"("붙임 문서까지")에 낚인다.
+            if _RANGE_TO.search(window[m.end():m.end() + 24]):
                 pending_range_lo = tok
+                pending_pos = m.end()
+                pending_korean = True
             else:
                 rule_ops["gte"] = tok
             continue
@@ -256,6 +272,13 @@ def _scan_window(text: str, win_start: int, win_end: int) -> dict:
         # ③ 열거(문맥 창 안의 단독 버전)
         if tok not in enum:
             enum.append(tok)
+
+    # 끝까지 짝을 못 찾은 하한 — "1.20 ~" 처럼 상한이 잘린 경우. 버리면 토큰 유실이다.
+    if pending_range_lo is not None:
+        if pending_korean:
+            rule_ops.setdefault("gte", pending_range_lo)
+        elif pending_range_lo not in enum:
+            enum.append(pending_range_lo)
 
     # 규칙 조합 우선순위: 명시 범위쌍 > 비교연산 > fix 유도 > 열거 > 전체
     if range_pair:
@@ -316,8 +339,14 @@ def _product_identity(cell: str) -> tuple[str, str] | None:
 
 
 def _fixed_versions(cell: str) -> list[str]:
-    """해결 버전 셀 → 버전 문자열 목록. '9.0.90, 10.1.25' 같은 다중 표기를 그대로 살린다."""
-    return [_norm_ver(m.group(1)) for m in _VER_TOKEN.finditer(cell or "")]
+    """해결 버전 셀 → 버전 문자열 목록. '9.0.90, 10.1.25' 같은 다중 표기를 그대로 살린다.
+
+    날짜·전화번호 등 노이즈 수치는 버린다 — "9.0.90 (2026.6.26 배포)" 에서 배포일이
+    해결 버전으로 저장되던 결함.
+    """
+    text = cell or ""
+    return [_norm_ver(m.group(1)) for m in _VER_TOKEN.finditer(text)
+            if not _is_noise_version(text, m)]
 
 
 # 완결 범위 구문 하나("X 이상 Y 미만"·"X 부터 Y 까지"·"X ~ Y"·"X to Y").
@@ -424,6 +453,14 @@ def extract_products_from_table(rows) -> list[dict]:
 
         snippet = " · ".join(p for p in (getattr(row, "cve", ""), name, affected,
                                          getattr(row, "fixed", "")) if p)[:200]
+        # 셀은 있는데 규칙이 전부 '전체(*)'로 떨어졌다 = 해석 실패 — 고신뢰(0.95)로
+        # 표기하면 관리자가 '전체 버전 영향'을 확정 정보로 오해한다.
+        if not affected:
+            confidence = 0.6
+        elif all(r == "*" for r in rules):
+            confidence = 0.5
+        else:
+            confidence = 0.95
         cur = merged.get(key)
         if cur is None:
             merged[key] = {
@@ -432,10 +469,11 @@ def extract_products_from_table(rows) -> list[dict]:
                 "_rules": list(rules),
                 "_fixes": list(fixes),
                 "source_snippet": snippet,
-                "confidence": 0.95 if affected else 0.6,
+                "confidence": confidence,
             }
         else:
             cur["_rules"].extend(rules)
+            cur["confidence"] = max(cur["confidence"], confidence)
             for f in fixes:
                 if f not in cur["_fixes"]:
                     cur["_fixes"].append(f)

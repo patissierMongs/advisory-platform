@@ -123,7 +123,7 @@ def test_version_matches_multi_op_dict():
 
 import pytest  # noqa: E402
 from app.core.pdf_tables import TableRow  # noqa: E402
-from app.core.product_extract import extract_products_from_table  # noqa: E402
+from app.core.product_extract import _scan_window, extract_products_from_table  # noqa: E402
 from app.core.versioning import version_matches  # noqa: E402
 
 
@@ -283,3 +283,33 @@ def test_standalone_year_version_survives_phone_guard():
     assert items, "단독 연도 버전이 사라졌다"
     rule = next(iter(items.values()))["affected_versions"]
     assert "2019" in str(rule), rule
+
+
+def test_fixed_cell_date_is_not_a_version():
+    """해결버전 셀의 배포일("(2026.6.26 배포)")이 해결 버전으로 저장되던 결함."""
+    rows = [TableRow(product="Apache Tomcat", affected="9.0.90 미만",
+                     fixed="9.0.90 (2026.6.26 배포)")]
+    p = _by_key(extract_products_from_table(rows))["apache_tomcat"]
+    assert p["fixed_version"] == "9.0.90", p["fixed_version"]
+
+
+def test_buteo_with_distant_kkaji_is_not_a_range():
+    """'X 부터' 뒤 다른 문장의 '…까지'("붙임 문서까지")에 낚여 무관한 버전이
+    상한이 되던 결함 — 상한 짝은 근처에서만 찾고, 못 찾으면 이상(gte)으로 남는다."""
+    text = "1.0 부터 영향. 자세한 내용은 붙임 문서까지 확인하고 2.0 은 무관."
+    rule = _scan_window(text, 0, len(text))["rule"]
+    assert rule.get("gte") == "1.0", rule
+    assert "range" not in rule, rule
+
+
+def test_buteo_kkaji_nearby_is_still_a_range():
+    rule = _scan_window("1.0 부터 2.0 까지", 0, 16)["rule"]
+    assert rule == {"range": ["1.0", "2.0"]}, rule
+
+
+def test_unparseable_affected_cell_lowers_confidence():
+    """affected 셀이 있는데 해석 불가('해당 없음' → 전체*)면 고신뢰(0.95)로 표기되던
+    결함 — 관리자가 '전체 버전 영향'을 확정 정보로 오해한다."""
+    p = extract_products_from_table([TableRow(product="FooBar", affected="해당 없음")])[0]
+    assert p["affected_versions"] == "*"
+    assert p["confidence"] < 0.9, p["confidence"]
