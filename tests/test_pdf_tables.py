@@ -237,6 +237,34 @@ def test_roleless_leading_column_is_dropped(tmp_path):
     assert res.rows[0].product == "Nginx"
 
 
+def test_contact_line_below_table_is_not_a_row(tmp_path):
+    """실사용 확정 결함 — 표 아래 '담당자/연락처' 줄의 전화번호(02-405-5118)가
+    버전 힌트(\\b\\d{4}\\b)에 걸려 표 본문 행으로 흡수됐다. 좌측 여백부터 이어 쓰는
+    산문 줄은 열 경계를 가로지르므로 구조로 걸러져야 한다."""
+    cells = layout(COLS4, HEADER4,
+                   [["CVE-2026-1234", "GitLab EE", "19.1 to 19.1.1", "19.1.1"],
+                    ["CVE-2026-5678", "GitLab CE", "19.0 to 19.0.3", "19.0.3"]])
+    cells.append((55, 700 - 3 * 22, "Contact: Hong Gildong (02-405-5118)"))
+    cells.append((55, 700 - 4 * 22, "Please see the attachment for details."))
+    res = pdf_tables.extract_tables(write_pdf(tmp_path, [cells]))
+    assert res.status == TABLE_OK, res
+    assert len(res.rows) == 2, [(r.product, r.affected) for r in res.rows]
+    assert res.rows[1].affected == "19.0 to 19.0.3"
+    assert "5118" not in " ".join(r.affected + r.fixed for r in res.rows)
+
+
+def test_contact_phone_inside_column_is_not_merged(tmp_path):
+    """전화번호 줄이 우연히 한 열 폭 안에 있어도 — 앞 행 셀에 병합되거나
+    새 행이 되면 안 된다."""
+    cells = layout(COLS4, HEADER4,
+                   [["CVE-2026-1234", "GitLab EE", "19.1 to 19.1.1", "19.1.1"]])
+    cells.append((330, 700 - 2 * 22, "Tel. 02-405-5118"))
+    res = pdf_tables.extract_tables(write_pdf(tmp_path, [cells]))
+    assert res.status == TABLE_OK, res
+    assert len(res.rows) == 1
+    assert res.rows[0].affected == "19.1 to 19.1.1", res.rows[0]
+
+
 # ── 한글 헤더 키워드 (PDF 를 거치지 않는 순수 단위 테스트) ─────────────────────
 
 @pytest.mark.parametrize("labels", [

@@ -235,3 +235,51 @@ def test_return_schema_matches_text_extraction():
     table = extract_products_from_table([TableRow(product="OpenSSL", affected="3.0.0 미만")])[0]
     assert set(table) == {"product_name", "product_key", "affected_versions",
                           "fixed_version", "source_snippet", "confidence"}
+
+
+# ── 다중 범위 셀·반쪽 범위·연락처 방어 (§실사용 결함 회귀) ─────────────────────
+
+def test_two_ranges_stacked_in_one_cell_both_survive():
+    """한 셀에 완결 범위가 줄바꿈으로 두 개 — 통째로 해석하면 마지막 범위만 남았다.
+    (표 복원이 줄바꿈을 공백으로 잇기 때문에 셀 텍스트는 한 줄로 들어온다)"""
+    rows = [TableRow(cve="CVE-2026-10712", product="GitLab EE",
+                     affected="19.1 이상 19.1.1 미만 19.0 이상 19.0.3 미만", fixed="19.1.1")]
+    p = _by_key(extract_products_from_table(rows))["gitlab_ee"]
+    rule = p["affected_versions"]
+    assert isinstance(rule, dict) and "any" in rule, rule
+    subs = [{k: v for k, v in r.items() if k != "fixed"} for r in rule["any"]]
+    assert {"gte": "19.1", "lt": "19.1.1"} in subs, rule
+    assert {"gte": "19.0", "lt": "19.0.3"} in subs, rule
+
+
+def test_split_half_ranges_across_rows_are_paired():
+    """'19.1 이상'과 '19.1.1 미만'이 셀 안 줄바꿈으로 서로 다른 행이 된 경우 —
+    반쪽 규칙 둘을 OR 로 합치면 사실상 전체 버전이 된다(확신-오답). 한 범위로 결합돼야 한다."""
+    rows = [TableRow(cve="CVE-2026-1234", product="WebSphere Application Server",
+                     affected="19.1 이상"),
+            TableRow(cve="CVE-2026-1234", product="WebSphere Application Server",
+                     affected="19.1.1 미만")]
+    p = list(extract_products_from_table(rows))[0]
+    rule = p["affected_versions"]
+    assert isinstance(rule, dict) and "any" not in rule, rule
+    assert rule.get("gte") == "19.1" and rule.get("lt") == "19.1.1", rule
+
+
+def test_phone_number_is_not_extracted_as_versions():
+    """실사용 확정 결함 — '담당자/연락처'의 전화번호 숫자 그룹이 버전 열거로 추출됐다.
+    규칙은 '전체(*)'로 남아야 한다(스니펫에 원문 인용이 남는 것은 정상)."""
+    text = "Apache Tomcat 취약점 관련 문의는 담당자 홍길동 (02-405-5118, 내선 5118) 에게 연락 바랍니다."
+    items = _by_key(extract_products(text))
+    for item in items.values():
+        rule = item["affected_versions"]
+        assert rule == "*", rule          # 전화번호가 버전 열거/범위로 잡히면 안 된다
+        assert item["fixed_version"] is None
+
+
+def test_standalone_year_version_survives_phone_guard():
+    """전화번호 방어가 'Windows Server 2019' 류 단독 연도 버전을 죽이면 안 된다."""
+    text = "Windows Server 2019 버전이 영향을 받습니다."
+    items = _by_key(extract_products(text))
+    assert items, "단독 연도 버전이 사라졌다"
+    rule = next(iter(items.values()))["affected_versions"]
+    assert "2019" in str(rule), rule

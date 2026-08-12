@@ -254,13 +254,54 @@ def _assign(row, cols, bounds: list[float], space_gap: float) -> dict[str, str]:
     return {r: v.strip() for r, v in buckets.items()}
 
 
-def _looks_like_body(cells: dict[str, str]) -> bool:
-    """표 본문 행인가 — CVE 코드나 버전스러운 토큰이 있어야 한다.
+# 표 아래 '담당자/연락처' 란 방어 — 전화번호(02-405-5118)의 숫자 그룹이 버전 힌트
+# (\b\d{4}\b)에 걸려 연락처 행이 표 본문으로 오인되던 실사용 확정 결함.
+# 라틴 키워드는 앞뒤 알파벳 경계 필수 — "Intel"의 tel, "detail"의 tail 류 오매칭 방지.
+_CONTACT_RE = re.compile(
+    r"연락처|담당|문의|전화|팩스|내선|(?<![A-Za-z])(?:contact|fax|tel|e-?mail)(?![A-Za-z])|@",
+    re.IGNORECASE)
+_PHONE_SHAPE = re.compile(r"(?<![\d.])\d{2,4}(?:\s*[–—-]\s*\d{2,4}){1,2}(?![\d.])")
 
-    표 아래 산문 한 줄이 열에 걸쳐 잘려 들어오는 것을 막는 1차 방어선이다.
+
+def _strip_phones(text: str) -> str:
+    """전화번호 모양을 지운다 — 연도 범위("2016-2019", 두 그룹 모두 연도)만 예외로 살린다."""
+    def repl(m: re.Match) -> str:
+        groups = re.split(r"\D+", m.group(0).strip())
+        if len(groups) == 2 and all(re.fullmatch(r"(?:19|20)\d\d", g) for g in groups):
+            return m.group(0)
+        return " "
+    return _PHONE_SHAPE.sub(repl, text)
+
+
+def _bodyish(text: str) -> bool:
+    """표 본문다운 텍스트인가 — CVE 코드, 또는 전화번호를 걷어낸 뒤의 버전 토큰."""
+    if CVE_RE.search(text):
+        return True
+    stripped = _strip_phones(text)
+    if _CONTACT_RE.search(text) and not re.search(r"\d+\s*\.\s*\d+", stripped):
+        return False   # 연락처 행 — 점 있는 버전 증거가 없으면 본문이 아니다
+    return bool(VERSION_HINT_RE.search(stripped))
+
+
+def _looks_like_body(cells: dict[str, str]) -> bool:
+    """표 본문 행인가 — 표 아래 산문·연락처 한 줄이 섞여 들어오는 것을 막는 1차 방어선."""
+    return _bodyish(" ".join(cells.values()))
+
+
+def _crosses_columns(segs, cols, tol: float) -> bool:
+    """열 경계(여백 통로)를 가로지르는 셀이 있는 행인가.
+
+    실제 표의 셀은 자기 열 안에만 있다 — 좌측 여백부터 이어 쓰는 산문·담당자 줄은
+    한 구간이 여러 열을 덮으므로, 내용과 무관하게 표 행이 아니라고 판정할 수 있다.
     """
-    joined = " ".join(cells.values())
-    return bool(CVE_RE.search(joined) or VERSION_HINT_RE.search(joined))
+    for x0, x1, _t in segs:
+        n = 0
+        for _r, c0, c1 in cols:
+            if min(x1, c1) - max(x0, c0) > tol * 2:
+                n += 1
+                if n >= 2:
+                    return True
+    return False
 
 
 def _tidy(text: str) -> str:
@@ -330,7 +371,7 @@ def _extract_page(chars, page_index: int,
             prev_c = c
             segs = seg_lists[i]
             joined = " ".join(t for _x0, _x1, t in segs)
-            if len(segs) >= 2 and (CVE_RE.search(joined) or VERSION_HINT_RE.search(joined)):
+            if len(segs) >= 2 and _bodyish(joined):
                 sample.append(segs)
         columns = _build_columns(seg_lists[header_i], sample, roles, pad=space_gap)
     else:
@@ -355,6 +396,14 @@ def _extract_page(chars, page_index: int,
                 break
         prev_center = center
 
+        # 열 경계를 가로지르는 구간이 있는 행은 표가 아니다(산문·담당자 줄) —
+        # 내용 검사 전에 구조로 먼저 거른다. 셀 병합 대상도 아니다.
+        if _crosses_columns(seg_lists[i], columns, space_gap):
+            misses += 1
+            if misses >= 2:
+                break
+            continue
+
         cells = {r: _tidy(v) for r, v in _assign(row, columns, bounds, space_gap).items()}
         for role in ("cve", "product", "affected", "fixed"):
             cells.setdefault(role, "")
@@ -363,12 +412,15 @@ def _extract_page(chars, page_index: int,
 
         if not _looks_like_body(cells):
             # 버전도 CVE 도 없는 행 — 줄바꿈된 셀의 뒷부분일 수 있다.
+            # 단 연락처·전화 텍스트는 셀 뒷부분이 아니라 표 밖 산문이다(병합 금지).
             filled = [r for r in ("product", "affected", "fixed") if cells[r]]
             if out and len(filled) == 1:
-                role = filled[0]
-                setattr(out[-1], role, _tidy(f"{getattr(out[-1], role)} {cells[role]}"))
-                misses = 0
-                continue
+                cell_text = cells[filled[0]]
+                if not _CONTACT_RE.search(cell_text) and _strip_phones(cell_text) == cell_text:
+                    role = filled[0]
+                    setattr(out[-1], role, _tidy(f"{getattr(out[-1], role)} {cell_text}"))
+                    misses = 0
+                    continue
             misses += 1
             if misses >= 2:
                 break

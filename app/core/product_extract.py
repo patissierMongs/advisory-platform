@@ -85,6 +85,33 @@ _UNKNOWN_PRODUCT = re.compile(
     r"\s+v?(\d+(?:\.\d+){0,3})\s*(이하|미만|이상|초과|및\s*이전)"
 )
 
+# ── 연락처(전화·팩스) 수치 방어 ────────────────────────────────────────────────
+# 권고문 하단 '담당자/연락처' 란의 02-405-5118 류가 버전 열거로 빨려 들어가는 것을
+# 막는다(실사용 확정 결함). 점 없는 숫자 그룹이 하이픈으로 2~3개 이어진 형태만 본다 —
+# 점 있는 버전("8.1.0")은 lookaround 로 처음부터 배제된다.
+_PHONE_SHAPE = re.compile(r"(?<![\d.])\d{2,4}(?:\s*[–—-]\s*\d{2,4}){1,2}(?![\d.])")
+# "내선 5118"·"문의: 405-5118" — 연락처 라벨과 토큰 사이에 전화표기 문자만 있는 경우.
+_CONTACT_BEFORE = re.compile(
+    r"(?:연락처|전화|문의|담당|내선|팩스|(?<![A-Za-z])(?:fax|tel))\s*[:：.]?\s*[\d\s()\[\]–—-]*$",
+    re.IGNORECASE)
+
+
+def _covered_by_phone(text: str, start: int, end: int) -> bool:
+    """[start:end) 토큰이 전화번호 모양 안에 들어 있는가.
+
+    연도 범위("2016-2019" — Windows Server 류 표기)는 두 그룹이 모두 연도일 때만
+    예외로 살린다. 전화번호에 연도-연도 조합이 나올 일은 없다.
+    """
+    c0 = max(0, start - 16)
+    ctx = text[c0:end + 16]
+    for pm in _PHONE_SHAPE.finditer(ctx):
+        if c0 + pm.start() <= start and end <= c0 + pm.end():
+            groups = re.split(r"\D+", pm.group(0).strip())
+            if len(groups) == 2 and all(re.fullmatch(r"(?:19|20)\d\d", g) for g in groups):
+                continue
+            return True
+    return False
+
 
 def _find_product_mentions(text: str) -> list[dict]:
     """사전 기반 제품 언급 탐색(토큰 경계·벤더 가드·최장일치·중복 구간 제거).
@@ -143,6 +170,10 @@ def _is_noise_version(text: str, m: re.Match) -> bool:
         return True                       # CVE-2026-1234 의 연도/일련번호
     if _DOC_BEFORE.search(before):
         return True                       # "제2026-…호" 문서번호
+    if _covered_by_phone(text, m.start(), m.end()):
+        return True                       # 담당자/연락처 란의 전화·팩스 번호
+    if _CONTACT_BEFORE.search(before):
+        return True                       # "내선 5118" — 연락처 라벨 직후 수치
     if _UNIT_AFTER.match(after):
         return True                       # 30%, 제12호, 3건 …
     if re.fullmatch(r"\d{4}", tok) and _DATE_AFTER.match(after):
@@ -289,6 +320,65 @@ def _fixed_versions(cell: str) -> list[str]:
     return [_norm_ver(m.group(1)) for m in _VER_TOKEN.finditer(cell or "")]
 
 
+# 완결 범위 구문 하나("X 이상 Y 미만"·"X 부터 Y 까지"·"X ~ Y"·"X to Y").
+# 한 셀에 이런 구문이 여러 개(줄바꿈·나열)면 _scan_window 는 dict 키 덮어쓰기로
+# 마지막 것만 남긴다 — 셀을 구문 단위로 쪼개 각각 독립 규칙으로 만들기 위한 패턴.
+_VER_PAT = r"v?\d+(?:\.\d+){0,3}(?:\.[xX*])?"
+_RANGE_PHRASE = re.compile(
+    rf"{_VER_PAT}\s*(?:버전\s*)?(?:이상|초과)\s*(?:버전\s*)?{_VER_PAT}\s*(?:버전\s*)?(?:미만|이하)"
+    rf"|{_VER_PAT}\s*(?:부터|에서)\s*{_VER_PAT}\s*까지"
+    rf"|{_VER_PAT}\s*[~∼〜–—]\s*{_VER_PAT}"
+    rf"|{_VER_PAT}\s+(?:to|through|thru|up\s+to)\s+{_VER_PAT}", re.IGNORECASE)
+
+
+def _affected_rules(affected: str) -> list[object]:
+    """영향버전 셀 텍스트 → 규칙 목록.
+
+    한 셀에 완결 범위가 두 개 이상이면(줄바꿈으로 쌓인 다중 범위 셀) 각각 독립 규칙으로
+    쪼갠다 — 통째로 _scan_window 에 태우면 마지막 범위만 남는 확신-오답이 난다.
+    범위가 하나 이하면 기존과 동일하게 셀 전체를 한 번 해석한다.
+    """
+    phrases = list(_RANGE_PHRASE.finditer(affected))
+    if len(phrases) < 2:
+        return [_scan_window(affected, 0, len(affected))["rule"]]
+    rules: list[object] = []
+    for pm in phrases:
+        info = _scan_window(pm.group(0), 0, len(pm.group(0)))
+        if info["rule"] != "*":
+            rules.append(info["rule"])
+    rest = _RANGE_PHRASE.sub(" ", affected)
+    if _VER_TOKEN.search(rest):
+        info = _scan_window(rest, 0, len(rest))
+        if info["rule"] != "*":
+            rules.append(info["rule"])
+    return rules or ["*"]
+
+
+def _pair_half_ranges(rules: list[object]) -> list[object]:
+    """연속된 반쪽 범위(하한만 → 상한만)를 한 범위로 결합.
+
+    "19.1 이상"과 "19.1.1 미만"이 셀 안 줄바꿈으로 서로 다른 행이 되면 규칙도
+    {gte}·{lt} 반쪽 둘로 갈라지는데, 이대로 OR 병합하면 사실상 전체 버전이 된다
+    (확신-오답). 붙어 나온 하한-상한 쌍은 원래 한 범위였다고 보고 결합한다 —
+    독립적인 '하한만' 규칙 뒤에 '상한만' 규칙이 오는 표는 의미상 존재하지 않는다
+    (그 OR 도 전체 버전이라 결합해도 좁아질지언정 의미가 생긴다).
+    """
+    out: list[object] = []
+    i = 0
+    while i < len(rules):
+        r = rules[i]
+        nxt = rules[i + 1] if i + 1 < len(rules) else None
+        r_ops = set(r) - {"fixed"} if isinstance(r, dict) else set()
+        nxt_ops = set(nxt) - {"fixed"} if isinstance(nxt, dict) else set()
+        if r_ops in ({"gte"}, {"gt"}) and nxt_ops and nxt_ops <= {"lt", "lte"}:
+            out.append({**r, **nxt})
+            i += 2
+            continue
+        out.append(r)
+        i += 1
+    return out
+
+
 def _merge_rules(rules: list[object]) -> object:
     """한 제품의 여러 영향 규칙 → 단일 규칙.
 
@@ -322,15 +412,15 @@ def extract_products_from_table(rows) -> list[dict]:
             continue
         name, key = ident
         affected = (getattr(row, "affected", "") or "").strip()
-        info = _scan_window(affected, 0, len(affected)) if affected else {
-            "rule": "*", "fixed_version": None, "confidence": 0.4, "snippet": ""}
+        rules = _affected_rules(affected) if affected else ["*"]
         fixes = _fixed_versions(getattr(row, "fixed", ""))
 
-        rule = info["rule"]
         # 범위별 해결버전은 규칙 안에 실어 둔다. _eval_op 는 비교 연산자 키만 보므로
         # 매칭에는 영향이 없고, 화면에서 '이 범위는 어디로 올려야 하나'를 보여줄 수 있다.
-        if isinstance(rule, dict) and "any" not in rule and fixes:
-            rule = dict(rule, fixed=", ".join(fixes))
+        if fixes:
+            rules = [dict(r, fixed=", ".join(fixes))
+                     if isinstance(r, dict) and "any" not in r else r
+                     for r in rules]
 
         snippet = " · ".join(p for p in (getattr(row, "cve", ""), name, affected,
                                          getattr(row, "fixed", "")) if p)[:200]
@@ -339,20 +429,20 @@ def extract_products_from_table(rows) -> list[dict]:
             merged[key] = {
                 "product_name": name,
                 "product_key": key,
-                "_rules": [rule],
+                "_rules": list(rules),
                 "_fixes": list(fixes),
                 "source_snippet": snippet,
                 "confidence": 0.95 if affected else 0.6,
             }
         else:
-            cur["_rules"].append(rule)
+            cur["_rules"].extend(rules)
             for f in fixes:
                 if f not in cur["_fixes"]:
                     cur["_fixes"].append(f)
 
     out = []
     for item in merged.values():
-        rules = item.pop("_rules")
+        rules = _pair_half_ranges(item.pop("_rules"))
         fixes = item.pop("_fixes")
         item["affected_versions"] = _merge_rules(rules)
         item["fixed_version"] = (", ".join(fixes))[:120] or None
