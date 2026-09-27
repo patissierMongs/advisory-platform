@@ -123,7 +123,7 @@ def test_version_matches_multi_op_dict():
 
 import pytest  # noqa: E402
 from app.core.pdf_tables import TableRow  # noqa: E402
-from app.core.product_extract import extract_products_from_table  # noqa: E402
+from app.core.product_extract import _scan_window, extract_products_from_table  # noqa: E402
 from app.core.versioning import version_matches  # noqa: E402
 
 
@@ -235,3 +235,81 @@ def test_return_schema_matches_text_extraction():
     table = extract_products_from_table([TableRow(product="OpenSSL", affected="3.0.0 미만")])[0]
     assert set(table) == {"product_name", "product_key", "affected_versions",
                           "fixed_version", "source_snippet", "confidence"}
+
+
+# ── 다중 범위 셀·반쪽 범위·연락처 방어 (§실사용 결함 회귀) ─────────────────────
+
+def test_two_ranges_stacked_in_one_cell_both_survive():
+    """한 셀에 완결 범위가 줄바꿈으로 두 개 — 통째로 해석하면 마지막 범위만 남았다.
+    (표 복원이 줄바꿈을 공백으로 잇기 때문에 셀 텍스트는 한 줄로 들어온다)"""
+    rows = [TableRow(cve="CVE-2026-10712", product="GitLab EE",
+                     affected="19.1 이상 19.1.1 미만 19.0 이상 19.0.3 미만", fixed="19.1.1")]
+    p = _by_key(extract_products_from_table(rows))["gitlab_ee"]
+    rule = p["affected_versions"]
+    assert isinstance(rule, dict) and "any" in rule, rule
+    subs = [{k: v for k, v in r.items() if k != "fixed"} for r in rule["any"]]
+    assert {"gte": "19.1", "lt": "19.1.1"} in subs, rule
+    assert {"gte": "19.0", "lt": "19.0.3"} in subs, rule
+
+
+def test_split_half_ranges_across_rows_are_paired():
+    """'19.1 이상'과 '19.1.1 미만'이 셀 안 줄바꿈으로 서로 다른 행이 된 경우 —
+    반쪽 규칙 둘을 OR 로 합치면 사실상 전체 버전이 된다(확신-오답). 한 범위로 결합돼야 한다."""
+    rows = [TableRow(cve="CVE-2026-1234", product="WebSphere Application Server",
+                     affected="19.1 이상"),
+            TableRow(cve="CVE-2026-1234", product="WebSphere Application Server",
+                     affected="19.1.1 미만")]
+    p = list(extract_products_from_table(rows))[0]
+    rule = p["affected_versions"]
+    assert isinstance(rule, dict) and "any" not in rule, rule
+    assert rule.get("gte") == "19.1" and rule.get("lt") == "19.1.1", rule
+
+
+def test_phone_number_is_not_extracted_as_versions():
+    """실사용 확정 결함 — '담당자/연락처'의 전화번호 숫자 그룹이 버전 열거로 추출됐다.
+    규칙은 '전체(*)'로 남아야 한다(스니펫에 원문 인용이 남는 것은 정상)."""
+    text = "Apache Tomcat 취약점 관련 문의는 담당자 홍길동 (02-405-5118, 내선 5118) 에게 연락 바랍니다."
+    items = _by_key(extract_products(text))
+    for item in items.values():
+        rule = item["affected_versions"]
+        assert rule == "*", rule          # 전화번호가 버전 열거/범위로 잡히면 안 된다
+        assert item["fixed_version"] is None
+
+
+def test_standalone_year_version_survives_phone_guard():
+    """전화번호 방어가 'Windows Server 2019' 류 단독 연도 버전을 죽이면 안 된다."""
+    text = "Windows Server 2019 버전이 영향을 받습니다."
+    items = _by_key(extract_products(text))
+    assert items, "단독 연도 버전이 사라졌다"
+    rule = next(iter(items.values()))["affected_versions"]
+    assert "2019" in str(rule), rule
+
+
+def test_fixed_cell_date_is_not_a_version():
+    """해결버전 셀의 배포일("(2026.6.26 배포)")이 해결 버전으로 저장되던 결함."""
+    rows = [TableRow(product="Apache Tomcat", affected="9.0.90 미만",
+                     fixed="9.0.90 (2026.6.26 배포)")]
+    p = _by_key(extract_products_from_table(rows))["apache_tomcat"]
+    assert p["fixed_version"] == "9.0.90", p["fixed_version"]
+
+
+def test_buteo_with_distant_kkaji_is_not_a_range():
+    """'X 부터' 뒤 다른 문장의 '…까지'("붙임 문서까지")에 낚여 무관한 버전이
+    상한이 되던 결함 — 상한 짝은 근처에서만 찾고, 못 찾으면 이상(gte)으로 남는다."""
+    text = "1.0 부터 영향. 자세한 내용은 붙임 문서까지 확인하고 2.0 은 무관."
+    rule = _scan_window(text, 0, len(text))["rule"]
+    assert rule.get("gte") == "1.0", rule
+    assert "range" not in rule, rule
+
+
+def test_buteo_kkaji_nearby_is_still_a_range():
+    rule = _scan_window("1.0 부터 2.0 까지", 0, 16)["rule"]
+    assert rule == {"range": ["1.0", "2.0"]}, rule
+
+
+def test_unparseable_affected_cell_lowers_confidence():
+    """affected 셀이 있는데 해석 불가('해당 없음' → 전체*)면 고신뢰(0.95)로 표기되던
+    결함 — 관리자가 '전체 버전 영향'을 확정 정보로 오해한다."""
+    p = extract_products_from_table([TableRow(product="FooBar", affected="해당 없음")])[0]
+    assert p["affected_versions"] == "*"
+    assert p["confidence"] < 0.9, p["confidence"]

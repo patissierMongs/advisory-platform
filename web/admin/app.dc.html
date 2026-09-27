@@ -3026,13 +3026,15 @@ class Component extends DCLogic {
       // 색 하나에만 의존하지 않도록 좌측 보더 + 배지까지 3중으로 표시한다(색각 이상 대응).
       const noTable = a.table_status === 'NO_TABLE';
       const badTable = a.table_status === 'TABLE_UNPARSED';
+      // 단계 색조를 서로 다른 색상군(회청/청/청록/녹/보라/회)으로 벌려 목록에서 한눈에
+      // 구분되게 한다 — 같은 명도대 파스텔로만 두면 카드끼리 사실상 동일하게 보인다.
       let cardBg = '#ffffff', cardEdge = '#e1e7ef';
-      if (a.status === 'UPLOADED') { cardBg = '#f7f9fc'; cardEdge = '#94a1b4'; }
-      else if (processing) { cardBg = '#f2f7fd'; cardEdge = '#2f5bd0'; }
-      else if (a.status === 'EXTRACTED' || a.status === 'NEEDS_CVE_UPDATE') { cardBg = '#f4f9f7'; cardEdge = '#0f766e'; }
-      else if (a.status === 'MATCHED') { cardBg = '#f0f7f3'; cardEdge = '#2e7d52'; }
-      else if (a.status === 'NOTIFYING') { cardBg = '#f8f6ff'; cardEdge = '#6b4fd8'; }
-      else if (a.status === 'COMPLETED' || a.status === 'ARCHIVED') { cardBg = '#f5f7fa'; cardEdge = '#c3cbd8'; }
+      if (a.status === 'UPLOADED') { cardBg = '#eef2f7'; cardEdge = '#94a1b4'; }
+      else if (processing) { cardBg = '#e7f0fc'; cardEdge = '#2f5bd0'; }
+      else if (a.status === 'EXTRACTED' || a.status === 'NEEDS_CVE_UPDATE') { cardBg = '#e2f3f0'; cardEdge = '#0f766e'; }
+      else if (a.status === 'MATCHED') { cardBg = '#e5f4e8'; cardEdge = '#2e7d52'; }
+      else if (a.status === 'NOTIFYING') { cardBg = '#efeafc'; cardEdge = '#6b4fd8'; }
+      else if (a.status === 'COMPLETED' || a.status === 'ARCHIVED') { cardBg = '#f0f2f5'; cardEdge = '#c3cbd8'; }
       if (noTable) { cardBg = '#fdf6e9'; cardEdge = '#d39d00'; }
       if (badTable) { cardBg = '#fdf1e8'; cardEdge = '#d35400'; }
       if (isErr) { cardBg = '#fdecec'; cardEdge = '#c0392b'; }
