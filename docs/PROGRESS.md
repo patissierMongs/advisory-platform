@@ -4,7 +4,7 @@
 
 ## 최종 목표
 
-국가정보원·국토교통부 등에서 받은 보안권고문 PDF(Portable Document Format)를 올리면 CVE(Common Vulnerabilities and Exposures) 추출 → 로컬 CVE DB(Database) 조회 → 자산 매칭 → 부서 발송 → 조치 회신 추적까지 한 시스템에서 처리하는 것이 목표입니다. 인터넷이 없는 폐쇄망에서 설치·실행·운영할 수 있어야 하며, 관제 담당자 한 명이 반복 작업 없이 권고문을 처리할 수 있어야 합니다.
+국가정보원·상급기관 등에서 받은 보안권고문 PDF(Portable Document Format)를 올리면 CVE(Common Vulnerabilities and Exposures) 추출 → 로컬 CVE DB(Database) 조회 → 자산 매칭 → 부서 발송 → 조치 회신 추적까지 한 시스템에서 처리하는 것이 목표입니다. 인터넷이 없는 폐쇄망에서 설치·실행·운영할 수 있어야 하며, 관제 담당자 한 명이 반복 작업 없이 권고문을 처리할 수 있어야 합니다.
 
 ## 현재 구현 상태
 

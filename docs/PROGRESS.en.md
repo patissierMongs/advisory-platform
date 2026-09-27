@@ -4,7 +4,7 @@
 
 ## Final goal
 
-Handle the full lifecycle of a security advisory PDF (Portable Document Format) received from agencies such as the National Intelligence Service or the Ministry of Land, Infrastructure and Transport in one system: CVE (Common Vulnerabilities and Exposures) extraction → local CVE DB (database) lookup → asset matching → per-department dispatch → remediation reply tracking. It must install, run and operate on an air-gapped network with no internet, and let a single security operator process advisories without repetitive manual work.
+Handle the full lifecycle of a security advisory PDF (Portable Document Format) received from agencies such as the National Intelligence Service or supervising agencies in one system: CVE (Common Vulnerabilities and Exposures) extraction → local CVE DB (database) lookup → asset matching → per-department dispatch → remediation reply tracking. It must install, run and operate on an air-gapped network with no internet, and let a single security operator process advisories without repetitive manual work.
 
 ## Current implementation status
 

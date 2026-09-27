@@ -151,10 +151,10 @@ def test_bulk_source_only_empty(client, cleanup):
     cleanup["advisory"] += [a1, a2]
 
     r = client.post("/api/v1/advisories/source-org",
-                    json={"ids": [a1, a2], "source_org": "국토부", "only_empty": True})
+                    json={"ids": [a1, a2], "source_org": "상급기관", "only_empty": True})
     assert r.status_code == 200
-    assert r.json() == {"updated": 1, "skipped": 1, "source_org": "국토부"}
-    assert client.get(f"/api/v1/advisories/{a1}").json()["source_org"] == "국토부"
+    assert r.json() == {"updated": 1, "skipped": 1, "source_org": "상급기관"}
+    assert client.get(f"/api/v1/advisories/{a1}").json()["source_org"] == "상급기관"
     assert client.get(f"/api/v1/advisories/{a2}").json()["source_org"] == "국정원"
 
 

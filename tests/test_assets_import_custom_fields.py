@@ -10,8 +10,8 @@ from openpyxl import Workbook
 def _xlsx_bytes():
     wb = Workbook(); ws = wb.active
     ws.append(["부서", "제품", "구매일자", "비고"])
-    ws.append(["정보화담당관실", "Windows 11 23H2", "2025-01-15", "리스자산"])
-    ws.append(["도로국", "Microsoft Office 2021", "2024-11-02", ""])
+    ws.append(["정보화팀", "Windows 11 23H2", "2025-01-15", "리스자산"])
+    ws.append(["시설관리과", "Microsoft Office 2021", "2024-11-02", ""])
     buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
 
 
@@ -32,7 +32,7 @@ def test_custom_named_field_stored_in_extra(client):
     from app.db import SessionLocal
     from app.models import Asset, Department
     with SessionLocal() as db:
-        dept = db.query(Department).filter(Department.name == "정보화담당관실").first()
+        dept = db.query(Department).filter(Department.name == "정보화팀").first()
         a = db.query(Asset).filter(Asset.department_id == dept.id).first()
         assert a is not None
         assert a.extra.get("구매일자") == "2025-01-15", a.extra   # 이름 키 저장 ✅
