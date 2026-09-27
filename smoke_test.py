@@ -179,7 +179,7 @@ with TestClient(app) as c:
     wb = Workbook()
     ws = wb.active
     ws.append(["자산번호", "사용부서", "운영체제/SW", "세부버전", "IP", "담당자"])
-    ws.append(["PC-9001", "도로국", "Windows 11", "23H2", "10.20.5.99", "테스터"])
+    ws.append(["PC-9001", "시설관리과", "Windows 11", "23H2", "10.20.5.99", "테스터"])
     ws.append(["PC-9002", "없는부서", "Windows 11", "22H2", "", "미상"])
     buf = io.BytesIO()
     wb.save(buf)
@@ -256,9 +256,9 @@ with TestClient(app) as c:
     r = c.post(f"/api/v1/advisories/{aid}/board").json()
     check("게시판 게시", str(r.get("board_post_id", "")).startswith("BOARD-"), r)
     r = signed_webhook_post(c, "/api/v1/webhooks/groupware/ack",
-                            {"department": "도로국", "status": "완료", "by": "댓글회신"})
+                            {"department": "시설관리과", "status": "완료", "by": "댓글회신"})
     check("게시판 회신→ack 동기화", r.status_code == 200 and r.json()["ack_status"] == "DONE", r.status_code)
-    r = c.post("/api/v1/webhooks/groupware/ack", json={"department": "도로국", "status": "완료"})
+    r = c.post("/api/v1/webhooks/groupware/ack", json={"department": "시설관리과", "status": "완료"})
     check("무서명 웹훅 거부(H-4)", r.status_code == 401, r.status_code)
     # ── 대시보드 SLA ──
     dash2 = c.get("/api/v1/dashboard").json()
@@ -269,14 +269,14 @@ with TestClient(app) as c:
     ws2 = wb2.active
     ws2.append(["○○부 자산관리대장", None, None, None, None, None])              # 1행: 제목(병합)
     ws2.append(["자산번호", "사용부서", "운영체제/SW", "세부버전", "IP", "담당자"])  # 2행: 실제 헤더
-    ws2.append(["PC-2001", "정보화담당관실", "Windows 11", "23H2", "10.30.1.1", "박하나"])
+    ws2.append(["PC-2001", "정보화팀", "Windows 11", "23H2", "10.30.1.1", "박하나"])
     ws2.append(["PC-2002", None, "Windows 11", "22H2", "10.30.1.2", "박두리"])      # 부서 세로병합
-    ws2.append(["PC-2003", "도로국", "Windows Server", "2022", "10.30.2.1", "이세찬"])
+    ws2.append(["PC-2003", "시설관리과", "Windows Server", "2022", "10.30.2.1", "이세찬"])
     ws2.append(["PC-2004", None, "Microsoft Office", "2021", "", "이네찬"])         # 부서 세로병합
     ws2.append(["PC-2005", None, "Google Chrome", "122.x", "", "이다찬"])           # 부서 세로병합
     ws2.merge_cells("A1:F1")
-    ws2.merge_cells("B3:B4")   # 정보화담당관실 (행3~4)
-    ws2.merge_cells("B5:B7")   # 도로국 (행5~7)
+    ws2.merge_cells("B3:B4")   # 정보화팀 (행3~4)
+    ws2.merge_cells("B5:B7")   # 시설관리과 (행5~7)
     buf2 = io.BytesIO()
     wb2.save(buf2)
     buf2.seek(0)
@@ -291,15 +291,15 @@ with TestClient(app) as c:
     dept_warn = [w for w in r["warnings"] if "DEPARTMENT" in w["issue"]]
     check("세로병합 부서 채움→5행 전부 적재(누락 0)", r["committed"] == 5 and len(dept_warn) == 0, r)
     a = c.get("/api/v1/assets?q=PC-2005").json()["items"]
-    check("병합 마지막행 부서=도로국(채워짐)", bool(a) and a[0]["department"] == "도로국", a)
+    check("병합 마지막행 부서=시설관리과(채워짐)", bool(a) and a[0]["department"] == "시설관리과", a)
 
     # ========== 엑셀: 2층(다단) 헤더 결합 ==========
     wb3 = Workbook()
     ws3 = wb3.active
     ws3.append(["자산번호", "사용부서", "제품", None, "담당자"])   # 1층: 그룹 라벨
     ws3.append([None, None, "OS", "버전", None])                  # 2층: 세부 라벨
-    ws3.append(["PC-3001", "정보화담당관실", "Windows 11", "23H2", "담당가"])
-    ws3.append(["PC-3002", "도로국", "Windows Server", "2022", "담당나"])
+    ws3.append(["PC-3001", "정보화팀", "Windows 11", "23H2", "담당가"])
+    ws3.append(["PC-3002", "시설관리과", "Windows Server", "2022", "담당나"])
     ws3.merge_cells("C1:D1")  # "제품" 이 OS·버전 두 칸 위에 걸침
     ws3.merge_cells("A1:A2"); ws3.merge_cells("B1:B2"); ws3.merge_cells("E1:E2")  # 세로 병합 헤더
     buf3 = io.BytesIO()

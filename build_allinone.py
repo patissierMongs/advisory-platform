@@ -43,12 +43,12 @@ PREFIX = "advisory-platform"
 REQUIREMENTS = ROOT / "requirements-bundle.txt"
 
 INCLUDE_TOP = {"app", "web", "samples", "scripts", "docs", "nvd_powershell_sync",
-               "README.md", "requirements.txt", "smoke_test.py"}
+               "README.md", "README.en.md", "requirements.txt", "smoke_test.py"}
 # 주의: 여기 이름은 경로의 '모든' 구성요소와 대조된다. 최상위 vendor/ 는 INCLUDE_TOP 에
 # 없어 애초에 복사되지 않으므로 넣지 말 것 — 넣으면 web/public/vendor(React·Pretendard)까지
 # 함께 빠져 폐쇄망에서 관리자 화면이 깨진다(외부 CDN 폴백이 없다).
 SKIP_DIR = {".venv", "__pycache__", "data", ".claude", ".git", "_cache",
-            "_advisory_allinone_stage"}
+            "_advisory_allinone_stage", "images"}
 SKIP_EXT = {".pyc", ".pyo", ".log"}
 
 

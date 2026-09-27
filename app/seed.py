@@ -21,28 +21,28 @@ from .models import (
 )
 
 DEPARTMENTS = [
-    "정보화담당관실", "도로국", "건축정책관실", "교통물류실",
-    "국토정책관실", "주택토지실", "항공정책실", "수자원정책관실",
+    "정보화팀", "시설관리과", "기획예산과", "운영지원과",
+    "정책기획과", "민원행정과", "대외협력과", "환경안전과",
 ]
 
 # product_raw, product_key, version_raw/version_norm 는 동일 문자열 사용.
 ASSETS = [
-    ("PC-0142", "정보화담당관실", "Windows 11", "windows_11", "23H2", "10.20.3.14", "김민수"),
-    ("PC-0188", "도로국", "Windows 11", "windows_11", "22H2", "10.20.5.21", "이서연"),
-    ("PC-0233", "건축정책관실", "Windows 11", "windows_11", "23H2", "10.20.6.33", "최유진"),
-    ("PC-0260", "교통물류실", "Windows 11", "windows_11", "22H2", "10.20.7.12", "한지훈"),
-    ("PC-0420", "국토정책관실", "Windows 11", "windows_11", "23H2", "10.20.9.07", "윤가람"),
-    ("PC-0301", "주택토지실", "Windows 10", "windows_10", "22H2", "10.20.8.44", "정다은"),
-    ("SRV-002", "정보화담당관실", "Windows Server", "windows_server", "2022", "10.20.1.05", "박정호"),
-    ("SRV-009", "도로국", "Windows Server", "windows_server", "2019", "10.20.1.21", "오세훈"),
-    ("OFC-110", "건축정책관실", "Microsoft Office", "microsoft_office", "2021", None, "신예린"),
-    ("OFC-118", "교통물류실", "Microsoft Office", "microsoft_office", "2019", None, "강동원"),
-    ("OFC-203", "주택토지실", "Microsoft Office", "microsoft_office", "2021", None, "임수정"),
-    ("WEB-031", "정보화담당관실", "Google Chrome", "google_chrome", "122.x", None, "자동배포"),
-    ("WEB-044", "도로국", "Google Chrome", "google_chrome", "121.x", None, "자동배포"),
-    ("HWP-070", "항공정책실", "한컴오피스", "hancom_office", "2022", None, "송민재"),
-    ("HWP-072", "수자원정책관실", "한컴오피스", "hancom_office", "2020", None, "배현우"),
-    ("PDF-090", "건축정책관실", "Adobe Acrobat", "adobe_acrobat", "DC 2021", None, "노아름"),
+    ("PC-0142", "정보화팀", "Windows 11", "windows_11", "23H2", "10.20.3.14", "김민수"),
+    ("PC-0188", "시설관리과", "Windows 11", "windows_11", "22H2", "10.20.5.21", "이서연"),
+    ("PC-0233", "기획예산과", "Windows 11", "windows_11", "23H2", "10.20.6.33", "최유진"),
+    ("PC-0260", "운영지원과", "Windows 11", "windows_11", "22H2", "10.20.7.12", "한지훈"),
+    ("PC-0420", "정책기획과", "Windows 11", "windows_11", "23H2", "10.20.9.07", "윤가람"),
+    ("PC-0301", "민원행정과", "Windows 10", "windows_10", "22H2", "10.20.8.44", "정다은"),
+    ("SRV-002", "정보화팀", "Windows Server", "windows_server", "2022", "10.20.1.05", "박정호"),
+    ("SRV-009", "시설관리과", "Windows Server", "windows_server", "2019", "10.20.1.21", "오세훈"),
+    ("OFC-110", "기획예산과", "Microsoft Office", "microsoft_office", "2021", None, "신예린"),
+    ("OFC-118", "운영지원과", "Microsoft Office", "microsoft_office", "2019", None, "강동원"),
+    ("OFC-203", "민원행정과", "Microsoft Office", "microsoft_office", "2021", None, "임수정"),
+    ("WEB-031", "정보화팀", "Google Chrome", "google_chrome", "122.x", None, "자동배포"),
+    ("WEB-044", "시설관리과", "Google Chrome", "google_chrome", "121.x", None, "자동배포"),
+    ("HWP-070", "대외협력과", "한컴오피스", "hancom_office", "2022", None, "송민재"),
+    ("HWP-072", "환경안전과", "한컴오피스", "hancom_office", "2020", None, "배현우"),
+    ("PDF-090", "기획예산과", "Adobe Acrobat", "adobe_acrobat", "DC 2021", None, "노아름"),
 ]
 
 # 기본 등록 CVE(조회 가능). 한컴/Acrobat 2건은 피드로 추가(samples/).
@@ -157,14 +157,14 @@ def seed(db: Session) -> None:
 
     # 과거 완료 권고문 + 발송 이력(대시보드/이력 화면용).
     past = Advisory(
-        doc_no="국토부-정보보호-2026-0521",
+        doc_no="상급기관-정보보호-2026-0521",
         title="리눅스 커널 권한상승 취약점 긴급 패치 권고",
-        source_org="국토교통부", receive_channel=enums.ReceiveChannel.OFFICIAL_DOC,
+        source_org="상급기관", receive_channel=enums.ReceiveChannel.OFFICIAL_DOC,
         received_at=date(2026, 5, 28), due_at=date(2026, 6, 5),
         page_count=1, extracted_text="CVE-2026-10010 linux kernel",
         status=enums.AdvisoryStatus.COMPLETED, uploaded_by=analyst.id,
     )
-    ppdf = _minimal_pdf(["Linux Kernel EoP Advisory", "Doc: 국토부-정보보호-2026-0521"])
+    ppdf = _minimal_pdf(["Linux Kernel EoP Advisory", "Doc: 상급기관-정보보호-2026-0521"])
     psha = extract.sha256_bytes(ppdf)
     secure_write_bytes(UPLOAD_DIR / f"{psha}.pdf", ppdf)
     past.file_path = str(UPLOAD_DIR / f"{psha}.pdf")
@@ -174,11 +174,11 @@ def seed(db: Session) -> None:
 
     base_dt = datetime(2026, 6, 5, 14, 22, tzinfo=timezone.utc)
     for i, (dept, acked, channels) in enumerate([
-        ("정보화담당관실", enums.AckStatus.DONE, ["MESSENGER", "MAIL"]),
-        ("도로국", enums.AckStatus.DONE, ["MESSENGER", "MAIL"]),
-        ("건축정책관실", enums.AckStatus.IN_PROGRESS, ["MAIL"]),
-        ("교통물류실", enums.AckStatus.DONE, ["MESSENGER"]),
-        ("주택토지실", enums.AckStatus.NONE, ["MAIL"]),
+        ("정보화팀", enums.AckStatus.DONE, ["MESSENGER", "MAIL"]),
+        ("시설관리과", enums.AckStatus.DONE, ["MESSENGER", "MAIL"]),
+        ("기획예산과", enums.AckStatus.IN_PROGRESS, ["MAIL"]),
+        ("운영지원과", enums.AckStatus.DONE, ["MESSENGER"]),
+        ("민원행정과", enums.AckStatus.NONE, ["MAIL"]),
     ]):
         dept_asset_ids = list(db.scalars(
             select(Asset.id).where(Asset.department_id == depts[dept].id).limit(3)))

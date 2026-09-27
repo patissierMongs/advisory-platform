@@ -41,11 +41,11 @@ const KO={DONE:"완료",IN_PROGRESS:"진행중",UNABLE:"불가",NONE:"미회신"
 const CH={NCST:"국정원 NCST",WEBMAIL:"웹메일",OFFICIAL_DOC:"공문"};
 const ADVS=[
  {id:1,doc:"국정원-사이버-2026-0612",title:"Windows LSA 원격코드실행 긴급 조치",org:"국가정보원",ch:"NCST",sev:"CRITICAL",due:"2026-06-22",dday:3,
-  depts:[{dept:"도로국",owner:"박도로",status:"DONE",sent:"06-16",ev:"패치완료_도로국.png"},{dept:"철도국",owner:"이철도",status:"IN_PROGRESS",sent:"06-16",ev:null},{dept:"항공정책실",owner:"정항공",status:"NONE",sent:"06-16",ev:null},{dept:"정보통신담당관",owner:"김관제",status:"DONE",sent:"06-16",ev:"점검스크린샷.png"}]},
- {id:2,doc:"국토부-정보보호-2026-0531",title:"Apache Log4j2 추가 취약점 패치",org:"국토교통부",ch:"OFFICIAL_DOC",sev:"HIGH",due:"2026-06-30",dday:11,
+  depts:[{dept:"시설관리과",owner:"박도로",status:"DONE",sent:"06-16",ev:"패치완료_시설관리과.png"},{dept:"철도국",owner:"이철도",status:"IN_PROGRESS",sent:"06-16",ev:null},{dept:"대외협력과",owner:"정항공",status:"NONE",sent:"06-16",ev:null},{dept:"정보통신담당관",owner:"김관제",status:"DONE",sent:"06-16",ev:"점검스크린샷.png"}]},
+ {id:2,doc:"상급기관-정보보호-2026-0531",title:"Apache Log4j2 추가 취약점 패치",org:"상급기관",ch:"OFFICIAL_DOC",sev:"HIGH",due:"2026-06-30",dday:11,
   depts:[{dept:"물류정책관",owner:"정물류",status:"UNABLE",sent:"06-11",ev:null},{dept:"건설정책국",owner:"한건설",status:"DONE",sent:"06-11",ev:"조치결과.pdf"},{dept:"정보통신담당관",owner:"김관제",status:"NONE",sent:"06-11",ev:null}]},
  {id:3,doc:"국정원-사이버-2026-0588",title:"Google Chrome V8 임의코드실행",org:"국가정보원",ch:"WEBMAIL",sev:"HIGH",due:"2026-06-12",dday:-7,
-  depts:[{dept:"도로국",owner:"박도로",status:"DONE",sent:"06-06",ev:"chrome_update.png"},{dept:"철도국",owner:"이철도",status:"DONE",sent:"06-06",ev:null},{dept:"항공정책실",owner:"정항공",status:"IN_PROGRESS",sent:"06-06",ev:null}]},
+  depts:[{dept:"시설관리과",owner:"박도로",status:"DONE",sent:"06-06",ev:"chrome_update.png"},{dept:"철도국",owner:"이철도",status:"DONE",sent:"06-06",ev:null},{dept:"대외협력과",owner:"정항공",status:"IN_PROGRESS",sent:"06-06",ev:null}]},
 ];
 let VIEW="adv",SORT="due",DIR=1,OPEN={};
 const esc=s=>(s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));

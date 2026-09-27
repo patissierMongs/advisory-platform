@@ -42,7 +42,7 @@ def post_board(advisory_id: int, doc_no: str, title: str, body: str) -> str:
 def parse_ack_webhook(payload: dict) -> dict | None:
     """게시판 댓글 회신 웹훅 → 표준 ack 형태로 정규화.
 
-    기대 payload(예): {"department":"도로국","status":"DONE"|"IN_PROGRESS"|"UNABLE","note":"..","by":".."}
+    기대 payload(예): {"department":"시설관리과","status":"DONE"|"IN_PROGRESS"|"UNABLE","note":"..","by":".."}
     그룹웨어별 필드명이 다르면 여기서 매핑한다.
     """
     dept = payload.get("department") or payload.get("dept")

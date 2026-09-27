@@ -75,8 +75,8 @@
 <script>
 const ACK_KO={DONE:"조치완료",IN_PROGRESS:"진행중",UNABLE:"조치불가"};
 const CH_KO={NCST:"국정원 NCST",WEBMAIL:"웹메일",OFFICIAL_DOC:"공문"};
-const DEPTS=["도로국","철도국","항공정책실","물류정책관","건설정책국","정보통신담당관","기획조정실",
-  "주택정책관","교통물류실","대중교통과","자동차정책관","수자원정책국"].map((n,i)=>({id:i+1,name:n}));
+const DEPTS=["시설관리과","철도국","대외협력과","물류정책관","건설정책국","정보통신담당관","기획조정실",
+  "주택정책관","운영지원과","대중교통과","자동차정책관","수자원정책국"].map((n,i)=>({id:i+1,name:n}));
 const FILTER={q:"",excludeDone:true};
 let _searchT;
 
@@ -85,12 +85,12 @@ const ADV=[
   { id:1, doc_no:"국정원-사이버-2026-0612", title:"Microsoft Windows LSA 원격코드실행 취약점 긴급 조치 권고",
     source_org:"국가정보원", receive_channel:"NCST", received_at:"2026-06-15", due_at:"2026-06-22",
     d_day:3, sla_status:"IMMINENT", max_severity:"CRITICAL", max_severity_ko:"긴급", completed:false,
-    depts:[{name:"도로국",ack:"DONE"},{name:"철도국",ack:"IN_PROGRESS"},{name:"항공정책실",ack:"NONE"},{name:"정보통신담당관",ack:"NONE"}],
+    depts:[{name:"시설관리과",ack:"DONE"},{name:"철도국",ack:"IN_PROGRESS"},{name:"대외협력과",ack:"NONE"},{name:"정보통신담당관",ack:"NONE"}],
     assets:[
-      {asset_no:"PC-2207", dept:"도로국", product:"Windows 11", version:"23H2", owner_name:"박도로", owner_contact:"02-123-0102", severity:"CRITICAL", cve:"CVE-2026-21345"},
-      {asset_no:"SVR-0102", dept:"도로국", product:"Windows Server 2022", version:"21H2", owner_name:"박도로", owner_contact:"02-123-0102", severity:"HIGH", cve:"CVE-2026-21360"},
+      {asset_no:"PC-2207", dept:"시설관리과", product:"Windows 11", version:"23H2", owner_name:"박도로", owner_contact:"02-123-0102", severity:"CRITICAL", cve:"CVE-2026-21345"},
+      {asset_no:"SVR-0102", dept:"시설관리과", product:"Windows Server 2022", version:"21H2", owner_name:"박도로", owner_contact:"02-123-0102", severity:"HIGH", cve:"CVE-2026-21360"},
       {asset_no:"SVR-0310", dept:"철도국", product:"Windows Server 2022", version:"22H2", owner_name:"이철도", owner_contact:"02-123-0310", severity:"HIGH", cve:"CVE-2026-21360"},
-      {asset_no:"PC-5521", dept:"항공정책실", product:"Microsoft Office", version:"2021", owner_name:"정항공", owner_contact:"02-123-5521", severity:"HIGH", cve:"CVE-2026-21401"},
+      {asset_no:"PC-5521", dept:"대외협력과", product:"Microsoft Office", version:"2021", owner_name:"정항공", owner_contact:"02-123-5521", severity:"HIGH", cve:"CVE-2026-21401"},
       {asset_no:"PC-9001", dept:"정보통신담당관", product:"Windows 11", version:"22H2", owner_name:"김관제", owner_contact:"02-123-9001", severity:"CRITICAL", cve:"CVE-2026-21345"},
     ],
     cves:[
@@ -100,12 +100,12 @@ const ADV=[
     ],
     comments:[
       {id:101, author_name:"김관제", department:"정보통신담당관", is_admin:true, ack_status:null, created_at:"2026-06-16T09:12", body:"각 부서 자산 중 Windows 11 22H2/23H2, Server 2022 대상입니다. 6/22까지 패치 후 댓글로 회신 바랍니다."},
-      {id:102, author_name:"박도로", department:"도로국", is_admin:false, ack_status:"DONE", created_at:"2026-06-17T14:30", body:"PC-2207, SVR-0102 6월 정기패치로 적용 완료했습니다."},
+      {id:102, author_name:"박도로", department:"시설관리과", is_admin:false, ack_status:"DONE", created_at:"2026-06-17T14:30", body:"PC-2207, SVR-0102 6월 정기패치로 적용 완료했습니다."},
       {id:103, author_name:"이철도", department:"철도국", is_admin:false, ack_status:"IN_PROGRESS", created_at:"2026-06-18T10:05", body:"SVR-0310은 점검창구 일정상 6/21 야간작업 예정입니다."},
     ],
   },
-  { id:2, doc_no:"국토부-정보보호-2026-0531", title:"Apache Log4j2 관련 추가 취약점 점검 및 패치 권고(공문)",
-    source_org:"국토교통부", receive_channel:"OFFICIAL_DOC", received_at:"2026-06-10", due_at:"2026-06-30",
+  { id:2, doc_no:"상급기관-정보보호-2026-0531", title:"Apache Log4j2 관련 추가 취약점 점검 및 패치 권고(공문)",
+    source_org:"상급기관", receive_channel:"OFFICIAL_DOC", received_at:"2026-06-10", due_at:"2026-06-30",
     d_day:11, sla_status:"NORMAL", max_severity:"HIGH", max_severity_ko:"높음", completed:false,
     depts:[{name:"물류정책관",ack:"UNABLE"},{name:"건설정책국",ack:"DONE"},{name:"정보통신담당관",ack:"NONE"}],
     assets:[
@@ -124,11 +124,11 @@ const ADV=[
   { id:3, doc_no:"국정원-사이버-2026-0588", title:"Google Chrome V8 엔진 임의코드실행 취약점 (웹메일 통보)",
     source_org:"국가정보원", receive_channel:"WEBMAIL", received_at:"2026-06-05", due_at:"2026-06-12",
     d_day:-7, sla_status:"OVERDUE", max_severity:"HIGH", max_severity_ko:"높음", completed:false,
-    depts:[{name:"도로국",ack:"DONE"},{name:"철도국",ack:"DONE"},{name:"항공정책실",ack:"IN_PROGRESS"}],
+    depts:[{name:"시설관리과",ack:"DONE"},{name:"철도국",ack:"DONE"},{name:"대외협력과",ack:"IN_PROGRESS"}],
     assets:[
-      {asset_no:"PC-2207", dept:"도로국", product:"Google Chrome", version:"122", owner_name:"박도로", owner_contact:"02-123-0102", severity:"HIGH", cve:"CVE-2026-30012"},
+      {asset_no:"PC-2207", dept:"시설관리과", product:"Google Chrome", version:"122", owner_name:"박도로", owner_contact:"02-123-0102", severity:"HIGH", cve:"CVE-2026-30012"},
       {asset_no:"PC-3210", dept:"철도국", product:"Google Chrome", version:"121", owner_name:"이철도", owner_contact:"02-123-0310", severity:"HIGH", cve:"CVE-2026-30012"},
-      {asset_no:"PC-5521", dept:"항공정책실", product:"Google Chrome", version:"120", owner_name:"정항공", owner_contact:"02-123-5521", severity:"HIGH", cve:"CVE-2026-30012"},
+      {asset_no:"PC-5521", dept:"대외협력과", product:"Google Chrome", version:"120", owner_name:"정항공", owner_contact:"02-123-5521", severity:"HIGH", cve:"CVE-2026-30012"},
     ],
     cves:[{cve_id_text:"CVE-2026-30012", severity:"HIGH", product_name:"Google Chrome", lookup_status:"FOUND"}],
     comments:[{id:301, author_name:"김관제", department:"정보통신담당관", is_admin:true, ack_status:null, created_at:"2026-06-06T09:00", body:"전 부서 크롬 124 미만 → 124 이상으로 업데이트 바랍니다."}],

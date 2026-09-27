@@ -106,7 +106,7 @@ def test_feed_apply_failure_marks_history_failed(client):
 
 def test_advisory_index_search_and_products_in_list(client, cleanup):
     """문서번호 중심 관리 인덱스(§개편 후속 6) — CVE 없어도 문서번호·제품으로 검색."""
-    aid = _upload(client, ["Tomcat vuln"], doc_no="국토부-특별-2026-777", source_org="국토부")
+    aid = _upload(client, ["Tomcat vuln"], doc_no="상급기관-특별-2026-777", source_org="상급기관")
     cleanup["advisory"].append(aid)
     client.post(f"/api/v1/advisories/{aid}/products",
                 json={"product_name": "Apache Tomcat", "affected_versions": {"lte": "9.0.30"}})
